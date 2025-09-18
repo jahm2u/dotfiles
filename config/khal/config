@@ -1,0 +1,21 @@
+[calendars]
+
+[[google]]
+path = ~/.local/share/khal/calendars/google/
+color = light blue
+readonly = False
+
+[[fm]]
+path = ~/.local/share/khal/calendars/fm/
+color = light green
+readonly = True
+
+[locale]
+timeformat = %I:%M %p
+dateformat = %Y-%m-%d
+longdateformat = %Y-%m-%d
+datetimeformat = %Y-%m-%d %I:%M %p
+longdatetimeformat = %Y-%m-%d %I:%M %p
+
+[default]
+default_calendar = google

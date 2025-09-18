@@ -1,0 +1,30 @@
+{
+    "profiles": [
+        {
+           
+            "complex_modifications": {
+              "rules": [
+                  {
+                      "description": "Change Caps Lock to Hyper (ctrl+opt+shift) when held,",
+                      "manipulators": [
+                          {
+                              "from": {
+                                  "key_code": "caps_lock",
+                                  "modifiers": { "optional": ["any"] }
+                              },
+                              "to": [
+                                  {
+                                      "key_code": "left_control",
+                                      "modifiers": ["left_shift", "left_option"]
+                                  }
+                              ],
+                              "type": "basic"
+                          }
+                      ]
+                  }
+              ]
+          },
+            "virtual_hid_keyboard": { "keyboard_type_v2": "ansi" }
+        }
+    ]
+}

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Jira Configuration
+JIRA_URL="https://your-company.atlassian.net"
+JIRA_EMAIL="your-email@company.com"
+JIRA_API_TOKEN="your-jira-api-token"
+JIRA_PROJECT_KEY="PROJ"
+JIRA_ISSUE_TYPE="Task"
+
+# Meeting Notes Configuration
+MEETING_NOTES_DIR="$HOME/Documents/MeetingNotes"
+
+# Optional: Append created ticket links back to meeting notes
+APPEND_TICKETS_TO_NOTES=true
+
+# Action Item Patterns
+# The script looks for lines matching these patterns:
+# - [ ] ACTION: Something to do
+# - TODO: Something to do
+# - TASK: Something to do
+# - Any line with @username (assigns to that person)
+# - Lines starting with - or * followed by ACTION/TODO/TASK

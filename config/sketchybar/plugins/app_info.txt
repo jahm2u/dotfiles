@@ -1,0 +1,16 @@
+# Application Information for Calendar Permissions
+
+## Cursor
+- Bundle Path: /Applications/Cursor.app
+- Bundle ID: com.todesktop.230313mzl4w4u92
+- Executable: /Applications/Cursor.app/Contents/MacOS/Cursor
+
+## SketchyBar  
+- Binary Path: /opt/homebrew/bin/sketchybar
+- Real Path: /opt/homebrew/Cellar/sketchybar/2.22.1/bin/sketchybar
+- Bundle ID: N/A (CLI binary)
+
+## Notes
+- Cursor is a proper app bundle with bundle ID
+- SketchyBar is a Homebrew CLI binary (no bundle)
+- SketchyBar path changes with updates (use symlink for permissions)

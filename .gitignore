@@ -1,0 +1,53 @@
+# Dotfiles .gitignore
+
+# System files
+.DS_Store
+Thumbs.db
+settings.local.json
+*settings.local.json
+
+.claude/telegram*
+# Obsidian-specific exclusions
+# Exclude personal workspaces
+config/obsidian/workspace.json
+config/obsidian/workspace-mobile.json
+
+# Exclude plugin code/binaries (let Obsidian reinstall them)
+config/obsidian/plugins/*/main.js
+config/obsidian/plugins/*/manifest.json
+config/obsidian/plugins/*/styles.css
+
+# Exclude caches and transients
+config/obsidian/cache/
+config/obsidian/.trash/
+config/obsidian/graph.json
+
+# Exclude large backups (specific to plugins like make-md)
+config/obsidian/backups/
+config/obsidian/plugins/make-md/backups/
+config/obsidian/plugins/*/backups/
+*.mdb
+
+# Exclude system/OS files in obsidian
+config/obsidian/.DS_Store
+config/obsidian/Thumbs.db
+
+# Keep plugin settings but exclude plugin binaries
+# This allows preserving plugin configurations while staying lightweight
+
+# Environment files with sensitive data
+.env
+*.env
+config/*/.env
+settings.local.json
+
+# Raycast - extensions may contain user-specific cache/data
+config/raycast/extensions/*/cache/
+config/raycast/extensions/*/data/
+
+# Claude Code generated files
+config/claude/todos/
+config/claude/shell-snapshots/
+config/claude/projects/
+config/claude/statsig/
+

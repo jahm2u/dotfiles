@@ -1,0 +1,11 @@
+{
+  "delay": 190,
+  "key": "Shift",
+  "shortcuts": [
+    {
+      "command": "command-palette:open",
+      "key": "Shift",
+      "lastKeyUpTime": 0
+    }
+  ]
+}

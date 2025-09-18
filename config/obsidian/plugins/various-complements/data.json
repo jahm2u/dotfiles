@@ -1,0 +1,211 @@
+{
+  "strategy": "default",
+  "matchStrategy": "partial",
+  "maxNumberOfSuggestions": 5,
+  "maxNumberOfWordsAsPhrase": 3,
+  "minNumberOfCharactersTriggered": 0,
+  "minNumberOfWordsTriggeredPhrase": 1,
+  "complementAutomatically": false,
+  "delayMilliSeconds": 0,
+  "disableSuggestionsDuringImeOn": false,
+  "insertAfterCompletion": true,
+  "firstCharactersDisableSuggestions": ":/^",
+  "showMatchStrategy": true,
+  "showComplementAutomatically": true,
+  "showIndexingStatus": true,
+  "descriptionOnSuggestion": "Short",
+  "selectSuggestionKeys": "Enter",
+  "additionalCycleThroughSuggestionsKeys": "None",
+  "disableUpDownKeysForCycleThroughSuggestionsKeys": false,
+  "openSourceFileKey": "None",
+  "propagateEsc": false,
+  "enableCurrentFileComplement": true,
+  "currentFileMinNumberOfCharacters": 0,
+  "onlyComplementEnglishOnCurrentFileComplement": false,
+  "enableCurrentVaultComplement": false,
+  "currentVaultMinNumberOfCharacters": 0,
+  "includeCurrentVaultPathPrefixPatterns": "",
+  "excludeCurrentVaultPathPrefixPatterns": "",
+  "includeCurrentVaultOnlyFilesUnderCurrentDirectory": false,
+  "enableCustomDictionaryComplement": false,
+  "customDictionaryPaths": "https://raw.githubusercontent.com/first20hours/google-10000-english/master/google-10000-english-no-swears.txt",
+  "columnDelimiter": "Tab",
+  "customDictionaryWordRegexPattern": "",
+  "delimiterToHideSuggestion": "",
+  "delimiterToDivideSuggestionsForDisplayFromInsertion": "",
+  "caretLocationSymbolAfterComplement": "",
+  "displayedTextSuffix": " => ...",
+  "enableInternalLinkComplement": true,
+  "suggestInternalLinkWithAlias": false,
+  "excludeInternalLinkPathPrefixPatterns": "",
+  "enableFrontMatterComplement": true,
+  "frontMatterComplementMatchStrategy": "inherit",
+  "insertCommaAfterFrontMatterCompletion": false,
+  "intelligentSuggestionPrioritization": {
+    "maxDaysToKeepHistory": 30,
+    "maxNumberOfHistoryToKeep": 0
+  },
+  "showLogAboutPerformanceInConsole": false,
+  "selectionHistoryTree": {
+    "MP": {
+      "MP": {
+        "frontMatter": {
+          "count": 9,
+          "lastUpdated": 1674839284945
+        }
+      }
+    },
+    "accounts": {
+      "accounts": {
+        "currentFile": {
+          "count": 4,
+          "lastUpdated": 1673978038293
+        }
+      }
+    },
+    "feedback": {
+      "feedback": {
+        "currentFile": {
+          "count": 2,
+          "lastUpdated": 1673529793900
+        }
+      }
+    },
+    "monthly_notes": {
+      "monthly_notes": {
+        "frontMatter": {
+          "count": 3,
+          "lastUpdated": 1675775252301
+        }
+      }
+    },
+    "Infra": {
+      "Infra": {
+        "currentFile": {
+          "count": 1,
+          "lastUpdated": 1673523776377
+        }
+      }
+    },
+    "Notes": {
+      "Notes": {
+        "currentFile": {
+          "count": 1,
+          "lastUpdated": 1673529770675
+        }
+      }
+    },
+    "meeting_notes": {
+      "meeting_notes": {
+        "frontMatter": {
+          "count": 1,
+          "lastUpdated": 1673615939306
+        }
+      }
+    },
+    "Chris": {
+      "Chris": {
+        "internalLink": {
+          "count": 1,
+          "lastUpdated": 1673773733050
+        }
+      }
+    },
+    "2022-12-23 Infra Goals 2023 Q1": {
+      "2022-12-23 Infra Goals 2023 Q1": {
+        "internalLink": {
+          "count": 3,
+          "lastUpdated": 1675168574453
+        }
+      }
+    },
+    "Access Dev Intermarketing": {
+      "Access Dev Intermarketing": {
+        "internalLink": {
+          "count": 2,
+          "lastUpdated": 1675775270215
+        }
+      }
+    },
+    "Balance": {
+      "Balance": {
+        "currentFile": {
+          "count": 1,
+          "lastUpdated": 1674815015731
+        }
+      }
+    },
+    "2022-12-04 WhiteHat Facebook for Principe": {
+      "2022-12-04 WhiteHat Facebook for Principe": {
+        "internalLink": {
+          "count": 1,
+          "lastUpdated": 1674815025141
+        }
+      }
+    },
+    "2022-11-01 Morning Pages": {
+      "2022-11-01 Morning Pages": {
+        "internalLink": {
+          "count": 1,
+          "lastUpdated": 1674840814767
+        }
+      }
+    },
+    "Plenamente": {
+      "Plenamente": {
+        "currentFile": {
+          "count": 1,
+          "lastUpdated": 1675251747166
+        }
+      }
+    },
+    "TPL Expression": {
+      "TPL Expression": {
+        "internalLink": {
+          "count": 1,
+          "lastUpdated": 1675775266033
+        }
+      }
+    },
+    "MassTraffic": {
+      "MT": {
+        "internalLink": {
+          "count": 1,
+          "lastUpdated": 1675777373025
+        }
+      }
+    },
+    "2022-05-18 MeuPrincipe Emails": {
+      "2022-05-18 MeuPrincipe Emails": {
+        "internalLink": {
+          "count": 1,
+          "lastUpdated": 1675777732360
+        }
+      }
+    },
+    "2023-01 Monthly Ops Review": {
+      "2023-01 Monthly Ops Review": {
+        "internalLink": {
+          "count": 1,
+          "lastUpdated": 1675779714023
+        }
+      }
+    },
+    "sprint_review": {
+      "sprint_review": {
+        "frontMatter": {
+          "count": 1,
+          "lastUpdated": 1676048800560
+        }
+      }
+    },
+    "high energy": {
+      "high energy": {
+        "frontMatter": {
+          "count": 1,
+          "lastUpdated": 1676462174342
+        }
+      }
+    }
+  }
+}

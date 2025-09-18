@@ -1,0 +1,191 @@
+#!/usr/bin/env zsh
+
+# Desktop configuration - PRIVACY MODE (no meetings/todoist)
+FONT_FACE="JetBrainsMono Nerd Font"
+
+PLUGIN_DIR="$HOME/.config/sketchybar/plugins-laptop"
+PLUGIN_SHARED_DIR="$HOME/.config/sketchybar/plugins"
+
+# Source colors
+source "$HOME/.config/sketchybar/colors.sh"
+
+# Always use 230px notch width for desktop
+NOTCH_WIDTH=230
+
+sketchybar --bar \
+    height=32 \
+    color=$BAR_COLOR \
+    margin=0 \
+    sticky=on \
+    padding_left=23 \
+    padding_right=23 \
+    notch_width=$NOTCH_WIDTH \
+    display=all
+
+sketchybar --default \
+    background.color=$BACKGROUND_LESS_TRANSPARENT \
+    background.corner_radius=5 \
+    background.padding_right=5 \
+    background.height=26 \
+    icon.font="$FONT_FACE:Medium:15.0" \
+    icon.padding_left=5 \
+    icon.padding_right=5 \
+    label.font="$FONT_FACE:Medium:12.0" \
+    label.color=$LABEL_COLOR \
+    label.y_offset=0 \
+    label.padding_left=0 \
+    label.padding_right=5
+
+# Aerospace workspace indicators
+for sid in 1 2 3 4 5 6 7 8 9; do
+    sketchybar --add item space.$sid left \
+        --set space.$sid \
+        label="$sid" \
+        label.font="$FONT_FACE:Bold:14.0" \
+        label.padding_left=8 \
+        label.padding_right=8 \
+        label.y_offset=0 \
+        label.color=$LABEL_COLOR \
+        icon.drawing=off \
+        background.color=$BACKGROUND_LESS_TRANSPARENT \
+        background.corner_radius=5 \
+        background.height=26 \
+        background.padding_left=2 \
+        background.padding_right=2 \
+        script="$PLUGIN_SHARED_DIR/aerospace.sh" \
+        click_script="aerospace workspace $sid" \
+        --subscribe space.$sid aerospace_workspace_change
+done
+
+# Separator
+sketchybar --add item separator left \
+    --set separator \
+    background.color=$TRANSPARENT \
+    icon="│" \
+    icon.color=$BACKGROUND_LESS_TRANSPARENT \
+    icon.font="$FONT_FACE:Regular:16.0" \
+    label.drawing=off
+
+sketchybar --add item front_app left \
+    --set front_app \
+    background.color=$TEAL \
+    background.padding_left=0 \
+    background.padding_right=0 \
+    icon.padding_left=7 \
+    icon.padding_right=7 \
+    icon.y_offset=1 \
+    icon.color=$BLACK \
+    label.drawing=no \
+    script="$PLUGIN_SHARED_DIR/front_app.sh" \
+    --add item front_app.separator left \
+    --set front_app.separator \
+    background.color=$TRANSPARENT \
+    background.padding_left=-3 \
+    icon= \
+    icon.color=$TEAL \
+    icon.font="$FONT_FACE:Bold:20.0" \
+    icon.padding_left=0 \
+    icon.padding_right=0 \
+    icon.y_offset=1 \
+    label.drawing=no \
+    --add item front_app.name left \
+    --set front_app.name \
+    background.color=$TRANSPARENT \
+    background.padding_right=0 \
+    icon.drawing=off \
+    label.font="$FONT_FACE:Bold:12.0" \
+    label.padding_left=5 \
+    label.drawing=yes
+
+sketchybar --add bracket front_app_bracket \
+    front_app \
+    front_app.separator \
+    front_app.name \
+    icon.padding_left=15 \
+    --subscribe front_app front_app_switched
+
+# PRIVACY MODE: NO Todoist or Meeting widgets
+
+sketchybar --add item week_num right \
+    --set week_num \
+    background.color=$GREEN \
+    background.padding_left=0 \
+    background.padding_right=0 \
+    icon.drawing=off \
+    label.font="$FONT_FACE:Bold:12.0" \
+    label.color=$BLACK \
+    label.padding_left=10 \
+    label.padding_right=10 \
+    label.y_offset=1 \
+    label="W30" \
+    update_freq=3600 \
+    script="$PLUGIN_SHARED_DIR/week_simple.sh" \
+    --add item week_num.separator right \
+    --set week_num.separator \
+    background.color=$TRANSPARENT \
+    background.padding_left=-3 \
+    icon= \
+    icon.color=$GREEN \
+    icon.font="$FONT_FACE:Bold:20.0" \
+    icon.padding_left=0 \
+    icon.padding_right=0 \
+    icon.y_offset=1 \
+    label.drawing=no \
+    --add item clock right \
+    --set clock \
+    background.color=$TRANSPARENT \
+    icon.drawing=off \
+    label.font="$FONT_FACE:Bold:12.0" \
+    label.padding_left=10 \
+    label.padding_right=5 \
+    label.drawing=yes \
+    update_freq=10 \
+    script="$PLUGIN_SHARED_DIR/clock.sh"
+
+sketchybar --add bracket datetime_bracket \
+    clock \
+    week_num.separator \
+    week_num \
+    icon.padding_left=15
+
+# Right side widgets
+sketchybar --add item battery right \
+    --set battery \
+    icon.color=$PEACH \
+    label.drawing=true \
+    update_freq=120 \
+    script="$PLUGIN_SHARED_DIR/battery.sh" \
+    --subscribe battery power_source_change system_woke
+
+sketchybar --add item volume right \
+    --set volume \
+    icon.color=$PEACH \
+    label.drawing=true \
+    script="$PLUGIN_SHARED_DIR/volume.sh" \
+    --subscribe volume volume_change
+
+sketchybar --add item cpu right \
+    --set cpu \
+    icon="CPU" \
+    icon.color=$TEAL \
+    icon.font="$FONT_FACE:Bold:10.0" \
+    icon.y_offset=0 \
+    label.drawing=true \
+    update_freq=2 \
+    script="$PLUGIN_SHARED_DIR/cpu.sh"
+
+sketchybar --add item memory right \
+    --set memory \
+    icon="RAM" \
+    icon.color=$YELLOW \
+    icon.font="$FONT_FACE:Bold:10.0" \
+    icon.y_offset=0 \
+    label.drawing=true \
+    update_freq=3 \
+    script="$PLUGIN_SHARED_DIR/memory.sh"
+
+##### Finalizing Setup #####
+# Initialize aerospace workspace highlighting
+$PLUGIN_SHARED_DIR/aerospace_update_all.sh
+
+sketchybar --update

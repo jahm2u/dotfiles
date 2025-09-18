@@ -1,0 +1,67 @@
+{
+  "trigger_auto_manual": "Manual",
+  "use_regex_to_check_for_tags": false,
+  "statusBar_trigger_indicator": true,
+  "folder_tag_pattern": [
+    {
+      "folder": "Business/IPMedia/Partners/Ron",
+      "tag": "#meeting/exec",
+      "pattern": ""
+    },
+    {
+      "folder": "Business/IPMedia/1on1s",
+      "tag": "#meeting/1on1",
+      "pattern": ""
+    },
+    {
+      "folder": "Business/CO/EX-Felipe/Meetings",
+      "tag": "#co-ex",
+      "pattern": ""
+    },
+    {
+      "folder": "Business/CO/MT-Chris/Meetings",
+      "tag": "#co-mt",
+      "pattern": ""
+    },
+    {
+      "folder": "Business/CO/PD-Kyle-Caio/Meetings",
+      "tag": "#co-pd",
+      "pattern": ""
+    },
+    {
+      "folder": "Business/CO/DT-Danniboy/Meetings",
+      "tag": "#co-dt",
+      "pattern": ""
+    },
+    {
+      "folder": "Business/Gone/Meetings",
+      "tag": "#gone",
+      "pattern": ""
+    },
+    {
+      "folder": "Inbox",
+      "tag": "#inbox",
+      "pattern": ""
+    },
+    {
+      "folder": "Personal",
+      "tag": "#personal",
+      "pattern": ""
+    }
+  ],
+  "use_regex_to_check_for_excluded_folder": false,
+  "excluded_folder": [
+    {
+      "folder": "Templates"
+    },
+    {
+      "folder": "Dashboards"
+    },
+    {
+      "folder": "Archive"
+    },
+    {
+      "folder": "Inbox"
+    }
+  ]
+}

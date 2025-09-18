@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "updated_by": "claude_auto_updater",
+  "settings": {
+    "theme": "dark",
+    "auto_save": true,
+    "notifications": {
+      "enabled": true,
+      "sound": true
+    }
+  }
+}

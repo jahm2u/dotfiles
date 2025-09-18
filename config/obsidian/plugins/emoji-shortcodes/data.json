@@ -1,0 +1,13 @@
+{
+  "immediateReplace": true,
+  "suggester": true,
+  "historyPriority": true,
+  "historyLimit": 100,
+  "history": [
+    ":kissing_heart:",
+    ":rainbow:",
+    ":world_map:",
+    ":mountain:",
+    ":point_right:"
+  ]
+}

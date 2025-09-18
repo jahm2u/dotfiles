@@ -1,0 +1,12 @@
+{
+  "baseFontSize": 16,
+  "enabledCssSnippets": [
+    "Dashboard",
+    "LargerMermaidDiagrams",
+    "CleanEmbeds",
+    "DashboardReadLineLength",
+    "frontMatter"
+  ],
+  "cssTheme": "Obsidian Nord",
+  "theme": "obsidian"
+}

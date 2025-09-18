@@ -1,0 +1,19 @@
+{
+  "accentColor": "#19b9e1",
+  "alwaysUpdateLinks": true,
+  "promptDelete": false,
+  "legacyEditor": false,
+  "readableLineLength": true,
+  "defaultViewMode": "preview",
+  "spellcheck": true,
+  "attachmentFolderPath": "Attachments",
+  "pdfExportSettings": {
+    "includeName": true,
+    "pageSize": "Letter",
+    "landscape": false,
+    "margin": "0",
+    "downscalePercent": 100
+  },
+  "newFileLocation": "folder",
+  "newFileFolderPath": "Inbox"
+}

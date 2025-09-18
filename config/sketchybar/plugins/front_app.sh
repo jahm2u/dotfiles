@@ -1,0 +1,169 @@
+#!/usr/bin/env zsh
+
+ICON_PADDING_RIGHT=5
+
+case $INFO in
+"Arc")
+    ICON_PADDING_RIGHT=5
+    ICON=󰞍
+    ;;
+"Code")
+    ICON_PADDING_RIGHT=4
+    ICON=󰨞
+    ;;
+"Calendar")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"Discord")
+    ICON=
+    ;;
+"FaceTime")
+    ICON_PADDING_RIGHT=5
+    ICON=
+    ;;
+"Finder")
+    ICON=󰀶
+    ;;
+"Google Chrome")
+    ICON_PADDING_RIGHT=7
+    ICON=
+    ;;
+"IINA")
+    ICON_PADDING_RIGHT=4
+    ICON=󰕼
+    ;;
+"kitty")
+    ICON=󰄛
+    ;;
+"Messages")
+    ICON=
+    ;;
+"Notion")
+    ICON_PADDING_RIGHT=6
+    ICON=󰎚
+    ;;
+"Preview")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"PS Remote Play")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"Spotify")
+    ICON_PADDING_RIGHT=2
+    ICON=
+    ;;
+"TextEdit")
+    ICON_PADDING_RIGHT=4
+    ICON=
+    ;;
+"Transmission")
+    ICON_PADDING_RIGHT=3
+    ICON=󰶘
+    ;;
+"Slack")
+    ICON_PADDING_RIGHT=3
+    ICON=󰒱
+    ;;
+"Todoist")
+    ICON_PADDING_RIGHT=3
+    ICON=󰃯
+    ;;
+"Obsidian")
+    ICON_PADDING_RIGHT=3
+    ICON=󱉽
+    ;;
+"Safari")
+    ICON_PADDING_RIGHT=3
+    ICON=󰀹
+    ;;
+"Terminal")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"Zoom")
+    ICON_PADDING_RIGHT=3
+    ICON=󰍫
+    ;;
+"Microsoft Teams")
+    ICON_PADDING_RIGHT=3
+    ICON=󰊻
+    ;;
+"WhatsApp")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"Telegram")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"Signal")
+    ICON_PADDING_RIGHT=3
+    ICON=󰭹
+    ;;
+"Firefox")
+    ICON_PADDING_RIGHT=3
+    ICON=󰈹
+    ;;
+"iTerm2")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"Music")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"Notes")
+    ICON_PADDING_RIGHT=3
+    ICON=󰎞
+    ;;
+"Reminders")
+    ICON_PADDING_RIGHT=3
+    ICON=󰄲
+    ;;
+"Mail")
+    ICON_PADDING_RIGHT=3
+    ICON=󰇰
+    ;;
+"System Preferences"|"System Settings")
+    ICON_PADDING_RIGHT=3
+    ICON=󰒓
+    ;;
+"Activity Monitor")
+    ICON_PADDING_RIGHT=3
+    ICON=󰍛
+    ;;
+"Raycast")
+    ICON_PADDING_RIGHT=3
+    ICON=󰜬
+    ;;
+"Warp")
+    ICON_PADDING_RIGHT=3
+    ICON=󰄛
+    ;;
+"Docker Desktop")
+    ICON_PADDING_RIGHT=3
+    ICON=󰡨
+    ;;
+"Postman")
+    ICON_PADDING_RIGHT=3
+    ICON=󰖟
+    ;;
+"Visual Studio Code")
+    ICON_PADDING_RIGHT=3
+    ICON=󰨞
+    ;;
+"Mailspring")
+    ICON_PADDING_RIGHT=3
+    ICON=󰇰
+    ;;
+*)
+    ICON_PADDING_RIGHT=2
+    ICON=
+    ;;
+esac
+
+sketchybar --set $NAME icon=$ICON icon.padding_left=7 icon.padding_right=7
+sketchybar --set $NAME.name label="$INFO"

@@ -1,0 +1,16 @@
+{
+  "version": 4,
+  "homepages": {
+    "Main Homepage": {
+      "version": 2,
+      "hasRibbonIcon": true,
+      "openMode": "Replace all open notes",
+      "view": "Default view",
+      "refreshDataview": true,
+      "value": "10 Meta/Home",
+      "kind": "File",
+      "commands": []
+    }
+  },
+  "separateMobile": false
+}

@@ -1,0 +1,146 @@
+[
+  {
+    "timestamp": "2025-09-08T10:33:15.110Z",
+    "session_id": "587cdae4-1ddd-40c0-9683-3f708d2a6188",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/587cdae4-1ddd-40c0-9683-3f708d2a6188.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T10:35:18.451Z",
+    "session_id": "587cdae4-1ddd-40c0-9683-3f708d2a6188",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/587cdae4-1ddd-40c0-9683-3f708d2a6188.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T10:37:18.782Z",
+    "session_id": "587cdae4-1ddd-40c0-9683-3f708d2a6188",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/587cdae4-1ddd-40c0-9683-3f708d2a6188.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T10:38:51.519Z",
+    "session_id": "587cdae4-1ddd-40c0-9683-3f708d2a6188",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/587cdae4-1ddd-40c0-9683-3f708d2a6188.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T12:44:38.033Z",
+    "session_id": "587cdae4-1ddd-40c0-9683-3f708d2a6188",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/587cdae4-1ddd-40c0-9683-3f708d2a6188.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T15:38:35.127Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T15:43:55.647Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T17:27:01.337Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T17:41:58.033Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T17:45:45.177Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T17:51:22.205Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T17:54:42.747Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T17:58:26.367Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T18:03:43.348Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-08T18:21:48.772Z",
+    "session_id": "41731c19-e727-44d7-902c-f30c6ac663c3",
+    "transcript_path": "/Users/jeffnote-050/.claude/projects/-Users-jeffnote-050-repos-01-business-TP-BabaFlow/41731c19-e727-44d7-902c-f30c6ac663c3.jsonl",
+    "cwd": "/Users/jeffnote-050/repos/01_business/TP/BabaFlow",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-11T23:15:16.412Z",
+    "session_id": "6fd5f8ad-0c14-452f-b2c8-a7571e35ea5a",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/6fd5f8ad-0c14-452f-b2c8-a7571e35ea5a.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "SubagentStop",
+    "stop_hook_active": false
+  }
+]

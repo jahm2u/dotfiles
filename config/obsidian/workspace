@@ -1,0 +1,34 @@
+{
+  "main": {
+    "id": "91b0042735f1a7da",
+    "type": "split",
+    "children": [
+      {
+        "id": "fa744d7f41cd6517",
+        "type": "leaf",
+        "state": {
+          "type": "empty",
+          "state": {}
+        }
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "b3c801bba896e521",
+    "type": "split",
+    "children": [],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "f68ce805d0744a93",
+    "type": "split",
+    "children": [],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "active": "fa744d7f41cd6517",
+  "lastOpenFiles": []
+}
