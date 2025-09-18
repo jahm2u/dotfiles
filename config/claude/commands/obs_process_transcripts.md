@@ -25,7 +25,7 @@
 **PREPROCESSING STEP:**
 ```bash
 # CRITICAL: Always start from root directory
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 
 # Step 1: Unzip transcript files (handles summary peeking and audio files)
 python3 claude-obsidian/scripts/transcript_unzip_processor.py /path/to/transcripts.zip
@@ -59,7 +59,7 @@ python3 claude-obsidian/scripts/transcript_meeting_matcher.py --show-matches --e
 **EXAMPLE ROLLING QUEUE SETUP:**
 ```bash
 # CRITICAL: Always start from and return to root directory
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 
 # First, check what transcripts exist using LS tool instead of find
 # Use LS tool with path parameter
@@ -76,7 +76,7 @@ Task description="Process transcript 5" prompt="[STREAMLINED WORKFLOW for folder
 # Keep 5 running until all transcripts processed
 
 # CRITICAL: Always return to root after each operation
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 ```
 
 ### STREAMLINED TASK WORKFLOW (Per Transcript):
@@ -84,7 +84,7 @@ cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
 ### Step 1: Quick Gibberish & Existing Meeting Check (Claude Direct)
 ```bash
 # CRITICAL: Always work from root directory
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 
 # Claude checks directly (no MCP tool needed):
 1. Read first 500 lines of transcript
@@ -106,11 +106,11 @@ cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
 ### Step 2: Full Analysis (Combined) - `@analyze`
 ```
 # CRITICAL: Always work from root directory
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 
 Use mcp__zen__analyze with:
 - model: "o3"
-- relevant_files: ["/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U/Inbox/Transcripts/FOLDER/transcript.txt", "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U/claude-obsidian/docs/People-Directory.md"]
+- relevant_files: ["~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/Inbox/Transcripts/FOLDER/transcript.txt", "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/claude-obsidian/docs/People-Directory.md"]
 - step: "FULL ANALYSIS - Jeff is main speaker. 'You/voce' = Jeff. Provide: 1) Meeting participants (use People-Directory.md for reference), 2) Meeting type (1on1/team/board/family), 3) Company/Context (IPMedia/CO/Personal), 4) Key topics discussed, 5) Action items, 6) Meeting date (YYYY-MM-DD format), 7) Meeting title suggestion, 8) Important quotes from Jeff, 9) Key decisions made, 10) Follow-up items"
 - step_number: 1
 - total_steps: 1
@@ -156,12 +156,12 @@ Claude creates or enriches meeting note based on Step 1 findings:
 ### Step 4: Final Quality Review & Archive - `@chat`
 ```
 # CRITICAL: Always work from root directory
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 
 Use mcp__zen__chat with:
 - model: "grok-4"
 - prompt: "FINAL QUALITY REVIEW: Check meeting note accuracy and completeness. Ensure key topics, action items, and important quotes are captured. If quality is good, respond 'APPROVED - ARCHIVE'. If needs improvement, provide specific fixes."
-- files: ["/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U/MEETING_NOTE_PATH"]
+- files: ["~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/MEETING_NOTE_PATH"]
 
 If APPROVED, archive:
 # Ensure attachments folder exists (same location as meeting note)
@@ -172,20 +172,20 @@ If APPROVED, archive:
 mkdir -p "[MEETING_NOTE_DIRECTORY]/attachments"
 
 # Archive transcript
-mv "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U/Inbox/Transcripts/[FOLDER]/transcript.txt" \
+mv "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/Inbox/Transcripts/[FOLDER]/transcript.txt" \
    "[MEETING_NOTE_DIRECTORY]/attachments/YYYY-MM-DD-original.txt"
 
 # Archive audio file (if exists)
-if ls "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U/Inbox/Transcripts/[FOLDER]/"*.{mp3,m4a,wav,ogg,aac} 1> /dev/null 2>&1; then
-    mv "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U/Inbox/Transcripts/[FOLDER]/"*.{mp3,m4a,wav,ogg,aac} \
+if ls "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/Inbox/Transcripts/[FOLDER]/"*.{mp3,m4a,wav,ogg,aac} 1> /dev/null 2>&1; then
+    mv "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/Inbox/Transcripts/[FOLDER]/"*.{mp3,m4a,wav,ogg,aac} \
        "[MEETING_NOTE_DIRECTORY]/attachments/YYYY-MM-DD-audio.*"
 fi
 
 # Clean up empty folder
-rmdir "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U/Inbox/Transcripts/[FOLDER_NAME]"
+rmdir "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/Inbox/Transcripts/[FOLDER_NAME]"
 
 # CRITICAL: Return to root directory
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 ```
 
 ### Rolling Queue Management
@@ -206,7 +206,7 @@ Continue until all transcripts processed
 ```
 Task description="Process transcript X" prompt="
 CRITICAL: Always work from root directory first!
-cd '/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U'
+cd '~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]'
 
 CRITICAL: Use zen-mcp-server tools properly!
 
@@ -225,7 +225,7 @@ CRITICAL: Use zen-mcp-server tools properly!
 TOTAL: 4 steps
 
 CRITICAL: Return to root after completion!
-cd '/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/U'
+cd '~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]'
 "
 ```
 

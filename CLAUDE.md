@@ -20,7 +20,6 @@ This is a comprehensive macOS dotfiles management system containing configuratio
 ### 2. Karabiner-Elements (Keyboard Remapping)
 - **Config**: `config/karabiner/karabiner.json`
 - **Primary Function**: Map Caps Lock to Hyper key
-- **Current Issue**: Config has complex workspace mappings that need removal
 - **Device-specific**: Contains rules for external keyboard (vendor_id: 12136)
 
 ### 3. Sketchybar (Status Bar)
@@ -81,10 +80,10 @@ The `scripts/install.sh` script creates these symlinks:
 - **Audio Notifications**: Play sound files for different events
 - **Settings**: Configured in `config/claude/settings.json`
 
-### 4. Path Hardcoding
-Multiple configs contain hardcoded paths to specific user directories. When working with this repo:
-- Check for paths containing `/Users/richardoliverbray/` or `/Users/t/`
-- Update paths to be relative or use environment variables where possible
+### 4. Path Configuration
+- Most configs use relative paths or environment variables
+- Sketchybar may contain some hardcoded home directory references
+- Use `~` or `$HOME` variables when possible for portability
 
 ## Development Guidelines
 
@@ -130,11 +129,11 @@ ls -la ~/.config/* | grep "^l"
 - Cmd + Ctrl + Alt + Shift + Arrows: Window movement
 - Cmd + Ctrl + Alt + Shift + Numbers: Move to workspace
 
-## Future Enhancements
-See `FUTURE_PLANS.md` for planned improvements including:
-- NixOS/Home Manager migration
-- Cross-platform support
-- Enhanced automation features
+## Future Considerations
+Potential improvements to explore:
+- Cross-platform configuration support
+- Enhanced automation and workflows
+- Additional productivity tool integrations
 
 ## Troubleshooting Quick Reference
 

@@ -24,7 +24,7 @@
 ### Step 0: Initialize and Get File List
 **CRITICAL: Always start from root directory**
 ```bash
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/T"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 
 # Run linter to get current issue count and file list
 python3 claude-obsidian/scripts/obsidian_smart_linter.py . --claude-mode 2>&1 | jq -r '.issues[].file' | sort | uniq > /tmp/files_with_issues.txt
@@ -44,7 +44,7 @@ wc -l /tmp/files_with_issues.txt
 **EXAMPLE ROLLING QUEUE SETUP:**
 ```bash
 # CRITICAL: Always start from root directory
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/T"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 
 # Start first 10 concurrent Tasks:
 Task description="Fix linting file 1" prompt="[STREAMLINED LINTING FIX for file 1]"
@@ -69,7 +69,7 @@ Task description="Fix linting file 10" prompt="[STREAMLINED LINTING FIX for file
 ```
 Use mcp__zen__chat with:
 - model: "grok-4"
-- files: ["/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/T/[FILE_PATH]"]
+- files: ["~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/[FILE_PATH]"]
 - prompt: "Fix all linting issues in this file. This is part of an Obsidian vault for business operations. Common issues include:
 
 1. **Broken wikilinks** - Fix [[broken/links]] by either:
@@ -95,7 +95,7 @@ Analyze the file, identify all issues, and provide the complete fixed file conte
 After each batch of 10, check progress:
 ```bash
 # CRITICAL: Always work from root directory
-cd "/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/T"
+cd "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]"
 
 # Check current linting status
 python3 claude-obsidian/scripts/obsidian_smart_linter.py . --claude-mode 2>&1 | jq -r '"\(.total_files) files, \(.total_issues) issues (\(.issues_by_severity.error) errors, \(.issues_by_severity.warn) warnings, \(.issues_by_severity.info) info)"'
@@ -121,7 +121,7 @@ CRITICAL: Fix all linting issues in the specified file!
 
 Use mcp__zen__chat with:
 - model: 'grok-4' 
-- files: ['/Users/t/Library/Mobile Documents/iCloud~md~obsidian/Documents/T/[FULL_FILE_PATH]']
+- files: ['~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[VAULT_NAME]/[FULL_FILE_PATH]']
 - prompt: 'Fix all linting issues in this Obsidian vault file. Add missing frontmatter, fix broken wikilinks, and resolve formatting issues. Provide the complete corrected file content.'
 
 Apply the fixes provided by Grok4 to the actual file.
