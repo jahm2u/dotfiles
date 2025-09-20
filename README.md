@@ -217,11 +217,47 @@ brew services start sketchybar
 - **Window Management**: Advanced window positioning
 - **Application Shortcuts**: Quick app switching
 - **Custom Workflows**: Personalized automation scripts
+- **Audio Device Control**: Cycle through audio outputs with volume control
+- **Translation**: Instant text translation between English and Portuguese
 
 ### Raycast Extensions
 - **Quick Actions**: System controls and shortcuts  
 - **Custom Commands**: Workflow automation
 - **Extension Ecosystem**: Productivity boosters
+
+## ⌨️ Keyboard Shortcuts
+
+### Hammerspoon Shortcuts
+
+#### Audio Control
+- **Ctrl+Option+Cmd+]** - Cycle audio forward (0% → 33% → 66% → 100% → next device)
+- **Ctrl+Option+Cmd+[** - Cycle audio backward (100% → 66% → 33% → 0% → previous device)
+  - Works with all audio devices (Mac speakers, LG monitors, Multi-Output Device)
+  - Multi-Output Device controls both LG monitors simultaneously
+
+#### Translation (English ↔ Portuguese)
+- **Ctrl+Alt+D** or **Option+D** - Replace selected text with translation
+- **Option+S** - Show translation in popup overlay
+
+#### System Controls
+- **Ctrl+Alt+B** - Toggle screen brightness (0% ↔ saved level)
+- **Ctrl+Alt+Cmd+O** - Toggle dock auto-hide
+- **Ctrl+Alt+Cmd+P** - Toggle Sketchybar privacy mode (hides meetings/Todoist)
+
+#### Utilities
+- **Ctrl+Alt+G** - Check network latency (ping test)
+- **Cmd+Shift+E** - Open inbox (via Shortcuts)
+- **Shift+Delete** - Forward delete
+- **Option+Space** - Trigger Spotlight/Raycast (maps to Cmd+Space)
+- **Option+Tab** - App switcher (maps to Cmd+Tab)
+
+### AeroSpace Window Manager
+- See `config/aerospace/aerospace.toml` for full keybindings
+- Uses Ctrl+Alt+Shift as primary modifier
+- Spatial navigation with arrow keys
+
+### Karabiner-Elements
+- **Caps Lock** - Hyper key (Cmd+Alt+Ctrl+Shift)
 
 ## 🔄 Updating Configurations
 

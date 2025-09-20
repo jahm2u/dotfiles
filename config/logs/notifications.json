@@ -2702,5 +2702,77 @@
     "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
     "hook_event_name": "Notification",
     "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-20T09:42:58.429Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "timestamp": "2025-09-20T13:36:48.682Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Update"
+  },
+  {
+    "timestamp": "2025-09-20T13:37:43.751Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "timestamp": "2025-09-20T13:38:46.906Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Write"
+  },
+  {
+    "timestamp": "2025-09-20T13:40:12.753Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-20T13:59:54.582Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-20T14:02:06.091Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-20T14:04:59.112Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-20T14:41:21.224Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
   }
 ]

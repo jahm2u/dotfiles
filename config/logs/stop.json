@@ -2455,5 +2455,86 @@
     "permission_mode": "acceptEdits",
     "hook_event_name": "Stop",
     "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T09:50:37.078Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T13:38:20.938Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T13:40:03.626Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T13:47:06.594Z",
+    "session_id": "50a0c36f-b18a-4dd5-a69d-b6cbbe2da7c5",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace/50a0c36f-b18a-4dd5-a69d-b6cbbe2da7c5.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T13:56:58.815Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T13:59:46.103Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T14:01:57.193Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T14:04:50.261Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-20T14:09:44.906Z",
+    "session_id": "98ed7531-6e12-4dfc-96c0-c3f2f4795c23",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/98ed7531-6e12-4dfc-96c0-c3f2f4795c23.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
   }
 ]
