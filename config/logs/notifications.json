@@ -2598,5 +2598,109 @@
     "cwd": "/Users/v/repos/02_personal/dotfiles",
     "hook_event_name": "Notification",
     "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "timestamp": "2025-09-19T12:51:06.595Z",
+    "session_id": "4d2e55a7-7b55-49e4-a55b-e5de3955f998",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/4d2e55a7-7b55-49e4-a55b-e5de3955f998.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Update"
+  },
+  {
+    "timestamp": "2025-09-19T12:51:49.445Z",
+    "session_id": "4d2e55a7-7b55-49e4-a55b-e5de3955f998",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/4d2e55a7-7b55-49e4-a55b-e5de3955f998.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "timestamp": "2025-09-19T14:50:35.942Z",
+    "session_id": "47d0220b-8bad-4df4-9d18-d2a2a148e085",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/47d0220b-8bad-4df4-9d18-d2a2a148e085.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude Code needs your approval for the plan"
+  },
+  {
+    "timestamp": "2025-09-19T14:56:04.116Z",
+    "session_id": "47d0220b-8bad-4df4-9d18-d2a2a148e085",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/47d0220b-8bad-4df4-9d18-d2a2a148e085.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "timestamp": "2025-09-19T15:00:49.248Z",
+    "session_id": "47d0220b-8bad-4df4-9d18-d2a2a148e085",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/47d0220b-8bad-4df4-9d18-d2a2a148e085.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "timestamp": "2025-09-19T15:33:44.723Z",
+    "session_id": "47d0220b-8bad-4df4-9d18-d2a2a148e085",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/47d0220b-8bad-4df4-9d18-d2a2a148e085.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash"
+  },
+  {
+    "timestamp": "2025-09-19T15:36:49.834Z",
+    "session_id": "47d0220b-8bad-4df4-9d18-d2a2a148e085",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/47d0220b-8bad-4df4-9d18-d2a2a148e085.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "hook_event_name": "Notification",
+    "message": "Claude Code needs your approval for the plan"
+  },
+  {
+    "timestamp": "2025-09-19T16:02:54.349Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Write"
+  },
+  {
+    "timestamp": "2025-09-19T16:08:05.437Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-19T16:10:31.510Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-19T16:12:03.251Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-19T16:17:35.636Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
+  },
+  {
+    "timestamp": "2025-09-19T16:27:15.024Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "hook_event_name": "Notification",
+    "message": "Claude is waiting for your input"
   }
 ]

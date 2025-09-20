@@ -2320,5 +2320,140 @@
     "permission_mode": "acceptEdits",
     "hook_event_name": "Stop",
     "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T12:50:10.047Z",
+    "session_id": "4d2e55a7-7b55-49e4-a55b-e5de3955f998",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/4d2e55a7-7b55-49e4-a55b-e5de3955f998.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T14:54:12.571Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "default",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T15:40:41.208Z",
+    "session_id": "47d0220b-8bad-4df4-9d18-d2a2a148e085",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/47d0220b-8bad-4df4-9d18-d2a2a148e085.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T15:41:01.027Z",
+    "session_id": "47d0220b-8bad-4df4-9d18-d2a2a148e085",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-02-personal-dotfiles/47d0220b-8bad-4df4-9d18-d2a2a148e085.jsonl",
+    "cwd": "/Users/v/repos/02_personal/dotfiles",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:03:16.892Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:04:12.843Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:04:24.447Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:04:51.116Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:06:21.878Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:07:56.982Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:10:22.578Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:11:54.337Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:17:26.709Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:23:12.165Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "timestamp": "2025-09-19T16:27:06.004Z",
+    "session_id": "f73e4d8a-5d88-4e37-8ca5-009eb558ebcf",
+    "transcript_path": "/Users/v/.claude/projects/-Users-v-repos-01-business-gone-workspace-projects-gone-docs-gone-docs/f73e4d8a-5d88-4e37-8ca5-009eb558ebcf.jsonl",
+    "cwd": "/Users/v/repos/01_business/gone/workspace/projects/gone-docs/gone-docs",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
   }
 ]
