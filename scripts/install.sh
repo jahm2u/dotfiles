@@ -65,7 +65,13 @@ create_symlink() {
 
 main() {
     log "Starting dotfiles installation from: $DOTFILES_DIR"
-    
+
+    # Clean up old aerospace config location (deprecated)
+    if [[ -e "$HOME/.aerospace.toml" ]]; then
+        warn "Removing old aerospace config at ~/.aerospace.toml (deprecated location)"
+        backup_existing "$HOME/.aerospace.toml"
+    fi
+
     # Aerospace
     create_symlink \
         "$DOTFILES_DIR/config/aerospace" \
