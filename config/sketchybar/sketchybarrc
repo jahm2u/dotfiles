@@ -4,5 +4,5 @@
 # Current config: desktop
 # Generated: Fri Sep 19 11:55:07 -03 2025
 
-SKETCHYBAR_CONFIG="/Users/v/.config/sketchybar"
+SKETCHYBAR_CONFIG="$HOME/.config/sketchybar"
 source "$SKETCHYBAR_CONFIG/sketchybarrc-desktop"
