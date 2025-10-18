@@ -51,6 +51,7 @@ config/claude/shell-snapshots/
 config/claude/projects/
 config/claude/statsig/
 config/claude/debug/
+config/claude/file-history/
 config/logs/
 
 BMAD*
