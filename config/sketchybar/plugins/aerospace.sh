@@ -16,8 +16,8 @@ fi
 if [ "$WORKSPACE_ID" = "$CURRENT_WORKSPACE" ]; then
     ${BAR_NAME:-sketchybar} --animate tanh 10 \
       --set $NAME \
-      label.color=$WHITE \
-      background.color=$YELLOW
+      label.color=$WORKSPACE_ACTIVE_TEXT \
+      background.color=$WORKSPACE_ACTIVE_BG
 else
     ${BAR_NAME:-sketchybar} --animate tanh 10 \
       --set $NAME \

@@ -44,7 +44,9 @@ export ACCENT_COLOR=$PEACH
 export WIDGET_BACKGROUND=$SURFACE1
 
 # Specific item colors
-export WORKSPACE_ACTIVE=$BLUE
+export WORKSPACE_ACTIVE=$BLUE        # Legacy
+export WORKSPACE_ACTIVE_BG=$YELLOW   # Yellow background for active workspace
+export WORKSPACE_ACTIVE_TEXT=$BLACK  # Black text on active workspace (for yellow background)
 export WORKSPACE_INACTIVE=$WHITE
 export FRONT_APP_COLOR=$GREEN
 export BATTERY_LOW=$RED

@@ -78,6 +78,7 @@ sketchybar --add item front_app left \
     background.color=$TEAL \
     background.padding_left=0 \
     background.padding_right=0 \
+    icon.font="$FONT_FACE:Bold:20.0" \
     icon.padding_left=7 \
     icon.padding_right=7 \
     icon.y_offset=1 \

@@ -24,8 +24,8 @@ for bar_name in sketchybar vertical_bar; do
                 # Highlight the focused workspace
                 $bar_name --animate tanh 10 \
                   --set space.$workspace \
-                  label.color=$BLACK \
-                  background.color=$GREEN
+                  label.color=$WORKSPACE_ACTIVE_TEXT \
+                  background.color=$WORKSPACE_ACTIVE_BG
             else
                 # Unhighlight other workspaces
                 $bar_name --animate tanh 10 \

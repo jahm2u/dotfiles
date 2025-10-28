@@ -9,16 +9,19 @@ PLUGIN_SHARED_DIR="$HOME/.config/sketchybar/plugins"
 # Source colors
 source "$HOME/.config/sketchybar/colors.sh"
 
-# Always use 230px notch width for laptop
-NOTCH_WIDTH=230
+# Configurable notch width (default: 230px)
+NOTCH_WIDTH=${NOTCH_WIDTH:-230}
+
+# Configurable padding (default: 23px for laptop mode)
+PADDING=${PADDING:-23}
 
 sketchybar --bar \
     height=32 \
     color=$BAR_COLOR \
     margin=0 \
     sticky=on \
-    padding_left=23 \
-    padding_right=23 \
+    padding_left=$PADDING \
+    padding_right=$PADDING \
     notch_width=$NOTCH_WIDTH \
     display=all
 

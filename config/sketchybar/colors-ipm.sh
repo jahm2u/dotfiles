@@ -49,7 +49,9 @@ export ACCENT_COLOR=$YELLOW          # Brazil Yellow for prominence
 export WIDGET_BACKGROUND=$SURFACE1
 
 # Specific item colors - Brazil Blue for active states
-export WORKSPACE_ACTIVE=$BLUE        # Brazil Blue for active workspace
+export WORKSPACE_ACTIVE=$BLUE        # Brazil Blue for active workspace (legacy)
+export WORKSPACE_ACTIVE_BG=$GREEN    # Green background for active workspace
+export WORKSPACE_ACTIVE_TEXT=$WHITE  # White text on active workspace
 export WORKSPACE_INACTIVE=$WHITE
 export FRONT_APP_COLOR=$GREEN        # Brazil Green for active app
 export BATTERY_LOW=$RED

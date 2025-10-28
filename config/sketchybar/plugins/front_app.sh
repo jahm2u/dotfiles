@@ -159,6 +159,42 @@ case $INFO in
     ICON_PADDING_RIGHT=3
     ICON=󰇰
     ;;
+"ChatGPT")
+    ICON_PADDING_RIGHT=3
+    ICON=󰭹
+    ;;
+"Comet")
+    ICON_PADDING_RIGHT=3
+    ICON=
+    ;;
+"Jump Desktop")
+    ICON_PADDING_RIGHT=3
+    ICON=󰢹
+    ;;
+"OrbStack")
+    ICON_PADDING_RIGHT=3
+    ICON=󰡨
+    ;;
+"Pritunl")
+    ICON_PADDING_RIGHT=3
+    ICON=󰒃
+    ;;
+"TablePlus")
+    ICON_PADDING_RIGHT=3
+    ICON=󰆼
+    ;;
+"Wispr Flow")
+    ICON_PADDING_RIGHT=3
+    ICON=󰔊
+    ;;
+"krisp")
+    ICON_PADDING_RIGHT=3
+    ICON=󰕿
+    ;;
+"stable")
+    ICON_PADDING_RIGHT=3
+    ICON=󰐃
+    ;;
 *)
     ICON_PADDING_RIGHT=2
     ICON=
