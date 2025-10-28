@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
 
 # Source the .env file to get TODOIST_API_TOKEN
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/../.env"
+# Try multiple locations to find .env file
+ENV_FILE=""
+for possible_location in \
+    "$HOME/dotfiles/.env" \
+    "$HOME/repos/02_personal/dotfiles/.env" \
+    "$HOME/.config/sketchybar/../../.env" \
+    "$(dirname "$(dirname "$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")")")/../../.env"
+do
+    if [[ -f "$possible_location" ]]; then
+        ENV_FILE="$possible_location"
+        break
+    fi
+done
 
-if [[ -f "$ENV_FILE" ]]; then
+if [[ -n "$ENV_FILE" ]] && [[ -f "$ENV_FILE" ]]; then
     source "$ENV_FILE"
 fi
 

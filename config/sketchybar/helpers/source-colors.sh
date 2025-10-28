@@ -2,9 +2,21 @@
 # Helper to source environment-specific colors
 # Used by both variant configs and plugins
 
-# Source environment configuration
-ENV_FILE="$HOME/.config/sketchybar/.env"
-if [[ -f "$ENV_FILE" ]]; then
+# Try multiple locations to find .env file
+ENV_FILE=""
+for possible_location in \
+    "$HOME/dotfiles/.env" \
+    "$HOME/repos/02_personal/dotfiles/.env" \
+    "$HOME/.config/sketchybar/../../.env" \
+    "$(dirname "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")")")/../../.env"
+do
+    if [[ -f "$possible_location" ]]; then
+        ENV_FILE="$possible_location"
+        break
+    fi
+done
+
+if [[ -n "$ENV_FILE" ]] && [[ -f "$ENV_FILE" ]]; then
     source "$ENV_FILE"
 fi
 

@@ -45,13 +45,20 @@ settings.local.json
 config/raycast/extensions/*/cache/
 config/raycast/extensions/*/data/
 
-# Claude Code generated files
+# Claude Code generated files - NEVER commit history or personal data
 config/claude/todos/
 config/claude/shell-snapshots/
 config/claude/projects/
 config/claude/statsig/
 config/claude/debug/
 config/claude/file-history/
+config/claude/history.jsonl*
+config/claude/*.backup
 config/logs/
+config/sketchybar/logs/
 
+# BMAD generated documentation
 BMAD*
+docs/
+*.context.xml
+test_env_config.py

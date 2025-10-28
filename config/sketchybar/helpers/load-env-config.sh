@@ -8,7 +8,21 @@
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKETCHYBAR_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$SKETCHYBAR_DIR/.env"
+
+# Try multiple locations to find .env file
+ENV_FILE=""
+for possible_location in \
+    "$HOME/dotfiles/.env" \
+    "$HOME/repos/02_personal/dotfiles/.env" \
+    "$HOME/.config/sketchybar/../../.env" \
+    "$(dirname "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")")")/../../.env"
+do
+    if [[ -f "$possible_location" ]]; then
+        ENV_FILE="$possible_location"
+        break
+    fi
+done
+
 LOG_DIR="$SKETCHYBAR_DIR/logs"
 LOG_FILE="$LOG_DIR/environment-loader.log"
 DETECT_DISPLAY_SCRIPT="$SCRIPT_DIR/detect-display-mode.sh"
