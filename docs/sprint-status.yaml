@@ -1,0 +1,59 @@
+# generated: 2025-10-28
+# project: dotfiles
+# project_key: dotfiles
+# tracking_system: file-system
+# story_location: {project-root}/docs/stories
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic exists in epic file but not contexted
+#   - contexted: Epic tech context created (required before drafting stories)
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - drafted: Story file created in stories folder
+#   - ready-for-dev: Draft approved and story context created
+#   - in-progress: Developer actively working on implementation
+#   - review: Under SM review (via review-story workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - completed: Retrospective has been done
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epics should be 'contexted' before stories can be 'drafted'
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically drafts next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', SM reviews, then Dev moves to 'done'
+
+generated: 2025-10-28
+project: dotfiles
+project_key: dotfiles
+tracking_system: file-system
+story_location: "{project-root}/docs/stories"
+
+development_status:
+  # Epic 1: Environment Configuration
+  epic-1: backlog
+  1-1-create-env-configuration-structure: done
+  1-2-create-environment-specific-color-files: done
+  1-3-implement-display-mode-detection-helper: done
+  1-4-create-environment-configuration-loader: done
+  1-5-modify-sketchybar-variants-for-dynamic-padding: done
+  1-6-integrate-environment-loader-at-startup: done
+  1-7-implement-display-change-event-subscription: done
+  epic-1-retrospective: optional
+
+  # Epic 2: Calendar Automation
+  epic-2: backlog
+  2-1-consolidate-calendar-scripts-into-repository: backlog
+  2-2-enhance-sync-script-with-stale-event-cleanup: backlog
+  2-3-read-calendar-urls-from-env-configuration: backlog
+  2-4-implement-automatic-periodic-sync-via-launchagent: backlog
+  2-5-add-comprehensive-error-handling-and-logging: backlog
+  2-6-update-meeting-widget-for-reliable-display: backlog
+  2-7-end-to-end-testing-and-documentation: backlog
+  epic-2-retrospective: optional
