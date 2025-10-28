@@ -12,6 +12,7 @@ cask "hammerspoon"                  # Automation and scripting
 cask "karabiner-elements"          # Keyboard customization
 cask "raycast"                     # Launcher and productivity tool
 cask "obsidian"                    # Note-taking application
+cask "betterdisplay"                # Display management tool
 
 # Development tools and terminals
 cask "warp"                        # Modern terminal with AI features
