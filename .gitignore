@@ -59,6 +59,5 @@ config/sketchybar/logs/
 
 # BMAD generated documentation
 BMAD*
-docs/
 *.context.xml
 test_env_config.py
