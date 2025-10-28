@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Source colors
-source "$HOME/.config/sketchybar/colors.sh"
+# Source environment-specific colors (not hardcoded colors.sh)
+source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
 # The workspace ID passed as argument
 WORKSPACE_ID="${NAME#space.}"
@@ -16,8 +16,8 @@ fi
 if [ "$WORKSPACE_ID" = "$CURRENT_WORKSPACE" ]; then
     ${BAR_NAME:-sketchybar} --animate tanh 10 \
       --set $NAME \
-      label.color=$BLACK \
-      background.color=$GREEN
+      label.color=$WHITE \
+      background.color=$YELLOW
 else
     ${BAR_NAME:-sketchybar} --animate tanh 10 \
       --set $NAME \

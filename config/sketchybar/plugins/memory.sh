@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$HOME/.config/sketchybar/colors.sh"
+source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
 # Get memory usage
 MEMORY_PRESSURE=$(memory_pressure | grep "System-wide memory free percentage" | awk '{print $5}' | sed 's/%//')

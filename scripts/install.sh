@@ -119,16 +119,49 @@ main() {
         "$DOTFILES_DIR/config/khal" \
         "$HOME/.config/khal" \
         "Khal calendar config"
-    
-    
+
+
+    # Load environment configuration for Sketchybar
+    log "Loading environment configuration..."
+    local loader_script="$DOTFILES_DIR/config/sketchybar/helpers/load-env-config.sh"
+
+    # Ensure loader script is executable
+    if [[ -f "$loader_script" ]]; then
+        chmod +x "$loader_script" 2>/dev/null || true
+
+        # Run environment loader
+        if bash "$loader_script"; then
+            log "✓ Environment configuration loaded successfully"
+        else
+            warn "Environment loader failed, using defaults"
+        fi
+    else
+        warn "Environment loader not found at $loader_script"
+        warn "Sketchybar will use default configuration"
+    fi
+
+    # Restart Sketchybar with new configuration
+    log "Restarting Sketchybar with environment configuration..."
+    if command -v brew &> /dev/null; then
+        if brew services restart sketchybar 2>/dev/null; then
+            log "✓ Sketchybar restarted successfully"
+        else
+            warn "Failed to restart Sketchybar service"
+            log "You may need to start it manually: brew services start sketchybar"
+        fi
+    else
+        warn "Homebrew not found, cannot restart Sketchybar automatically"
+        log "Please start Sketchybar manually"
+    fi
+
     log ""
     log "🎉 Dotfiles installation completed successfully!"
     log ""
     log "Next steps:"
     log "1. Restart any running applications to pick up new configs"
     log "2. Launch AeroSpace: open -a AeroSpace"
-    log "3. Start Sketchybar: brew services start sketchybar"
-    log "4. Reload Hammerspoon config if it's already running"
+    log "3. Reload Hammerspoon config if it's already running"
+    log "4. Check Sketchybar logs if issues occur: tail -f ~/Library/Logs/sketchybar/sketchybar.log"
     log ""
 }
 

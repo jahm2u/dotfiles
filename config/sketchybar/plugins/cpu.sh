@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$HOME/.config/sketchybar/colors.sh"
+source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
 # Get CPU usage percentage (consolidated for better performance)
 CPU_USAGE=$(top -l 1 | awk '/CPU usage/ {print substr($3, 1, length($3)-1)}')

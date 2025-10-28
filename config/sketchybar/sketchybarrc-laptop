@@ -5,20 +5,23 @@ FONT_FACE="JetBrainsMono Nerd Font"
 PLUGIN_DIR="$HOME/.config/sketchybar/plugins-laptop"
 PLUGIN_SHARED_DIR="$HOME/.config/sketchybar/plugins"
 
-# Source colors
-source "$HOME/.config/sketchybar/colors.sh"
+# Source environment-specific colors
+source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
 
-# Always use 230px notch width
-NOTCH_WIDTH=230
+# Configurable notch width (default: 230px)
+NOTCH_WIDTH=${NOTCH_WIDTH:-230}
+
+# Configurable padding (default: 23px for laptop mode)
+PADDING=${PADDING:-23}
 
 sketchybar --bar \
     height=32 \
     color=$BAR_COLOR \
     margin=0 \
     sticky=on \
-    padding_left=23 \
-    padding_right=23 \
+    padding_left=$PADDING \
+    padding_right=$PADDING \
     notch_width=$NOTCH_WIDTH \
     display=all
 
@@ -78,7 +81,7 @@ sketchybar --add item front_app left \
     icon.padding_left=7 \
     icon.padding_right=7 \
     icon.y_offset=1 \
-    icon.color=$BLACK \
+    icon.color=$WHITE \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/front_app.sh" \
     --add item front_app.separator left \
@@ -119,14 +122,14 @@ sketchybar --add item todoist_spacer q \
 # Todoist highest priority task - positioned left of notch
 sketchybar --add item todoist q \
     --set todoist \
-    background.color=$YELLOW \
+    background.color=$BLUE \
     background.padding_left=0 \
     background.padding_right=0 \
     icon=󰃯 \
     icon.padding_left=8 \
     icon.padding_right=8 \
     icon.y_offset=1 \
-    icon.color=$BLACK \
+    icon.color=$WHITE \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/todoist.sh" \
     click_script="open -a Todoist" \
@@ -136,7 +139,7 @@ sketchybar --add item todoist q \
     background.color=$TRANSPARENT \
     background.padding_left=-3 \
     icon= \
-    icon.color=$YELLOW \
+    icon.color=$BLUE \
     icon.font="$FONT_FACE:Bold:20.0" \
     icon.padding_left=0 \
     icon.padding_right=0 \
@@ -171,14 +174,14 @@ sketchybar --add item meeting_spacer e \
 # Next meeting countdown - positioned right of notch
 sketchybar --add item meeting e \
     --set meeting \
-    background.color=$PEACH \
+    background.color=$BLUE \
     background.padding_left=0 \
     background.padding_right=0 \
     icon=󰃭 \
     icon.padding_left=8 \
     icon.padding_right=8 \
     icon.y_offset=1 \
-    icon.color=$BLACK \
+    icon.color=$WHITE \
     label.drawing=no \
     update_freq=60 \
     script="$PLUGIN_SHARED_DIR/meeting.sh" \
@@ -188,7 +191,7 @@ sketchybar --add item meeting e \
     background.color=$TRANSPARENT \
     background.padding_left=-3 \
     icon= \
-    icon.color=$PEACH \
+    icon.color=$BLUE \
     icon.font="$FONT_FACE:Bold:20.0" \
     icon.padding_left=0 \
     icon.padding_right=0 \
@@ -212,7 +215,7 @@ sketchybar --add bracket meeting_bracket \
 
 sketchybar --add item week_num right \
     --set week_num \
-    background.color=$GREEN \
+    background.color=$YELLOW \
     background.padding_left=0 \
     background.padding_right=0 \
     icon.drawing=off \
@@ -229,7 +232,7 @@ sketchybar --add item week_num right \
     background.color=$TRANSPARENT \
     background.padding_left=-3 \
     icon= \
-    icon.color=$GREEN \
+    icon.color=$YELLOW \
     icon.font="$FONT_FACE:Bold:20.0" \
     icon.padding_left=0 \
     icon.padding_right=0 \
@@ -262,7 +265,7 @@ sketchybar --add item battery right \
 
 sketchybar --add item volume right \
     --set volume \
-    icon.color=$PEACH \
+    icon.color=$GREEN \
     label.drawing=true \
     script="$PLUGIN_SHARED_DIR/volume.sh" \
     --subscribe volume volume_change
@@ -270,7 +273,7 @@ sketchybar --add item volume right \
 sketchybar --add item cpu right \
     --set cpu \
     icon="CPU" \
-    icon.color=$TEAL \
+    icon.color=$GREEN \
     icon.font="$FONT_FACE:Bold:10.0" \
     icon.y_offset=0 \
     label.drawing=true \
@@ -280,7 +283,7 @@ sketchybar --add item cpu right \
 sketchybar --add item memory right \
     --set memory \
     icon="RAM" \
-    icon.color=$YELLOW \
+    icon.color=$GREEN \
     icon.font="$FONT_FACE:Bold:10.0" \
     icon.y_offset=0 \
     label.drawing=true \
@@ -290,6 +293,16 @@ sketchybar --add item memory right \
 
 # osascript -e 'quit app "Rectangle"'
 # open -a Rectangle
+
+##### Display Change Event Handler #####
+# Subscribe to display_change events to automatically adjust padding
+# when connecting/disconnecting external monitors
+sketchybar --add event display_change_event system \
+    --add item display_change_handler left \
+    --set display_change_handler \
+    drawing=off \
+    script="$PLUGIN_SHARED_DIR/handle-display-change.sh" \
+    --subscribe display_change_handler display_change
 
 ##### Finalizing Setup #####
 # Initialize aerospace workspace highlighting

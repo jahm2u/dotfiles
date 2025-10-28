@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Source colors
-source "$HOME/.config/sketchybar/colors.sh"
+source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
 # Update all aerospace workspace indicators
 # This script is called by aerospace's exec-on-workspace-change
