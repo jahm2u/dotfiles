@@ -86,14 +86,32 @@ preflight_checks() {
         log "✓ .env file exists"
         ((checks_passed++))
 
-        # Check for calendar URLs
-        if grep -q "ICAL_URLS" "$DOTFILES_DIR/.env" 2>/dev/null; then
+        # Check for calendar URLs (both old and new format)
+        if grep -qE "CALENDAR_URL_|ICAL_URLS" "$DOTFILES_DIR/.env" 2>/dev/null; then
             log "  ↳ Calendar URLs configured"
         else
-            warn "  ↳ No ICAL_URLS found in .env (calendar sync will fail)"
+            warn "  ↳ No CALENDAR_URL_* variables found in .env"
+            warn "  ↳ Calendar sync requires at least one CALENDAR_URL_NAME variable"
+            warn "  ↳ See .env.example for configuration format"
         fi
     else
-        warn "✗ .env file not found (copy from .env.example)"
+        warn "✗ .env file not found"
+        if [[ -f "$DOTFILES_DIR/.env.example" ]]; then
+            echo ""
+            if ask_user "Create .env file from .env.example now?"; then
+                if cp "$DOTFILES_DIR/.env.example" "$DOTFILES_DIR/.env"; then
+                    log "✓ Created .env from .env.example"
+                    log "⚠️  IMPORTANT: Edit .env and configure your CALENDAR_URL_* variables"
+                    ((checks_passed++))
+                else
+                    error "✗ Failed to create .env file"
+                fi
+            else
+                warn "Skipping .env creation - you'll need to create it manually"
+            fi
+        else
+            error ".env.example not found - cannot auto-create .env"
+        fi
     fi
 
     # Check existing symlinks
@@ -105,6 +123,7 @@ preflight_checks() {
         "$HOME/.config/karabiner:Karabiner"
         "$HOME/.hammerspoon:Hammerspoon"
         "$HOME/.claude:Claude"
+        "$HOME/.config/raycast:Raycast"
         "$HOME/.config/khal:Khal"
     )
 
@@ -125,27 +144,68 @@ preflight_checks() {
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         warn "Missing dependencies: ${missing_deps[*]}"
         echo ""
-        log "To install missing dependencies:"
-        for dep in "${missing_deps[@]}"; do
-            case "$dep" in
-                brew)
-                    log "  Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-                    ;;
-                khal)
-                    log "  khal: brew install khal"
-                    ;;
-                sketchybar)
-                    log "  Sketchybar: brew install felixkratz/formulae/sketchybar"
-                    ;;
-            esac
-        done
+
+        # Only offer auto-install if brew is available
+        if command -v brew &> /dev/null; then
+            if ask_user "Install missing dependencies automatically?"; then
+                log "Installing missing dependencies..."
+                for dep in "${missing_deps[@]}"; do
+                    case "$dep" in
+                        khal)
+                            log "Installing khal..."
+                            if brew install khal; then
+                                log "✓ khal installed successfully"
+                            else
+                                error "✗ Failed to install khal"
+                            fi
+                            ;;
+                        sketchybar)
+                            log "Installing Sketchybar..."
+                            if brew install felixkratz/formulae/sketchybar; then
+                                log "✓ Sketchybar installed successfully"
+                            else
+                                error "✗ Failed to install Sketchybar"
+                            fi
+                            ;;
+                    esac
+                done
+            else
+                log "Skipping automatic installation"
+                log "Manual installation commands:"
+                for dep in "${missing_deps[@]}"; do
+                    case "$dep" in
+                        khal)
+                            log "  khal: brew install khal"
+                            ;;
+                        sketchybar)
+                            log "  Sketchybar: brew install felixkratz/formulae/sketchybar"
+                            ;;
+                    esac
+                done
+            fi
+        else
+            log "To install missing dependencies:"
+            for dep in "${missing_deps[@]}"; do
+                case "$dep" in
+                    brew)
+                        log "  Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                        ;;
+                    khal)
+                        log "  khal: brew install khal"
+                        ;;
+                    sketchybar)
+                        log "  Sketchybar: brew install felixkratz/formulae/sketchybar"
+                        ;;
+                esac
+            done
+        fi
     fi
 
     echo ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+    if [[ ${#missing_deps[@]} -gt 0 ]] && ! command -v brew &> /dev/null; then
         if ask_user "Continue installation despite missing dependencies?"; then
             return 0
         else
@@ -174,6 +234,7 @@ validate_installation() {
         "$HOME/.config/karabiner|$DOTFILES_DIR/config/karabiner|Karabiner"
         "$HOME/.hammerspoon|$DOTFILES_DIR/config/hammerspoon|Hammerspoon"
         "$HOME/.claude|$DOTFILES_DIR/config/claude|Claude"
+        "$HOME/.config/raycast|$DOTFILES_DIR/config/raycast|Raycast"
         "$HOME/.config/khal|$DOTFILES_DIR/config/khal|Khal"
     )
 
@@ -333,6 +394,66 @@ create_symlink() {
     fi
 }
 
+initialize_calendar_infrastructure() {
+    log "Initializing calendar automation infrastructure"
+
+    # Create required directories
+    local dirs=(
+        "$HOME/.local/share/khal"
+        "$HOME/.local/share/khal/calendars"
+        "$HOME/.cache/sketchybar"
+        "$HOME/.config/sketchybar/logs"
+    )
+
+    for dir in "${dirs[@]}"; do
+        if [[ ! -d "$dir" ]]; then
+            if mkdir -p "$dir" 2>/dev/null; then
+                log "✓ Created directory: $dir"
+            else
+                error "✗ Failed to create directory: $dir"
+                return 1
+            fi
+        else
+            log "✓ Directory exists: $dir"
+        fi
+    done
+
+    # Make helper scripts executable
+    local scripts=(
+        "$HOME/.config/sketchybar/helpers/sync-calendars.sh"
+        "$HOME/.config/sketchybar/helpers/trigger-calendar-sync.sh"
+        "$HOME/.config/sketchybar/helpers/load-env-config.sh"
+    )
+
+    for script in "${scripts[@]}"; do
+        if [[ -f "$script" ]]; then
+            if chmod +x "$script" 2>/dev/null; then
+                log "✓ Made executable: $(basename "$script")"
+            else
+                warn "Failed to set executable: $(basename "$script")"
+            fi
+        else
+            warn "Script not found: $(basename "$script")"
+        fi
+    done
+
+    # Verify khal can initialize its database
+    if command -v khal &>/dev/null; then
+        log "Testing khal database initialization..."
+        if khal list today 1d &>/dev/null; then
+            log "✓ khal database initialized successfully"
+        else
+            warn "khal database test failed (non-blocking)"
+            warn "This is normal for first-time setup - will work after first sync"
+        fi
+    else
+        warn "khal not installed - calendar sync will not work"
+        warn "Install with: brew install khal"
+    fi
+
+    log "✓ Calendar infrastructure initialization complete"
+}
+
 install_calendar_launchagent() {
     local label="com.user.calendar-sync"
     local plist_source="$DOTFILES_DIR/config/sketchybar/launchagents/$label.plist"
@@ -436,18 +557,16 @@ main() {
         "$DOTFILES_DIR/config/raycast" \
         "$HOME/.config/raycast" \
         "Raycast launcher config"
-    
-    # Obsidian (to iCloud location)
-    create_symlink \
-        "$DOTFILES_DIR/config/obsidian" \
-        "$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/T/.obsidian" \
-        "Obsidian vault config"
-    
+
     # Khal calendar
     create_symlink \
         "$DOTFILES_DIR/config/khal" \
         "$HOME/.config/khal" \
         "Khal calendar config"
+
+    # Initialize calendar automation infrastructure
+    log ""
+    initialize_calendar_infrastructure
 
     # Calendar sync LaunchAgent (optional)
     log ""
