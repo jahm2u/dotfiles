@@ -1,5 +1,31 @@
 #!/usr/bin/env bash
 
+# Completion messages for when all tasks are done (Story 3.1)
+COMPLETION_MESSAGES=(
+    "All done! 🎉"
+    "Inbox zero! ✨"
+    "Tasks cleared! 🏆"
+    "You crushed it! 💪"
+    "Nothing left! 🌟"
+    "Completed all! ✅"
+    "Todo-free! 🎊"
+    "Mission done! 🚀"
+    "List empty! 🎯"
+    "Nailed it! 🔨"
+    "Finished! 🏁"
+    "Victory! 👑"
+    "Conquered! ⚔️"
+    "Perfect! 💎"
+    "Champion! 🥇"
+)
+
+# Function to get random completion message
+get_random_completion_message() {
+    local count=${#COMPLETION_MESSAGES[@]}
+    local index=$((RANDOM % count))
+    echo "${COMPLETION_MESSAGES[$index]}"
+}
+
 # Source the .env file to get TODOIST_API_TOKEN
 # Try multiple locations to find .env file
 ENV_FILE=""
@@ -26,14 +52,29 @@ fi
 
 # Fetch tasks from Todoist API
 # Get active tasks sorted by priority (4=urgent, 3=high, 2=medium, 1=normal)
-RESPONSE=$(curl -s -X GET \
+RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
     "https://api.todoist.com/rest/v2/tasks?filter=today%20%7C%20overdue" \
     -H "Authorization: Bearer $TODOIST_API_TOKEN")
 
-if [[ -z "$RESPONSE" ]] || [[ "$RESPONSE" == "[]" ]]; then
-    sketchybar --set "${NAME}.name" label="No tasks today"
+# Extract HTTP status code and response body
+HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+
+# Check if API call was successful
+if [[ "$HTTP_CODE" != "200" ]]; then
+    sketchybar --set "${NAME}.name" label="API Error"
     exit 0
 fi
+
+# If no tasks and API succeeded, show random completion message
+if [[ -z "$RESPONSE_BODY" ]] || [[ "$RESPONSE_BODY" == "[]" ]]; then
+    COMPLETION_MSG=$(get_random_completion_message)
+    sketchybar --set "${NAME}.name" label="$COMPLETION_MSG"
+    exit 0
+fi
+
+# Update RESPONSE to use RESPONSE_BODY for the rest of the script
+RESPONSE="$RESPONSE_BODY"
 
 # Parse the highest priority task
 # Todoist priority: 4=p1 (highest), 3=p2, 2=p3, 1=p4 (lowest)

@@ -19,6 +19,89 @@ SYNC_STATUS_FILE="$CACHE_DIR/last_sync_status"
 # Create cache directory if it doesn't exist
 mkdir -p "$CACHE_DIR"
 
+# Load environment colors for icon blinking
+source "$HOME/.config/sketchybar/helpers/source-colors.sh"
+
+# Random message arrays for no meetings
+END_OF_DAY_MESSAGES=(
+    "All clear! 🌅"
+    "Day complete! ✨"
+    "You're done! 🎉"
+    "Time to unwind 😌"
+    "Meetings wrapped! 🎁"
+    "Free at last! 🕊️"
+    "Calendar clear! ☀️"
+    "Nothing left! 🏖️"
+    "All finished! 🎊"
+    "Take a break! ☕"
+    "Day's done! 🌙"
+    "Freedom! 🦅"
+    "Rest time! 💤"
+    "Clock out! ⏰"
+    "Relax now! 🧘"
+)
+
+FREE_DAY_MESSAGES=(
+    "No meetings! 🎨"
+    "Free day! 🌈"
+    "Open schedule! 📖"
+    "Your time! ⏳"
+    "Zero meetings! 🎯"
+    "All yours! 🎪"
+    "Unscheduled! 🗓️"
+    "Meeting-free! 🦋"
+    "No calls! 📵"
+    "Empty slate! 📝"
+    "Flexible day! 🤸"
+    "Own your time! ⚡"
+    "Interruption-free! 🧩"
+    "Full control! 🎮"
+    "No agenda! 🌊"
+)
+
+# Function to get random message from array
+get_random_message() {
+    local -n array=$1
+    local count=${#array[@]}
+    local index=$((RANDOM % count))
+    echo "${array[$index]}"
+}
+
+# Function to check if there were any meetings today
+check_meetings_today() {
+    local today_start=$(date -j -f "%Y-%m-%d %H:%M:%S" "$(date +%Y-%m-%d) 00:00:00" "+%s" 2>/dev/null)
+    local now=$(date +%s)
+
+    # Check khal for any meetings that started today
+    local today_events=$(khal list today now --format "{title}|{start-time}|{start-date}" 2>/dev/null | tail -n +2 || echo "")
+
+    if [[ -n "$today_events" ]]; then
+        echo "had_meetings"
+    else
+        echo "no_meetings"
+    fi
+}
+
+# Function to determine icon color based on time until meeting
+get_icon_blink_state() {
+    local time_until=$1
+    local current_second=$(date +%s)
+
+    if [[ $time_until -le 600 ]]; then
+        # ≤10 min: heartbeat (fast blink = 2 blinks per second)
+        # Toggle every 0.5 seconds (even/odd second)
+        local cycle=$((current_second % 2))
+        if [[ $cycle -eq 0 ]]; then
+            echo "on"
+        else
+            echo "off"
+        fi
+    else
+        # >10 min: no blinking, static display
+        echo "static"
+    fi
+}
+
 # Check last sync status
 check_sync_status() {
     [[ ! -f "$SYNC_STATUS_FILE" ]] && echo "unknown" && return
@@ -121,8 +204,13 @@ if [[ "$EVENTS" =~ "No calendars" ]]; then
     sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
     (umask 077; echo "$LABEL" > "$MEETING_DATA_CACHE")
 elif [[ -z "$EVENTS" ]] || [[ "$EVENTS" =~ "No events" ]]; then
-    # No upcoming meetings in next 7 days
-    LABEL="No meetings"
+    # No upcoming meetings in next 7 days - show random message
+    MEETING_STATE=$(check_meetings_today)
+    if [[ "$MEETING_STATE" == "had_meetings" ]]; then
+        LABEL=$(get_random_message END_OF_DAY_MESSAGES)
+    else
+        LABEL=$(get_random_message FREE_DAY_MESSAGES)
+    fi
     sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
     (umask 077; echo "$LABEL" > "$MEETING_DATA_CACHE")
 elif [ -n "$EVENTS" ]; then
@@ -197,15 +285,32 @@ elif [ -n "$EVENTS" ]; then
                 TIME_STR="${MINUTES}m"
             fi
 
-            # Icon based on urgency (< 15 minutes)
-            if [[ $DIFF -le 900 ]]; then
-                ICON="󰁅"  # Urgent
+            # Icon based on urgency with blinking effect (background blinks, icon inverts)
+            BLINK_STATE=$(get_icon_blink_state $DIFF)
+            ICON_BASE="󰃭"  # Calendar icon
+
+            # Apply background color based on blink state, invert icon color
+            if [[ $DIFF -le 600 ]]; then
+                # ≤10 min: heartbeat blinking
+                if [[ "$BLINK_STATE" == "on" ]]; then
+                    MEETING_BG_COLOR="$YELLOW_THRESHOLD"
+                    MEETING_ICON_COLOR="$BLACK"  # Black icon on yellow background
+                else
+                    MEETING_BG_COLOR="$BLUE"  # Default background
+                    MEETING_ICON_COLOR="$WHITE"  # White icon on default background
+                fi
             else
-                ICON="󰃭"  # Normal
+                # >10 min: static display (no blinking)
+                MEETING_BG_COLOR="$BLUE"  # Default background
+                MEETING_ICON_COLOR="$WHITE"  # White icon on default background
             fi
 
             LABEL="$TITLE in $TIME_STR"
-            sketchybar --set "$NAME" icon="$ICON" --set "${NAME}.name" label="$LABEL"
+            sketchybar --set "$NAME" \
+                icon="$ICON_BASE" \
+                icon.color="$MEETING_ICON_COLOR" \
+                background.color="$MEETING_BG_COLOR" \
+                --set "${NAME}.name" label="$LABEL"
             # Cache this successful display
             (umask 077; echo "$LABEL" > "$MEETING_DATA_CACHE")
         elif [[ -n "$MEETING_TIMESTAMP" ]] && [[ $((CURRENT_TIMESTAMP - MEETING_TIMESTAMP)) -le 600 ]]; then
@@ -216,13 +321,24 @@ elif [ -n "$EVENTS" ]; then
             sketchybar --set "$NAME" icon="$ICON" --set "${NAME}.name" label="$LABEL"
             (umask 077; echo "$LABEL" > "$MEETING_DATA_CACHE")
         else
-            # Fallback if timestamp calculation failed
-            LABEL="No meetings"
+            # Fallback if timestamp calculation failed - show random message
+            MEETING_STATE=$(check_meetings_today)
+            if [[ "$MEETING_STATE" == "had_meetings" ]]; then
+                LABEL=$(get_random_message END_OF_DAY_MESSAGES)
+            else
+                LABEL=$(get_random_message FREE_DAY_MESSAGES)
+            fi
             sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
             (umask 077; echo "$LABEL" > "$MEETING_DATA_CACHE")
         fi
     else
-        LABEL="No meetings"
+        # No future meetings - show random message
+        MEETING_STATE=$(check_meetings_today)
+        if [[ "$MEETING_STATE" == "had_meetings" ]]; then
+            LABEL=$(get_random_message END_OF_DAY_MESSAGES)
+        else
+            LABEL=$(get_random_message FREE_DAY_MESSAGES)
+        fi
         sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
         (umask 077; echo "$LABEL" > "$MEETING_DATA_CACHE")
     fi

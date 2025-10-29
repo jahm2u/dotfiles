@@ -157,7 +157,7 @@ sketchybar --add bracket datetime_bracket \
 
 sketchybar --add item volume right \
     --set volume \
-    icon.color=$PEACH \
+    icon.color=$WHITE \
     label.drawing=true \
     script="$PLUGIN_SHARED_DIR/volume.sh" \
     --subscribe volume volume_change

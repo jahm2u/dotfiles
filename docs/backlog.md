@@ -10,6 +10,7 @@ Routing guidance:
 
 | Date | Story | Epic | Type | Severity | Owner | Status | Notes |
 | ---- | ----- | ---- | ---- | -------- | ----- | ------ | ----- |
+| 2025-10-29 | 3.1 | 3 | Enhancement | MEDIUM | TBD | Ready | Widget Experience Enhancement - Meeting icon blinking (breathing/heartbeat), RAM/CPU color thresholds, 15-sec countdown updates, randomized empty state messages. See: stories/3-1-widget-enhancements-and-ux-improvements.md |
 | 2025-10-29 | 2.4 | 2 | Bug | MEDIUM | TBD | Open | Fix khal PATH in LaunchAgent context - Add EnvironmentVariables key to plist or use absolute path to khal binary. Stale event cleanup currently failing. Related files: sync-calendars.sh:208-212, com.user.calendar-sync.plist |
 | 2025-10-29 | 2.4 | 2 | TechDebt | LOW | TBD | Open | Simplify .env discovery logic - Standardize on single location or environment variable. Current implementation tries 4 hardcoded paths. Related: sync-calendars.sh:28-40 |
 | 2025-10-29 | 2.4 | 2 | Enhancement | LOW | TBD | Open | Implement log rotation for high-frequency scripts - Add rotation to display-detection.sh and environment-loader.sh (currently 1.7MB and 1.5MB). Configure max size 1MB, retention 10 files per architecture.md |

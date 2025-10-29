@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 
 # Auto-generated configuration switcher
-# Current config: desktop
-# Generated: Fri Sep 19 11:55:07 -03 2025
+# Current config: laptop
+# Generated: Wed Oct 29 18:48:09 -03 2025
 
-SKETCHYBAR_CONFIG="$HOME/.config/sketchybar"
-source "$SKETCHYBAR_CONFIG/sketchybarrc-desktop"
+SKETCHYBAR_CONFIG="/Users/v/.config/sketchybar"
+source "$SKETCHYBAR_CONFIG/sketchybarrc-laptop"

@@ -318,6 +318,40 @@ So that I can troubleshoot issues and understand the system.
 
 ---
 
+## Epic 3: Widget Experience Enhancement
+
+### Expanded Goal
+
+This epic enhances widget user experience by adding engaging visual feedback, color-coded system alerts, improved time accuracy, and delightful randomized messages. The meeting widget icon will provide urgency cues through animated blinking (breathing when far, heartbeat when close). RAM/CPU widgets will use color thresholds (yellow at 75%, red at 90%) with environment-specific color palettes. Meeting countdown updates will increase to 15-second intervals for better accuracy. Both meeting and Todoist widgets will display randomized encouraging messages when empty, adding personality and reducing monitoring fatigue. These enhancements build on Epic 2's calendar automation to create a more informative and delightful status bar experience.
+
+### Story Breakdown
+
+**Story 3.1: Widget Enhancements and User Experience Improvements**
+
+As a macOS user with Sketchybar widgets,
+I want engaging visual feedback and delightful messages from my widgets,
+So that my status bar is more informative, less monotonous, and provides better urgency cues.
+
+**Acceptance Criteria:**
+1. Meeting widget icon blinks/breathes using yellow color (slow fade >15min, fast heartbeat ≤15min)
+2. RAM widget uses color thresholds: default <75%, yellow 75-89%, red ≥90%
+3. CPU widget uses color thresholds: default <75%, yellow 75-89%, red ≥90%
+4. Threshold colors are environment-specific (Personal: pastel, IPM: Brazil colors)
+5. Meeting widget updates countdown every 15 seconds instead of only on calendar_synced
+6. Meeting widget displays random messages when no meetings (15+ variations for "end of day" and "free day" scenarios)
+7. Todoist widget displays random completion messages when tasks are done (15+ variations)
+8. Messages are concise (max 25 characters) and rotate randomly to avoid repetition
+9. Completion messages only show when API is successful (not on errors)
+10. Test: Verify blinking transitions at 15-minute threshold
+11. Test: Simulate high RAM/CPU and verify color changes in both environments
+12. Test: Monitor countdown updates every 15 seconds for accuracy
+13. Test: Verify message variety over 10+ restarts
+14. Test: No performance degradation with increased update frequency
+
+**Prerequisites:** Epic 1 (Environment Configuration), Epic 2 (Calendar Automation)
+
+---
+
 ## Story Guidelines Reference
 
 **Story Format:**

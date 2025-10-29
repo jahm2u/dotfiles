@@ -57,3 +57,7 @@ development_status:
   2-6-update-meeting-widget-for-reliable-display: done
   2-7-end-to-end-testing-and-documentation: done
   epic-2-retrospective: completed
+
+  # Epic 3: Widget Experience Enhancement
+  epic-3: backlog
+  3-1-widget-enhancements-and-ux-improvements: done

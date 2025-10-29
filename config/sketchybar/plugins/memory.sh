@@ -13,10 +13,10 @@ if [ -z "$MEMORY_PRESSURE" ]; then
     ACTIVE=$(echo "$VM_STAT" | grep "Pages active" | awk '{print $3}' | sed 's/\.//')
     INACTIVE=$(echo "$VM_STAT" | grep "Pages inactive" | awk '{print $3}' | sed 's/\.//')
     WIRED=$(echo "$VM_STAT" | grep "Pages wired down" | awk '{print $4}' | sed 's/\.//')
-    
+
     TOTAL_PAGES=$((FREE + ACTIVE + INACTIVE + WIRED))
     USED_PAGES=$((ACTIVE + INACTIVE + WIRED))
-    
+
     if [ "$TOTAL_PAGES" -gt 0 ]; then
         MEMORY_USAGE=$((USED_PAGES * 100 / TOTAL_PAGES))
         # Cap at 100% to handle edge cases
@@ -28,16 +28,17 @@ else
     MEMORY_USAGE=$((100 - MEMORY_PRESSURE))
 fi
 
-# Set color based on memory usage (aligned with CPU thresholds)
-if [ "$MEMORY_USAGE" -ge 80 ]; then
-    COLOR=$RED
-elif [ "$MEMORY_USAGE" -ge 60 ]; then
-    COLOR=$ORANGE
-elif [ "$MEMORY_USAGE" -ge 40 ]; then
-    COLOR=$YELLOW
+# Set color based on memory usage thresholds (Story 3.1)
+if [ "$MEMORY_USAGE" -ge 90 ]; then
+    COLOR=$RED_THRESHOLD
+elif [ "$MEMORY_USAGE" -ge 75 ]; then
+    COLOR=$YELLOW_THRESHOLD
 else
-    COLOR=$GREEN
+    COLOR=$ICON_COLOR  # Default color
 fi
 
-# Update the memory item (icon color is set in config, only update label)
-sketchybar --set "$NAME" label="${MEMORY_USAGE}%"
+# Update the memory item with dynamic colors
+sketchybar --set "$NAME" \
+    label="${MEMORY_USAGE}%" \
+    label.color="$COLOR" \
+    icon.color="$COLOR"

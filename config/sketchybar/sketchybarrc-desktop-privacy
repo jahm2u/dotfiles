@@ -6,8 +6,8 @@ FONT_FACE="JetBrainsMono Nerd Font"
 PLUGIN_DIR="$HOME/.config/sketchybar/plugins-laptop"
 PLUGIN_SHARED_DIR="$HOME/.config/sketchybar/plugins"
 
-# Source colors
-source "$HOME/.config/sketchybar/colors.sh"
+# Source environment-specific colors
+source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
 # Configurable notch width (default: 230px)
 NOTCH_WIDTH=${NOTCH_WIDTH:-230}
@@ -77,7 +77,7 @@ sketchybar --add item front_app left \
     icon.padding_left=7 \
     icon.padding_right=7 \
     icon.y_offset=1 \
-    icon.color=$BLACK \
+    icon.color=$WHITE \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/front_app.sh" \
     --add item front_app.separator left \
@@ -128,7 +128,7 @@ sketchybar --add item week_num right \
     background.color=$TRANSPARENT \
     background.padding_left=-3 \
     icon= \
-    icon.color=$GREEN \
+    icon.color=$YELLOW \
     icon.font="$FONT_FACE:Bold:20.0" \
     icon.padding_left=0 \
     icon.padding_right=0 \
@@ -162,7 +162,7 @@ sketchybar --add item battery right \
 
 sketchybar --add item volume right \
     --set volume \
-    icon.color=$PEACH \
+    icon.color=$WHITE \
     label.drawing=true \
     script="$PLUGIN_SHARED_DIR/volume.sh" \
     --subscribe volume volume_change
@@ -170,7 +170,7 @@ sketchybar --add item volume right \
 sketchybar --add item cpu right \
     --set cpu \
     icon="CPU" \
-    icon.color=$TEAL \
+    icon.color=$GREEN \
     icon.font="$FONT_FACE:Bold:10.0" \
     icon.y_offset=0 \
     label.drawing=true \
@@ -180,7 +180,7 @@ sketchybar --add item cpu right \
 sketchybar --add item memory right \
     --set memory \
     icon="RAM" \
-    icon.color=$YELLOW \
+    icon.color=$GREEN \
     icon.font="$FONT_FACE:Bold:10.0" \
     icon.y_offset=0 \
     label.drawing=true \

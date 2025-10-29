@@ -96,3 +96,7 @@ export MID_CORAL=0xfff0a4a8          # Medium coral
 export MID_MINT=0xffa8d8c8           # Medium mint
 export MID_PERIWINKLE=0xffb8c5f2     # Medium periwinkle
 export MID_ROSE=0xfff2c4d1           # Medium rose
+
+# Threshold colors for widget alerts (Brazil-toned)
+export YELLOW_THRESHOLD=0xffFEDD00   # Brazil yellow for warnings
+export RED_THRESHOLD=0xffDC143C      # Crimson for critical alerts

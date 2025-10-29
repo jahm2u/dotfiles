@@ -76,7 +76,7 @@ export APP_COLOR=$TEAL
 
 # Additional pastel variations for future widgets
 export LIGHT_PEACH=0xfff7d4b5        # Lighter peach
-export LIGHT_GREEN=0xffcae8d5        # Lighter green  
+export LIGHT_GREEN=0xffcae8d5        # Lighter green
 export LIGHT_BLUE=0xffc4d3f7         # Lighter blue
 export LIGHT_YELLOW=0xfff5f0c4       # Lighter yellow
 export LIGHT_PINK=0xfff8e1ed         # Lighter pink
@@ -91,3 +91,7 @@ export MID_CORAL=0xfff0a4a8          # Medium coral
 export MID_MINT=0xffa8d8c8           # Medium mint
 export MID_PERIWINKLE=0xffb8c5f2     # Medium periwinkle
 export MID_ROSE=0xfff2c4d1           # Medium rose
+
+# Threshold colors for widget alerts (pastel variants)
+export YELLOW_THRESHOLD=0xffFFE066   # Pastel yellow for warnings
+export RED_THRESHOLD=0xffFF6B6B      # Pastel red for critical alerts
