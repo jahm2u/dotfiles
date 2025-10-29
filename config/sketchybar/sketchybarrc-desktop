@@ -186,6 +186,7 @@ sketchybar --add item meeting e \
     update_freq=60 \
     script="$PLUGIN_SHARED_DIR/meeting.sh" \
     click_script="open -a Calendar" \
+    --subscribe meeting calendar_synced \
     --add item meeting.separator e \
     --set meeting.separator \
     background.color=$TRANSPARENT \

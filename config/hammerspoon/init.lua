@@ -640,23 +640,8 @@ hs.hotkey.bind({"ctrl", "alt", "cmd"}, "p", toggleSketchybarPrivacy)
 -- Removed automatic AeroSpace gap configuration
 -- Gaps are now managed directly in the AeroSpace config file
 
--- Auto-sync calendars every hour for Sketchybar meeting widget
-function syncCalendars()
-    local task = hs.task.new("/bin/bash", function(exitCode, stdOut, stdErr)
-        if exitCode == 0 then
-            print("Calendar sync completed successfully")
-        else
-            print("Calendar sync failed: " .. (stdErr or "unknown error"))
-        end
-    end, {"-c", "$HOME/.config/sketchybar/plugins/sync_calendars.sh 2>&1"})
-    task:start()
-end
-
--- Run calendar sync on startup
-syncCalendars()
-
--- Schedule calendar sync every hour (3600 seconds)
-calendarSyncTimer = hs.timer.doEvery(3600, syncCalendars)
+-- Removed Hammerspoon calendar sync (Story 2.1)
+-- Calendar sync is now handled via LaunchAgent calling sync-calendars.sh helper
 
 -- Audio output and volume cycling functionality
 local volumeLevels = {0, 33, 66, 100}

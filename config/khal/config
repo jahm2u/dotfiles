@@ -10,6 +10,11 @@ path = ~/.local/share/khal/calendars/fm/
 color = light green
 readonly = True
 
+[[work]]
+path = ~/.local/share/khal/calendars/work/
+color = light magenta
+readonly = False
+
 [locale]
 timeformat = %I:%M %p
 dateformat = %Y-%m-%d

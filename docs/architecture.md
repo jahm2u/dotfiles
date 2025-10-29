@@ -335,7 +335,7 @@ Sketchybar (displays in status bar)
 - `config/khal/config` - Calendar application config
 - `config/sketchybar/plugins/meeting.sh` - Meeting display plugin
 - `config/sketchybar/plugins/sync_calendars.sh` - Calendar sync script
-- `config/sketchybar/.env` - Calendar URLs (gitignored)
+- `.env` (project root) - Calendar URLs (gitignored)
 
 ## Data Flow Diagrams
 
@@ -700,7 +700,7 @@ The following architectural decisions ensure consistent implementation across al
 
 | Category | Decision | Version/Value | Affects Epics | Rationale |
 |----------|----------|---------------|---------------|-----------|
-| **Configuration** | .env file location | `config/sketchybar/.env` | Epic 1, Epic 2 | Central configuration, git-ignored for secrets |
+| **Configuration** | .env file location | `.env` (project root) | Epic 1, Epic 2 | Central configuration, git-ignored for secrets |
 | **Environment Detection** | ENV_TYPE variable | IPM \| PERSONAL | Epic 1 | Simple string comparison for env selection |
 | **Color Schemes** | Color file pattern | `colors-{ENV_TYPE}.sh` | Epic 1 | Modular, extensible, clear fallback to colors.sh |
 | **Brazil Colors** | Color values | Green: #009B3A, Yellow: #FEDD00, Blue: #002776 | Epic 1 | Official Brazil flag colors in ARGB hex format |
@@ -723,7 +723,7 @@ The following architectural decisions ensure consistent implementation across al
 
 | Story | Component | File/Location |
 |-------|-----------|---------------|
-| 1.1 - .env Configuration | Configuration file | `config/sketchybar/.env`, `.env.example` |
+| 1.1 - .env Configuration | Configuration file | `.env` (project root), `.env.example` |
 | 1.2 - Color Files | Color schemes | `config/sketchybar/colors-ipm.sh`, `colors-personal.sh` |
 | 1.3 - Display Detection | Helper script | `config/sketchybar/helpers/detect-display-mode.sh` |
 | 1.4 - Environment Loader | Helper script | `config/sketchybar/helpers/load-env-config.sh` |
@@ -737,7 +737,7 @@ The following architectural decisions ensure consistent implementation across al
 |-------|-----------|---------------|
 | 2.1 - Script Consolidation | Helper script | `config/sketchybar/helpers/sync-calendars.sh` |
 | 2.2 - Stale Cleanup | Sync script logic | Part of `sync-calendars.sh` |
-| 2.3 - .env Calendar URLs | Configuration | `config/sketchybar/.env` (CALENDAR_URL_*) |
+| 2.3 - .env Calendar URLs | Configuration | `.env` (project root, CALENDAR_URL_*) |
 | 2.4 - LaunchAgent | macOS LaunchAgent | `~/Library/LaunchAgents/com.user.calendar-sync.plist` |
 | 2.5 - Error Handling | Logging system | `config/sketchybar/logs/calendar-sync.log` |
 | 2.6 - Widget Updates | Plugin enhancement | `config/sketchybar/plugins/meeting.sh` |
@@ -815,7 +815,7 @@ All new scripts must follow this structure:
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${SCRIPT_DIR}/../.env"
+ENV_FILE="${SCRIPT_DIR}/../../.env"  # Project root .env
 LOG_DIR="${SCRIPT_DIR}/../logs"
 LOG_FILE="${LOG_DIR}/{script-name}.log"
 
