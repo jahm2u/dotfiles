@@ -61,3 +61,7 @@ config/sketchybar/logs/
 BMAD*
 *.context.xml
 test_env_config.py
+
+# Claude Code history and settings (contains personal info)
+config/claude/history.jsonl
+config/claude/settings.json
