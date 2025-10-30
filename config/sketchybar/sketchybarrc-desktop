@@ -183,7 +183,7 @@ sketchybar --add item meeting e \
     icon.y_offset=1 \
     icon.color=$WHITE \
     label.drawing=no \
-    update_freq=0.5 \
+    update_freq=1 \
     script="$PLUGIN_SHARED_DIR/meeting.sh" \
     click_script="open -a Calendar" \
     --subscribe meeting calendar_synced \
