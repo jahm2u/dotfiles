@@ -15,13 +15,9 @@
 #   - Sketchybar event system: Listens for calendar_synced events
 
 CACHE_DIR="$HOME/.cache/sketchybar"
-MEETING_CACHE="$CACHE_DIR/meeting_cache"
-MEETING_DATA_CACHE="$CACHE_DIR/meeting_data_cache"
-MEETING_TIMESTAMP_CACHE="$CACHE_DIR/meeting_timestamp_cache"
-MEETING_METADATA_CACHE="$CACHE_DIR/meeting_metadata_cache"
-CALENDAR_HASH_FILE="$CACHE_DIR/calendar_hash"
+EVENTS_LIST_CACHE="$CACHE_DIR/meeting_events_list"
 SYNC_STATUS_FILE="$CACHE_DIR/last_sync_status"
-LAST_FETCH_FILE="$CACHE_DIR/last_khal_fetch"
+CALENDAR_HASH_FILE="$CACHE_DIR/calendar_hash"
 
 # Create cache directory if it doesn't exist
 mkdir -p "$CACHE_DIR"
@@ -30,22 +26,19 @@ mkdir -p "$CACHE_DIR"
 source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
 # Determine if we should fetch fresh data from khal
+# ONLY fetch on specific events to avoid querying khal every second
 # Fetch when:
 # - calendar_synced event (fires every 15min from LaunchAgent)
 # - system_woke event (computer woke from sleep)
-# - No cached data exists (first run)
 should_fetch_data() {
     case "$SENDER" in
         calendar_synced|system_woke)
             return 0  # Always fetch on these events
             ;;
         *)
-            # For all other triggers (routine display updates), check if cache exists
-            if [[ -f "$MEETING_TIMESTAMP_CACHE" && -f "$MEETING_METADATA_CACHE" ]]; then
-                return 1  # Cache exists, skip fetch
-            else
-                return 0  # No cache, must fetch (first run)
-            fi
+            # For all other triggers (routine display updates), NEVER fetch
+            # This prevents querying khal every second
+            return 1  # Skip fetch, use cached data or show placeholder
             ;;
     esac
 }
@@ -131,97 +124,115 @@ get_icon_blink_state() {
     fi
 }
 
-# Fast display update function - uses cached meeting data
-# This runs 2x per second and does NOT query khal
+# Fast display update function - reads cached event list and finds next meeting
+# This runs every second and does NOT query khal
 update_display_from_cache() {
-    # Check if we have cached meeting data
-    if [[ ! -f "$MEETING_TIMESTAMP_CACHE" ]] || [[ ! -f "$MEETING_METADATA_CACHE" ]]; then
-        # No cache, show placeholder and trigger fetch
+    # Check if we have cached event list
+    if [[ ! -f "$EVENTS_LIST_CACHE" ]]; then
         sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="Loading..."
         return 1
     fi
 
-    # Read cached data
-    MEETING_TIMESTAMP=$(cat "$MEETING_TIMESTAMP_CACHE" 2>/dev/null)
-    source "$MEETING_METADATA_CACHE"  # Loads: TITLE, TIME, DATE, MEETING_TYPE
+    # Read cached event list
+    SYNC_STATUS=$(grep "^SYNC_STATUS=" "$EVENTS_LIST_CACHE" | cut -d= -f2)
+    EVENTS=$(sed '1,/^EVENTS_START$/d' "$EVENTS_LIST_CACHE")
 
-    # Current time
     CURRENT_TIMESTAMP=$(date "+%s")
 
-    case "$MEETING_TYPE" in
-        NO_MEETINGS_EOD|NO_MEETINGS_FREE)
-            # Static display for no meetings
-            sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
-            ;;
-        NO_CALENDAR)
-            sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
-            ;;
-        SYNC_FAILED)
-            STALE_ICON="󰁡"
-            sketchybar --set "$NAME" icon="$STALE_ICON" --set "${NAME}.name" label="$LABEL"
-            ;;
-        UPCOMING)
-            # Calculate live countdown
-            if [[ -n "$MEETING_TIMESTAMP" ]] && [[ "$MEETING_TIMESTAMP" -gt "$CURRENT_TIMESTAMP" ]]; then
-                DIFF=$((MEETING_TIMESTAMP - CURRENT_TIMESTAMP))
+    # Handle sync failures
+    if [[ "$SYNC_STATUS" == "failed" ]] || [[ "$SYNC_STATUS" == "partial" ]]; then
+        SYNC_TIME=$(get_sync_timestamp)
+        sketchybar --set "$NAME" icon="󰁡" --set "${NAME}.name" label="Sync Failed ($SYNC_TIME)"
+        return 0
+    fi
 
-                # Calculate days, hours, minutes
-                DAYS=$((DIFF / 86400))
-                REMAINING=$((DIFF % 86400))
-                HOURS=$((REMAINING / 3600))
-                MINUTES=$(((REMAINING % 3600) / 60))
+    # Handle no calendar access
+    if [[ "$EVENTS" =~ "No calendars" ]]; then
+        sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="No calendar access"
+        return 0
+    fi
 
-                # Format countdown
-                if [[ $DAYS -gt 0 ]]; then
-                    if [[ $DAYS -eq 1 ]]; then
-                        TIME_STR="tomorrow"
-                    else
-                        TIME_STR="in ${DAYS}d"
-                    fi
-                elif [[ $HOURS -gt 0 ]]; then
-                    TIME_STR="${HOURS}h ${MINUTES}m"
-                else
-                    TIME_STR="${MINUTES}m"
-                fi
+    # Handle empty event list
+    if [[ -z "$EVENTS" ]] || [[ "$EVENTS" =~ "No events" ]]; then
+        LABEL=$(get_random_message FREE_DAY_MESSAGES)
+        sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
+        return 0
+    fi
 
-                # Update blink state (this is what runs 2x per second)
-                BLINK_STATE=$(get_icon_blink_state $DIFF)
-                ICON_BASE="󰃭"
+    # Find next meeting from cached list
+    NEXT_MEETING=""
+    while IFS= read -r event; do
+        [[ -z "$event" ]] && continue
 
-                if [[ $DIFF -le 600 ]]; then
-                    # ≤10 min: heartbeat blinking
-                    if [[ "$BLINK_STATE" == "on" ]]; then
-                        MEETING_BG_COLOR="$YELLOW_THRESHOLD"
-                        MEETING_ICON_COLOR="$BLACK"
-                    else
-                        MEETING_BG_COLOR="$BLUE"
-                        MEETING_ICON_COLOR="$WHITE"
-                    fi
-                else
-                    # >10 min: static display
-                    MEETING_BG_COLOR="$BLUE"
-                    MEETING_ICON_COLOR="$WHITE"
-                fi
+        # Parse format: "Meeting Title|09:00 AM|2025-10-29"
+        EVENT_TIME=$(echo "$event" | cut -d'|' -f2)
+        EVENT_DATE=$(echo "$event" | cut -d'|' -f3)
 
-                LABEL="$TITLE in $TIME_STR"
-                sketchybar --set "$NAME" \
-                    icon="$ICON_BASE" \
-                    icon.color="$MEETING_ICON_COLOR" \
-                    background.color="$MEETING_BG_COLOR" \
-                    --set "${NAME}.name" label="$LABEL"
-            elif [[ -n "$MEETING_TIMESTAMP" ]] && [[ $((CURRENT_TIMESTAMP - MEETING_TIMESTAMP)) -le 600 ]]; then
-                # Meeting started within last 10 minutes
-                STARTED_AGO=$(((CURRENT_TIMESTAMP - MEETING_TIMESTAMP) / 60))
-                ICON="󰁅"
-                LABEL="$TITLE (started ${STARTED_AGO}m ago)"
-                sketchybar --set "$NAME" icon="$ICON" --set "${NAME}.name" label="$LABEL"
+        # Calculate event timestamp
+        EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)
+        if [[ -z "$EVENT_TIMESTAMP" ]]; then
+            EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %H:%M" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)
+        fi
+
+        # Include events that haven't ended yet (within 10 minutes of start or future)
+        if [[ -n "$EVENT_TIMESTAMP" ]] && [[ $((CURRENT_TIMESTAMP - EVENT_TIMESTAMP)) -le 600 ]]; then
+            NEXT_MEETING="$event"
+            break  # Found next meeting
+        fi
+    done <<< "$EVENTS"
+
+    # Display next meeting or end-of-day message
+    if [[ -n "$NEXT_MEETING" ]]; then
+        TITLE=$(echo "$NEXT_MEETING" | cut -d'|' -f1)
+        TIME=$(echo "$NEXT_MEETING" | cut -d'|' -f2)
+        DATE=$(echo "$NEXT_MEETING" | cut -d'|' -f3)
+
+        MEETING_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$DATE $TIME" "+%s" 2>/dev/null)
+        if [[ -z "$MEETING_TIMESTAMP" ]]; then
+            MEETING_TIMESTAMP=$(date -j -f "%Y-%m-%d %H:%M" "$DATE $TIME" "+%s" 2>/dev/null)
+        fi
+
+        if [[ -n "$MEETING_TIMESTAMP" ]] && [[ "$MEETING_TIMESTAMP" -gt "$CURRENT_TIMESTAMP" ]]; then
+            # Future meeting - show countdown
+            DIFF=$((MEETING_TIMESTAMP - CURRENT_TIMESTAMP))
+            DAYS=$((DIFF / 86400))
+            REMAINING=$((DIFF % 86400))
+            HOURS=$((REMAINING / 3600))
+            MINUTES=$(((REMAINING % 3600) / 60))
+
+            if [[ $DAYS -gt 0 ]]; then
+                TIME_STR=$([[ $DAYS -eq 1 ]] && echo "tomorrow" || echo "in ${DAYS}d")
+            elif [[ $HOURS -gt 0 ]]; then
+                TIME_STR="${HOURS}h ${MINUTES}m"
+            else
+                TIME_STR="${MINUTES}m"
             fi
-            ;;
-        *)
-            # Unknown type, show error
-            sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="Error"
-            ;;
-    esac
+
+            # Blinking for meetings ≤10 min away
+            BLINK_STATE=$(get_icon_blink_state $DIFF)
+            if [[ $DIFF -le 600 ]] && [[ "$BLINK_STATE" == "on" ]]; then
+                MEETING_BG_COLOR="$YELLOW_THRESHOLD"
+                MEETING_ICON_COLOR="$BLACK"
+            else
+                MEETING_BG_COLOR="$BLUE"
+                MEETING_ICON_COLOR="$WHITE"
+            fi
+
+            sketchybar --set "$NAME" \
+                icon="󰃭" \
+                icon.color="$MEETING_ICON_COLOR" \
+                background.color="$MEETING_BG_COLOR" \
+                --set "${NAME}.name" label="$TITLE in $TIME_STR"
+        elif [[ -n "$MEETING_TIMESTAMP" ]]; then
+            # Meeting started recently
+            STARTED_AGO=$(((CURRENT_TIMESTAMP - MEETING_TIMESTAMP) / 60))
+            sketchybar --set "$NAME" icon="󰁅" --set "${NAME}.name" label="$TITLE (started ${STARTED_AGO}m ago)"
+        fi
+    else
+        # No upcoming meetings
+        LABEL=$(get_random_message END_OF_DAY_MESSAGES)
+        sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
+    fi
 }
 
 # Check last sync status
@@ -265,9 +276,6 @@ force_calendar_sync() {
 # DATA FETCH FUNCTION - Queries khal and caches results
 # Only called when should_fetch_data() returns true
 fetch_and_cache_meeting_data() {
-    # Record fetch timestamp
-    date +%s > "$LAST_FETCH_FILE"
-
     # Check sync status before fetching events
     SYNC_STATUS=$(check_sync_status)
 
@@ -293,134 +301,13 @@ fetch_and_cache_meeting_data() {
     SPAM_PATTERNS=".*(Million-Dollar|Webinar|Free Training|Limited Time|Act Now|Special Offer|How to Avoid|Mistakes When|Don't Miss|Last Chance|Exclusive|Register Now|Save Your Spot)"
     EVENTS=$(echo "$EVENTS_RAW" | grep -v -E "$SPAM_PATTERNS")
 
-    # Handle sync failures - cache for display function
-    if [[ "$SYNC_STATUS" == "failed" ]] || [[ "$SYNC_STATUS" == "partial" ]]; then
-        SYNC_TIME=$(get_sync_timestamp)
-        LABEL="Sync Failed ($SYNC_TIME)"
-
-        # Cache the failure state
-        echo "0" > "$MEETING_TIMESTAMP_CACHE"
-        cat > "$MEETING_METADATA_CACHE" <<EOF
-MEETING_TYPE="SYNC_FAILED"
-LABEL="$LABEL"
-TITLE=""
-TIME=""
-DATE=""
-EOF
-        return 0
-    fi
-
-    # Handle no calendar access
-    if [[ "$EVENTS" =~ "No calendars" ]]; then
-        LABEL="No calendar access"
-        echo "0" > "$MEETING_TIMESTAMP_CACHE"
-        cat > "$MEETING_METADATA_CACHE" <<EOF
-MEETING_TYPE="NO_CALENDAR"
-LABEL="$LABEL"
-TITLE=""
-TIME=""
-DATE=""
-EOF
-        return 0
-    fi
-
-    # Handle no upcoming meetings
-    if [[ -z "$EVENTS" ]] || [[ "$EVENTS" =~ "No events" ]]; then
-        MEETING_STATE=$(check_meetings_today)
-        if [[ "$MEETING_STATE" == "had_meetings" ]]; then
-            LABEL=$(get_random_message END_OF_DAY_MESSAGES)
-            MEETING_TYPE="NO_MEETINGS_EOD"
-        else
-            LABEL=$(get_random_message FREE_DAY_MESSAGES)
-            MEETING_TYPE="NO_MEETINGS_FREE"
-        fi
-
-        echo "0" > "$MEETING_TIMESTAMP_CACHE"
-        cat > "$MEETING_METADATA_CACHE" <<EOF
-MEETING_TYPE="$MEETING_TYPE"
-LABEL="$LABEL"
-TITLE=""
-TIME=""
-DATE=""
-EOF
-        return 0
-    fi
-    # Process upcoming meetings - find next one and cache it
-    CURRENT_TIMESTAMP=$(date "+%s")
-    FUTURE_EVENTS=""
-
-    while IFS= read -r event; do
-        [[ -z "$event" ]] && continue
-
-        # Parse format: "Meeting Title|09:00 AM|2025-10-29"
-        EVENT_TIME=$(echo "$event" | cut -d'|' -f2)
-        EVENT_DATE=$(echo "$event" | cut -d'|' -f3)
-
-        # Calculate event timestamp
-        EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)
-        if [[ -z "$EVENT_TIMESTAMP" ]]; then
-            # Fallback: Try 24-hour format for non-US locales
-            EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %H:%M" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)
-        fi
-
-        # Include events that are in the future OR started within last 10 minutes
-        if [[ -n "$EVENT_TIMESTAMP" ]] && [[ $((CURRENT_TIMESTAMP - EVENT_TIMESTAMP)) -le 600 ]]; then
-            if [[ -z "$FUTURE_EVENTS" ]]; then
-                FUTURE_EVENTS="$event"
-            else
-                FUTURE_EVENTS="$FUTURE_EVENTS"$'\n'"$event"
-            fi
-        fi
-    done <<< "$EVENTS"
-
-    # Get the next meeting (first line from filtered future events)
-    NEXT_MEETING=$(echo "$FUTURE_EVENTS" | head -n 1)
-
-    if [[ -n "$NEXT_MEETING" ]]; then
-        # Parse format: "Meeting Title|09:00 AM|2025-10-29"
-        TITLE=$(echo "$NEXT_MEETING" | cut -d'|' -f1)
-        TIME=$(echo "$NEXT_MEETING" | cut -d'|' -f2)
-        DATE=$(echo "$NEXT_MEETING" | cut -d'|' -f3)
-
-        # Calculate countdown - convert meeting datetime to timestamp
-        # Try 12-hour format first (e.g., "09:00 AM"), then fall back to 24-hour format (e.g., "09:00")
-        MEETING_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$DATE $TIME" "+%s" 2>/dev/null)
-        if [[ -z "$MEETING_TIMESTAMP" ]]; then
-            # Fallback: Try 24-hour format for non-US locales
-            MEETING_TIMESTAMP=$(date -j -f "%Y-%m-%d %H:%M" "$DATE $TIME" "+%s" 2>/dev/null)
-        fi
-
-        # Cache the meeting data for fast display updates
-        if [[ -n "$MEETING_TIMESTAMP" ]]; then
-            echo "$MEETING_TIMESTAMP" > "$MEETING_TIMESTAMP_CACHE"
-            cat > "$MEETING_METADATA_CACHE" <<EOF
-MEETING_TYPE="UPCOMING"
-TITLE="$TITLE"
-TIME="$TIME"
-DATE="$DATE"
-LABEL=""
-EOF
-        fi
-    else
-        # No future meetings found
-        MEETING_STATE=$(check_meetings_today)
-        if [[ "$MEETING_STATE" == "had_meetings" ]]; then
-            LABEL=$(get_random_message END_OF_DAY_MESSAGES)
-            MEETING_TYPE="NO_MEETINGS_EOD"
-        else
-            LABEL=$(get_random_message FREE_DAY_MESSAGES)
-            MEETING_TYPE="NO_MEETINGS_FREE"
-        fi
-
-        echo "0" > "$MEETING_TIMESTAMP_CACHE"
-        cat > "$MEETING_METADATA_CACHE" <<EOF
-MEETING_TYPE="$MEETING_TYPE"
-LABEL="$LABEL"
-TITLE=""
-TIME=""
-DATE=""
-EOF
-    fi
+    # Cache the complete event list for display function to process
+    # Store sync status at top of file, then event list
+    {
+        echo "SYNC_STATUS=$SYNC_STATUS"
+        echo "EVENTS_START"
+        echo "$EVENTS"
+    } > "$EVENTS_LIST_CACHE"
 }
 
 # MAIN EXECUTION LOGIC
