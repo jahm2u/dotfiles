@@ -45,6 +45,9 @@ export ICON_COLOR=$WHITE
 export LABEL_COLOR=$WHITE
 export ACCENT_COLOR=$YELLOW          # Brazil Yellow for prominence
 
+# Widget-specific icon colors (IPM environment)
+export WIDGET_ICON_COLOR=$WHITE      # White icons for widgets (todoist, meeting, front_app)
+
 # Solid backgrounds for widgets
 export WIDGET_BACKGROUND=$SURFACE1
 

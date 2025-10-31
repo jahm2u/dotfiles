@@ -215,7 +215,7 @@ update_display_from_cache() {
                 MEETING_ICON_COLOR="$BLACK"
             else
                 MEETING_BG_COLOR="$BLUE"
-                MEETING_ICON_COLOR="$WHITE"
+                MEETING_ICON_COLOR="$WIDGET_ICON_COLOR"
             fi
 
             sketchybar --set "$NAME" \

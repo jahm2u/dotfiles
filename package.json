@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "simple-icons": "^15.18.0"
+  },
+  "devDependencies": {
+    "fantasticon": "^3.0.0"
+  }
+}

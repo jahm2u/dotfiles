@@ -82,7 +82,7 @@ sketchybar --add item front_app left \
     icon.padding_left=7 \
     icon.padding_right=7 \
     icon.y_offset=1 \
-    icon.color=$WHITE \
+    icon.color=$WIDGET_ICON_COLOR \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/front_app.sh" \
     --add item front_app.separator left \
@@ -130,7 +130,7 @@ sketchybar --add item todoist q \
     icon.padding_left=8 \
     icon.padding_right=8 \
     icon.y_offset=1 \
-    icon.color=$WHITE \
+    icon.color=$WIDGET_ICON_COLOR \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/todoist.sh" \
     click_script="open -a Todoist" \
@@ -182,7 +182,7 @@ sketchybar --add item meeting e \
     icon.padding_left=8 \
     icon.padding_right=8 \
     icon.y_offset=1 \
-    icon.color=$WHITE \
+    icon.color=$WIDGET_ICON_COLOR \
     label.drawing=no \
     update_freq=1 \
     script="$PLUGIN_SHARED_DIR/meeting.sh" \
@@ -267,7 +267,7 @@ sketchybar --add item battery right \
 
 sketchybar --add item volume right \
     --set volume \
-    icon.color=$WHITE \
+    icon.color=$WIDGET_ICON_COLOR \
     label.drawing=true \
     script="$PLUGIN_SHARED_DIR/volume.sh" \
     --subscribe volume volume_change

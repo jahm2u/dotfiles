@@ -65,3 +65,8 @@ test_env_config.py
 # Claude Code history and settings (contains personal info)
 config/claude/history.jsonl
 config/claude/settings.json
+config/claude/ide/
+
+# Node.js dependencies for local tooling
+node_modules/
+package-lock.json

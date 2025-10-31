@@ -1,8 +1,16 @@
 #!/usr/bin/env zsh
 
-ICON_PADDING_RIGHT=5
+# Try to get Simple Icons icon first
+SIMPLE_ICON=$(~/.config/sketchybar/helpers/get_app_icon.sh "$INFO")
 
-case $INFO in
+if [ -n "$SIMPLE_ICON" ]; then
+    # Use Simple Icons font
+    ICON="$SIMPLE_ICON"
+    ICON_FONT="SimpleIcons:Regular:16.0"
+else
+    # Fall back to Nerd Font icons
+    ICON_FONT="sketchybar-app-font:Regular:16.0"
+    case $INFO in
 "Arc")
     ICON_PADDING_RIGHT=5
     ICON=󰞍
@@ -199,7 +207,13 @@ case $INFO in
     ICON_PADDING_RIGHT=2
     ICON=
     ;;
-esac
+    esac
+fi
 
-sketchybar --set $NAME icon=$ICON icon.padding_left=7 icon.padding_right=7
+sketchybar --set $NAME \
+    icon="$ICON" \
+    icon.font="$ICON_FONT" \
+    icon.padding_left=7 \
+    icon.padding_right=7
+
 sketchybar --set $NAME.name label="$INFO"
