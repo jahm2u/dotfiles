@@ -1,167 +1,157 @@
 #!/usr/bin/env bash
 
 # Calendar Widget Popup - Shows 9-week calendar view
-# Usage: Called when week_num widget is clicked
-# Shows: 4 weeks behind, current week, 5 weeks ahead with week numbers
+# Simple version that actually works with BSD date
 
-# Close all other popups first
+# Check if popup is already open
+POPUP_STATE=$(sketchybar --query week_num | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('popup', {}).get('drawing', 'off'))")
+
+# If already open, just close it and exit
+if [[ "$POPUP_STATE" == "on" ]]; then
+    sketchybar --set week_num popup.drawing=off
+    exit 0
+fi
+
+# Close all other popups and show this one immediately
 sketchybar --set todoist popup.drawing=off \
            --set meeting popup.drawing=off \
            --set cpu popup.drawing=off \
-           --set memory popup.drawing=off
+           --set memory popup.drawing=off \
+           --set week_num popup.drawing=on
 
 # Load environment colors
 source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
-# Get current date info
-CURRENT_DATE=$(date "+%Y-%m-%d")
-CURRENT_DAY=$(date "+%d")
-CURRENT_MONTH=$(date "+%m")
-CURRENT_YEAR=$(date "+%Y")
+# Get current week and date
 CURRENT_WEEK=$(date "+%V")
-CURRENT_DOW=$(date "+%u") # 1=Monday, 7=Sunday
+TODAY=$(date "+%Y-%m-%d")
 
-# Calculate start date (4 weeks ago from start of current week)
-# First, go to Monday of current week
-MONDAY_OFFSET=$((CURRENT_DOW - 1))
-CURRENT_MONDAY=$(date -j -v-${MONDAY_OFFSET}d "+%Y-%m-%d")
+# Function to get full week row
+get_week_row() {
+    local days_offset=$1  # offset in days from today
 
-# Then go back 4 weeks (28 days)
-START_DATE=$(date -j -f "%Y-%m-%d" "$CURRENT_MONDAY" -v-28d "+%Y-%m-%d")
-
-# Function to get week number for a date
-get_week_number() {
-    date -j -f "%Y-%m-%d" "$1" "+%V" 2>/dev/null || echo "??"
-}
-
-# Function to check if date is current day
-is_current_day() {
-    local check_date="$1"
-    [[ "$check_date" == "$CURRENT_DATE" ]] && echo "true" || echo "false"
-}
-
-# Function to check if date is in current week
-is_current_week() {
-    local check_week="$1"
-    [[ "$check_week" == "$CURRENT_WEEK" ]] && echo "true" || echo "false"
-}
-
-# Function to get month name
-get_month_name() {
-    case "$1" in
-        01) echo "Jan" ;;
-        02) echo "Feb" ;;
-        03) echo "Mar" ;;
-        04) echo "Apr" ;;
-        05) echo "May" ;;
-        06) echo "Jun" ;;
-        07) echo "Jul" ;;
-        08) echo "Aug" ;;
-        09) echo "Sep" ;;
-        10) echo "Oct" ;;
-        11) echo "Nov" ;;
-        12) echo "Dec" ;;
-    esac
-}
-
-# Generate calendar rows (9 weeks)
-WEEK_INDEX=0
-CURRENT_ITER_DATE="$START_DATE"
-PREV_MONTH=""
-
-for week in {0..8}; do
-    # Calculate the Monday of this week
-    WEEK_START=$(date -j -f "%Y-%m-%d" "$START_DATE" -v+$((week * 7))d "+%Y-%m-%d")
-    WEEK_NUM=$(get_week_number "$WEEK_START")
-
-    # Check if this is the current week
-    IS_CURRENT_WEEK=$(is_current_week "$WEEK_NUM")
-
-    # Get month for this week
-    WEEK_MONTH=$(date -j -f "%Y-%m-%d" "$WEEK_START" "+%m")
-    WEEK_MONTH_NAME=$(get_month_name "$WEEK_MONTH")
-    WEEK_YEAR=$(date -j -f "%Y-%m-%d" "$WEEK_START" "+%Y")
-
-    # Check if we're entering a new month
-    SHOW_MONTH_HEADER="false"
-    if [[ "$WEEK_MONTH" != "$PREV_MONTH" ]]; then
-        SHOW_MONTH_HEADER="true"
-        PREV_MONTH="$WEEK_MONTH"
-    fi
-
-    # Month header (if needed)
-    if [[ "$SHOW_MONTH_HEADER" == "true" ]]; then
-        item_name="calendar.popup.month_${week}"
-
-        sketchybar --set "$item_name" \
-            label="$WEEK_MONTH_NAME $WEEK_YEAR" \
-            label.color="$BLUE" \
-            label.font="JetBrainsMono Nerd Font:Bold:13.0" \
-            icon.drawing=off \
-            background.color="$TRANSPARENT" \
-            drawing=on
+    # Get the target date
+    if [[ $days_offset -eq 0 ]]; then
+        local target_date="$TODAY"
+        local dow=$(date "+%u")
+    elif [[ $days_offset -gt 0 ]]; then
+        local target_date=$(date -v+${days_offset}d "+%Y-%m-%d")
+        local dow=$(date -v+${days_offset}d "+%u")
     else
-        sketchybar --set "calendar.popup.month_${week}" drawing=off
+        local positive_offset=$((0 - days_offset))
+        local target_date=$(date -v-${positive_offset}d "+%Y-%m-%d")
+        local dow=$(date -v-${positive_offset}d "+%u")
     fi
 
-    # Week number
-    item_name="calendar.popup.week_${week}"
+    # Get Monday of that week
+    local days_to_monday=$((dow - 1))
 
-    if [[ "$IS_CURRENT_WEEK" == "true" ]]; then
-        WEEK_BG="$YELLOW"
-        WEEK_LABEL_COLOR="$BLACK"
+    if [[ $days_to_monday -eq 0 ]]; then
+        local monday_offset=$days_offset
+    elif [[ $days_offset -ge 0 ]]; then
+        local monday_offset=$((days_offset - days_to_monday))
     else
-        WEEK_BG="$SURFACE1"
-        WEEK_LABEL_COLOR="$OVERLAY1"
+        local monday_offset=$((days_offset - days_to_monday))
     fi
 
-    sketchybar --set "$item_name" \
-        label="W$WEEK_NUM" \
-        label.color="$WEEK_LABEL_COLOR" \
-        label.font="JetBrainsMono Nerd Font:Bold:11.0" \
-        icon.drawing=off \
-        background.color="$WEEK_BG" \
-        background.padding_left=5 \
-        background.padding_right=5 \
-        drawing=on
+    # Get week number and month from Monday
+    if [[ $monday_offset -eq 0 ]]; then
+        local week_num=$(date "+%V")
+        local week_month=$(date "+%m")
+    elif [[ $monday_offset -gt 0 ]]; then
+        local week_num=$(date -v+${monday_offset}d "+%V")
+        local week_month=$(date -v+${monday_offset}d "+%m")
+    else
+        local positive_monday=$((0 - monday_offset))
+        local week_num=$(date -v-${positive_monday}d "+%V")
+        local week_month=$(date -v-${positive_monday}d "+%m")
+    fi
 
-    # Generate 7 days for this week
-    for day in {0..6}; do
-        DAY_DATE=$(date -j -f "%Y-%m-%d" "$WEEK_START" -v+${day}d "+%Y-%m-%d")
-        DAY_NUM=$(date -j -f "%Y-%m-%d" "$DAY_DATE" "+%d")
-        DAY_MONTH=$(date -j -f "%Y-%m-%d" "$DAY_DATE" "+%m")
+    # Build row
+    local row=$(printf "W%-2s" "$week_num")
 
-        item_name="calendar.popup.day_${week}_${day}"
+    # Add 7 days
+    for day_of_week in {0..6}; do
+        local day_offset=$((monday_offset + day_of_week))
 
-        # Check if this is today
-        IS_TODAY=$(is_current_day "$DAY_DATE")
-
-        # Check if day is in different month (gray it out)
-        if [[ "$DAY_MONTH" != "$WEEK_MONTH" ]]; then
-            DAY_LABEL_COLOR="$OVERLAY0"
-            DAY_BG="$TRANSPARENT"
-        elif [[ "$IS_TODAY" == "true" ]]; then
-            DAY_LABEL_COLOR="$BLACK"
-            DAY_BG="$BLUE"
-        elif [[ "$IS_CURRENT_WEEK" == "true" ]]; then
-            DAY_LABEL_COLOR="$LABEL_COLOR"
-            DAY_BG="$SURFACE2"
+        if [[ $day_offset -eq 0 ]]; then
+            local day_date=$(date "+%Y-%m-%d")
+            local day_num=$(date "+%e" | tr -d ' ')
+            local day_month=$(date "+%m")
+        elif [[ $day_offset -gt 0 ]]; then
+            local day_date=$(date -v+${day_offset}d "+%Y-%m-%d")
+            local day_num=$(date -v+${day_offset}d "+%e" | tr -d ' ')
+            local day_month=$(date -v+${day_offset}d "+%m")
         else
-            DAY_LABEL_COLOR="$LABEL_COLOR"
-            DAY_BG="$TRANSPARENT"
+            local positive_day=$((0 - day_offset))
+            local day_date=$(date -v-${positive_day}d "+%Y-%m-%d")
+            local day_num=$(date -v-${positive_day}d "+%e" | tr -d ' ')
+            local day_month=$(date -v-${positive_day}d "+%m")
         fi
 
-        sketchybar --set "$item_name" \
-            label="$DAY_NUM" \
-            label.color="$DAY_LABEL_COLOR" \
-            label.font="JetBrainsMono Nerd Font:Regular:11.0" \
-            icon.drawing=off \
-            background.color="$DAY_BG" \
-            background.padding_left=4 \
-            background.padding_right=4 \
-            drawing=on
+        if [[ "$day_date" == "$TODAY" ]]; then
+            row="${row}[$(printf "%2s" "$day_num")]"
+        elif [[ "$day_month" != "$week_month" ]]; then
+            row="${row} $(printf "%2s" "$day_num")·"
+        else
+            row="${row} $(printf "%2s" "$day_num") "
+        fi
     done
+
+    echo "$row|$week_num"
+}
+
+# Header
+sketchybar --set week_num.popup.header \
+    label="Wk  Mo Tu We Th Fr Sa Su" \
+    label.color="0x60FFFFFF" \
+    label.font="JetBrainsMono Nerd Font:Medium:12.0" \
+    label.padding_top=14 \
+    label.padding_bottom=8 \
+    label.padding_left=12 \
+    label.padding_right=12 \
+    drawing=on
+
+# Calculate weeks to show (-4 to +4 weeks = 9 weeks)
+WEEK_INDEX=1
+
+# Loop through each week offset
+for week_offset in -4 -3 -2 -1 0 1 2 3 4; do
+    days_offset=$((week_offset * 7))
+
+    # Get week row data
+    WEEK_DATA=$(get_week_row $days_offset)
+    WEEK_ROW=$(echo "$WEEK_DATA" | cut -d'|' -f1)
+    WEEK_NUM=$(echo "$WEEK_DATA" | cut -d'|' -f2)
+
+    # Determine if current week
+    if [[ "$WEEK_NUM" == "$CURRENT_WEEK" ]]; then
+        ROW_BG="0x30FABD2F"
+        ROW_LABEL_COLOR="0xFFFFFFFF"
+        ROW_FONT="JetBrainsMono Nerd Font:Bold:11.0"
+        ROW_CORNER_RADIUS=10
+    else
+        ROW_BG="$TRANSPARENT"
+        ROW_LABEL_COLOR="0xCCFFFFFF"
+        ROW_FONT="JetBrainsMono Nerd Font:Regular:11.0"
+        ROW_CORNER_RADIUS=0
+    fi
+
+    sketchybar --set "week_num.popup.week_$WEEK_INDEX" \
+        label="$WEEK_ROW" \
+        label.color="$ROW_LABEL_COLOR" \
+        label.font="$ROW_FONT" \
+        background.color="$ROW_BG" \
+        background.corner_radius=$ROW_CORNER_RADIUS \
+        background.padding_left=12 \
+        background.padding_right=12 \
+        background.padding_top=4 \
+        background.padding_bottom=4 \
+        label.padding_left=4 \
+        label.padding_right=4 \
+        drawing=on
+
+    WEEK_INDEX=$((WEEK_INDEX + 1))
 done
 
-# Toggle popup visibility
-sketchybar --set week_num popup.drawing=toggle
+# Popup already shown at the start - no need to toggle again

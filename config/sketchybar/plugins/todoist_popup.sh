@@ -4,11 +4,21 @@
 # Usage: Called when todoist widget is clicked
 # Shows: Top 5 tasks with priority, action buttons to open in Todoist or mark as working on
 
-# Close all other popups first
+# Check if popup is already open
+POPUP_STATE=$(sketchybar --query todoist | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('popup', {}).get('drawing', 'off'))")
+
+# If already open, just close it and exit
+if [[ "$POPUP_STATE" == "on" ]]; then
+    sketchybar --set todoist popup.drawing=off
+    exit 0
+fi
+
+# Close all other popups and show this one immediately
 sketchybar --set meeting popup.drawing=off \
            --set cpu popup.drawing=off \
            --set memory popup.drawing=off \
-           --set week_num popup.drawing=off
+           --set week_num popup.drawing=off \
+           --set todoist popup.drawing=on
 
 CACHE_DIR="$HOME/.cache/sketchybar"
 WORKING_TASK_FILE="$CACHE_DIR/todoist_working_task"
@@ -158,5 +168,4 @@ while [[ $TASK_INDEX -le 5 ]]; do
     TASK_INDEX=$((TASK_INDEX + 1))
 done
 
-# Toggle popup visibility
-sketchybar --set todoist popup.drawing=toggle
+# Popup already shown at the start - no need to toggle again

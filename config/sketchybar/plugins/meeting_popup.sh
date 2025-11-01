@@ -4,11 +4,21 @@
 # Usage: Called when meeting widget is clicked
 # Shows: Previous 5 meetings, Next 5 meetings, disabled "Open Notes" button
 
-# Close all other popups first
+# Check if popup is already open
+POPUP_STATE=$(sketchybar --query meeting | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('popup', {}).get('drawing', 'off'))")
+
+# If already open, just close it and exit
+if [[ "$POPUP_STATE" == "on" ]]; then
+    sketchybar --set meeting popup.drawing=off
+    exit 0
+fi
+
+# Close all other popups and show this one immediately
 sketchybar --set todoist popup.drawing=off \
            --set cpu popup.drawing=off \
            --set memory popup.drawing=off \
-           --set week_num popup.drawing=off
+           --set week_num popup.drawing=off \
+           --set meeting popup.drawing=on
 
 CACHE_DIR="$HOME/.cache/sketchybar"
 EVENTS_LIST_CACHE="$CACHE_DIR/meeting_events_list"
@@ -155,5 +165,4 @@ for i in {0..4}; do
     fi
 done
 
-# Toggle popup visibility
-sketchybar --set meeting popup.drawing=toggle
+# Popup already shown at the start - no need to toggle again
