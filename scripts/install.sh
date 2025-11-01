@@ -649,7 +649,38 @@ main() {
         warn "Sketchybar will use default configuration"
     fi
 
+    # Restart AeroSpace with new configuration
+    log "Reloading AeroSpace configuration..."
+    if command -v aerospace &>/dev/null; then
+        if pgrep -x "AeroSpace" >/dev/null; then
+            # AeroSpace is running, reload config
+            if aerospace reload-config; then
+                log "✓ AeroSpace configuration reloaded"
+            else
+                warn "Failed to reload AeroSpace config"
+                log "You may need to restart AeroSpace manually"
+            fi
+        else
+            # AeroSpace not running, suggest launching
+            log "AeroSpace not currently running"
+            if ask_user "Launch AeroSpace now?"; then
+                if open -a AeroSpace; then
+                    log "✓ AeroSpace launched successfully"
+                else
+                    warn "Failed to launch AeroSpace"
+                    log "You can launch manually: open -a AeroSpace"
+                fi
+            else
+                log "You can launch AeroSpace later: open -a AeroSpace"
+            fi
+        fi
+    else
+        warn "AeroSpace not installed"
+        log "Install with: brew install --cask nikitabobko/tap/aerospace"
+    fi
+
     # Restart Sketchybar with new configuration
+    log ""
     log "Restarting Sketchybar with environment configuration..."
     if command -v brew &> /dev/null; then
         if brew services restart sketchybar 2>/dev/null; then
@@ -668,11 +699,10 @@ main() {
 
     log ""
     log "Next steps:"
-    log "1. Restart any running applications to pick up new configs"
-    log "2. Launch AeroSpace: open -a AeroSpace"
-    log "3. Reload Hammerspoon config if it's already running"
-    log "4. Check calendar sync logs: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
-    log "5. Monitor LaunchAgent: launchctl list | grep calendar-sync"
+    log "1. Reload Hammerspoon config if it's already running"
+    log "2. Check calendar sync logs: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
+    log "3. Monitor LaunchAgent: launchctl list | grep calendar-sync"
+    log "4. Test popup menus by clicking Todoist, Meeting, Week, or CPU/Memory widgets"
     log ""
     log "Troubleshooting resources:"
     log "  - Documentation: cat ~/dotfiles/CLAUDE.md"
