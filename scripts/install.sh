@@ -294,6 +294,18 @@ validate_installation() {
         warn "  ✗ khal not configured"
     fi
 
+    # Validate fonts
+    log ""
+    log "Validating fonts:"
+    ((validations_total++))
+    if fc-list 2>/dev/null | grep -qi "jetbrainsmono nerd font"; then
+        log "  ✓ JetBrains Mono Nerd Font installed"
+        ((validations_passed++))
+    else
+        error "  ✗ JetBrains Mono Nerd Font missing (icons will not display)"
+        log "    Install with: brew install --cask font-jetbrains-mono-nerd-font"
+    fi
+
     # Test calendar sync
     log ""
     log "Testing calendar sync:"
@@ -390,6 +402,43 @@ create_symlink() {
         log "✓ Successfully linked $description"
     else
         error "✗ Failed to link $description"
+        return 1
+    fi
+}
+
+install_required_fonts() {
+    log "Checking required fonts for Sketchybar icons..."
+
+    # Check if JetBrains Mono Nerd Font is installed
+    if fc-list 2>/dev/null | grep -qi "jetbrainsmono nerd font"; then
+        log "✓ JetBrains Mono Nerd Font already installed"
+        return 0
+    fi
+
+    warn "JetBrains Mono Nerd Font not found (required for Sketchybar icons)"
+
+    # Check if brew is available
+    if ! command -v brew &>/dev/null; then
+        error "Homebrew not installed - cannot auto-install font"
+        log "Please install manually: brew install --cask font-jetbrains-mono-nerd-font"
+        return 1
+    fi
+
+    if ask_user "Install JetBrains Mono Nerd Font now? (Required for icons)"; then
+        log "Installing font..."
+        if brew install --cask font-jetbrains-mono-nerd-font; then
+            log "✓ Font installed successfully"
+            log "You may need to restart Sketchybar for fonts to load"
+            return 0
+        else
+            error "Failed to install font"
+            log "You can manually install: brew install --cask font-jetbrains-mono-nerd-font"
+            return 1
+        fi
+    else
+        warn "Skipping font installation"
+        warn "Sketchybar icons will not display correctly without this font"
+        log "Install later with: brew install --cask font-jetbrains-mono-nerd-font"
         return 1
     fi
 }
@@ -563,6 +612,10 @@ main() {
         "$DOTFILES_DIR/config/khal" \
         "$HOME/.config/khal" \
         "Khal calendar config"
+
+    # Install required fonts for Sketchybar
+    log ""
+    install_required_fonts
 
     # Initialize calendar automation infrastructure
     log ""
