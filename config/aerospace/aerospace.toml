@@ -66,7 +66,7 @@ automatically-unhide-macos-hidden-apps = false
     inner.vertical =   8
     outer.left =       16
     outer.bottom =     16
-    outer.top =        [{ monitor."built-in" = 10 }, 40]
+    outer.top =        [{ monitor."built-in" = 8 }, 40]
     outer.right =      16
 
 # 'main' binding mode declaration

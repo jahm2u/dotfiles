@@ -12,8 +12,8 @@ source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 # Configurable notch width (default: 230px)
 NOTCH_WIDTH=${NOTCH_WIDTH:-230}
 
-# Configurable padding (default: 23px for laptop mode)
-PADDING=${PADDING:-23}
+# Configurable padding (default: 20px for laptop mode)
+PADDING=${PADDING:-20}
 
 sketchybar --bar \
     height=32 \
@@ -22,6 +22,7 @@ sketchybar --bar \
     sticky=on \
     padding_left=$PADDING \
     padding_right=$PADDING \
+    y_offset=5 \
     notch_width=$NOTCH_WIDTH \
     display=all
 
