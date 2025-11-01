@@ -126,7 +126,7 @@ sketchybar --add item todoist q \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/todoist.sh" \
     click_script="$PLUGIN_SHARED_DIR/todoist_popup.sh" \
-    popup.align=center \
+    popup.align=right \
     popup.height=32 \
     popup.topmost=on \
     popup.blur_radius=60 \
@@ -223,7 +223,7 @@ sketchybar --add item meeting e \
     update_freq=1 \
     script="$PLUGIN_SHARED_DIR/meeting.sh" \
     click_script="$PLUGIN_SHARED_DIR/meeting_popup.sh" \
-    popup.align=center \
+    popup.align=left \
     popup.height=32 \
     popup.topmost=on \
     popup.blur_radius=60 \
