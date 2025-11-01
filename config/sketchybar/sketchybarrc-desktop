@@ -25,6 +25,9 @@ sketchybar --bar \
     notch_width=$NOTCH_WIDTH \
     display=all
 
+# Register custom events
+sketchybar --add event todoist_focus_changed
+
 # Alternatiive background colors
 # label.color=0xffffffff
 # background.color=0x9924273a
@@ -139,6 +142,7 @@ sketchybar --add item todoist q \
     popup.background.shadow.distance=15 \
     popup.background.shadow.angle=90 \
     update_freq=300 \
+    --subscribe todoist system_woke todoist_focus_changed \
     --add item todoist.separator q \
     --set todoist.separator \
     background.color=$TRANSPARENT \
@@ -189,8 +193,7 @@ sketchybar --add bracket todoist_bracket \
     todoist \
     todoist.separator \
     todoist.name \
-    icon.padding_left=15 \
-    --subscribe todoist system_woke
+    icon.padding_left=15
 
 # Fake notch spacer - right side of todoist
 sketchybar --add item todoist_gap q \

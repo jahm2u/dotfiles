@@ -5,9 +5,6 @@ CACHE_DIR="$HOME/.cache/sketchybar"
 WORKING_TASK_FILE="$CACHE_DIR/todoist_working_task"
 mkdir -p "$CACHE_DIR"
 
-# Subscribe to focus task change events
-sketchybar --subscribe todoist todoist_focus_changed
-
 # Completion messages for when all tasks are done (Story 3.1)
 COMPLETION_MESSAGES=(
     "All done! 🎉"
@@ -58,31 +55,30 @@ if [[ -z "$TODOIST_API_TOKEN" ]]; then
     exit 0
 fi
 
-# Fetch tasks from Todoist API
-# Get active tasks sorted by priority (4=urgent, 3=high, 2=medium, 1=normal)
-RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
-    "https://api.todoist.com/rest/v2/tasks?filter=today%20%7C%20overdue" \
-    -H "Authorization: Bearer $TODOIST_API_TOKEN")
+# Read from precached tasks (updated every 30 seconds by LaunchAgent)
+CACHE_FILE="$CACHE_DIR/todoist_tasks_cache"
 
-# Extract HTTP status code and response body
-HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
-RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
-
-# Check if API call was successful
-if [[ "$HTTP_CODE" != "200" ]]; then
-    sketchybar --set "${NAME}.name" label="API Error"
+if [[ ! -f "$CACHE_FILE" ]]; then
+    sketchybar --set "${NAME}.name" label="Loading tasks..."
     exit 0
 fi
 
-# If no tasks and API succeeded, show random completion message
-if [[ -z "$RESPONSE_BODY" ]] || [[ "$RESPONSE_BODY" == "[]" ]]; then
+# Read cache status and tasks
+SYNC_STATUS=$(grep "^SYNC_STATUS=" "$CACHE_FILE" | cut -d= -f2)
+TASKS_DATA=$(sed '1,/^TASKS_START$/d' "$CACHE_FILE")
+
+# Check sync status
+if [[ "$SYNC_STATUS" == "failed" ]]; then
+    sketchybar --set "${NAME}.name" label="Sync failed"
+    exit 0
+fi
+
+# If no tasks in cache, show random completion message
+if [[ -z "$TASKS_DATA" ]]; then
     COMPLETION_MSG=$(get_random_completion_message)
     sketchybar --set "${NAME}.name" label="$COMPLETION_MSG"
     exit 0
 fi
-
-# Update RESPONSE to use RESPONSE_BODY for the rest of the script
-RESPONSE="$RESPONSE_BODY"
 
 # Check if there's a "working on" task
 WORKING_TASK_ID=""
@@ -90,58 +86,31 @@ if [[ -f "$WORKING_TASK_FILE" ]]; then
     WORKING_TASK_ID=$(cat "$WORKING_TASK_FILE")
 fi
 
-# Parse the task to display (either working task or highest priority)
-TASK=$(echo "$RESPONSE" | python3 -c "
-import sys, json
+# Parse tasks from cache (format: TASK_ID|ICON|COLOR|CONTENT|URL|PROJECT_ID)
+TASK=""
 
-try:
-    tasks = json.load(sys.stdin)
-    if not tasks:
-        print('No tasks')
-        sys.exit(0)
+# If working task exists, find it quickly with grep
+if [[ -n "$WORKING_TASK_ID" ]]; then
+    TASK_LINE=$(grep "^${WORKING_TASK_ID}|" <<< "$TASKS_DATA" | head -n 1)
+    if [[ -n "$TASK_LINE" ]]; then
+        IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID <<< "$TASK_LINE"
+        TASK="$ICON|▶ $CONTENT"
+    fi
+fi
 
-    working_task_id = '$WORKING_TASK_ID'
-    selected_task = None
+# If no working task found, use first task (highest priority from cache)
+if [[ -z "$TASK" ]]; then
+    FIRST_LINE=$(echo "$TASKS_DATA" | head -n 1)
+    if [[ -n "$FIRST_LINE" ]]; then
+        IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID <<< "$FIRST_LINE"
+        TASK="$ICON|$CONTENT"
+    fi
+fi
 
-    # If there's a working task, try to find it
-    if working_task_id:
-        for task in tasks:
-            if str(task.get('id', '')) == working_task_id:
-                selected_task = task
-                break
-
-    # If no working task found, get highest priority task
-    if not selected_task:
-        sorted_tasks = sorted(tasks, key=lambda x: (-x.get('priority', 1), x.get('due', {}).get('date', '9999-12-31')))
-        selected_task = sorted_tasks[0]
-
-    content = selected_task.get('content', 'No task')
-    priority = selected_task.get('priority', 1)
-    is_working = str(selected_task.get('id', '')) == working_task_id
-
-    # Truncate if too long (fixed width)
-    if len(content) > 40:
-        content = content[:37] + '...'
-
-    # Add working indicator
-    if is_working:
-        content = '▶ ' + content
-
-    # Priority icon
-    if priority == 4:
-        icon = '󰄴'  # Urgent/P1
-    elif priority == 3:
-        icon = '󰄵'  # High/P2
-    elif priority == 2:
-        icon = '󰄶'  # Medium/P3
-    else:
-        icon = '󰃯'  # Normal/P4
-
-    print(f'{icon}|{content}')
-
-except Exception as e:
-    print('󰃯|Error loading tasks')
-")
+# Fallback if still nothing
+if [[ -z "$TASK" ]]; then
+    TASK="󰃯|No tasks"
+fi
 
 # Split icon and content
 IFS='|' read -r ICON CONTENT <<< "$TASK"
