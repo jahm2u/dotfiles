@@ -51,19 +51,22 @@ automatically-unhide-macos-hidden-apps = false
     preset = 'qwerty'
 
 # Gaps between windows (inner-*) and between monitor edges (outer-*).
-# Possible values:
-# - Constant:     gaps.            outer.top = 10
-# - Per monitor:  gaps.            outer.top = 10
-#                 In this example, 24 is a default value when there is no match.
-#                 Monitor pattern is the same as for 'workspace-to-monitor-force-assignment'.
-#                 See:
-#                 https://nikitabobko.github.io/AeroSpace/guide#assign-workspaces-to-monitors
+# Per-monitor configuration using pattern matching:
+#   outer.top = [{ monitor."pattern" = value }, fallback_value]
+# Patterns:
+#   - monitor."built-in" matches built-in laptop displays
+#   - monitor.secondary matches external displays
+#   - Last value is fallback when no patterns match
+#
+# Environment-specific gap configuration:
+# - Built-in display (laptop with notch): outer.top = 0 (notch provides natural spacing)
+# - External displays (no notch): outer.top = 40 (need extra spacing for comfort)
 [gaps]
     inner.horizontal = 8
     inner.vertical =   8
     outer.left =       16
     outer.bottom =     16
-        outer.top = 40
+    outer.top =        [{ monitor."built-in" = 10 }, 40]
     outer.right =      16
 
 # 'main' binding mode declaration
