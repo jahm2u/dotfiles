@@ -298,9 +298,10 @@ validate_installation() {
     log ""
     log "Validating critical dependencies:"
 
-    # Check font
+    # Check font (use macOS-native font check)
     ((validations_total++))
-    if fc-list 2>/dev/null | grep -qi "jetbrainsmono nerd font"; then
+    if ls ~/Library/Fonts/JetBrainsMonoNerdFont-*.ttf &>/dev/null || \
+       ls /Library/Fonts/JetBrainsMonoNerdFont-*.ttf &>/dev/null; then
         log "  ✓ JetBrains Mono Nerd Font installed"
         ((validations_passed++))
     else
@@ -478,32 +479,20 @@ check_and_install_brewfile_dependencies() {
         # Parse the output to show what's missing
         warn "Some Brewfile dependencies are missing:"
         echo "$missing_output" | grep -i "missing" || echo "$missing_output"
-        echo ""
 
-        if ask_user "Install all missing Brewfile dependencies now? (Recommended)"; then
-            log "Installing missing dependencies..."
-            log "This may take several minutes..."
-            echo ""
-
-            if brew bundle --verbose; then
-                log ""
-                log "✓ All dependencies installed successfully"
+        log ""
+        if ask_user "Install missing dependencies with 'brew bundle install'?"; then
+            log "Installing missing Brewfile dependencies..."
+            if brew bundle install; then
+                log "✓ Successfully installed Brewfile dependencies"
                 return 0
             else
-                warn "Some dependencies failed to install"
-                log "You can retry later with: cd $DOTFILES_DIR && brew bundle"
+                error "Failed to install some dependencies"
+                log "You can retry manually with: cd $DOTFILES_DIR && brew bundle"
                 return 1
             fi
         else
             warn "Skipping dependency installation"
-            log ""
-            log "Some features may not work correctly without all dependencies:"
-            log "  - AeroSpace: Window manager"
-            log "  - Sketchybar: Status bar (with icons)"
-            log "  - Karabiner: Keyboard customization"
-            log "  - khal: Calendar sync for meeting widget"
-            log "  - Font: Required for Sketchybar icons"
-            log ""
             log "Install later with: cd $DOTFILES_DIR && brew bundle"
             return 1
         fi
