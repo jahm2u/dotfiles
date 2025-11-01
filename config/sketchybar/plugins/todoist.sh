@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Cache directory for state management
+CACHE_DIR="$HOME/.cache/sketchybar"
+WORKING_TASK_FILE="$CACHE_DIR/todoist_working_task"
+mkdir -p "$CACHE_DIR"
+
 # Completion messages for when all tasks are done (Story 3.1)
 COMPLETION_MESSAGES=(
     "All done! 🎉"
@@ -76,8 +81,13 @@ fi
 # Update RESPONSE to use RESPONSE_BODY for the rest of the script
 RESPONSE="$RESPONSE_BODY"
 
-# Parse the highest priority task
-# Todoist priority: 4=p1 (highest), 3=p2, 2=p3, 1=p4 (lowest)
+# Check if there's a "working on" task
+WORKING_TASK_ID=""
+if [[ -f "$WORKING_TASK_FILE" ]]; then
+    WORKING_TASK_ID=$(cat "$WORKING_TASK_FILE")
+fi
+
+# Parse the task to display (either working task or highest priority)
 TASK=$(echo "$RESPONSE" | python3 -c "
 import sys, json
 
@@ -86,21 +96,34 @@ try:
     if not tasks:
         print('No tasks')
         sys.exit(0)
-    
-    # Sort by priority first (highest first), then by due date
-    # Todoist priority: 4=p1 (highest), 3=p2, 2=p3, 1=p4 (lowest)
-    # For due dates, we want earlier dates first, so we don't reverse that part
-    sorted_tasks = sorted(tasks, key=lambda x: (-x.get('priority', 1), x.get('due', {}).get('date', '9999-12-31')))
-    
-    # Get the highest priority task
-    top_task = sorted_tasks[0]
-    content = top_task.get('content', 'No task')
-    priority = top_task.get('priority', 1)
-    
+
+    working_task_id = '$WORKING_TASK_ID'
+    selected_task = None
+
+    # If there's a working task, try to find it
+    if working_task_id:
+        for task in tasks:
+            if str(task.get('id', '')) == working_task_id:
+                selected_task = task
+                break
+
+    # If no working task found, get highest priority task
+    if not selected_task:
+        sorted_tasks = sorted(tasks, key=lambda x: (-x.get('priority', 1), x.get('due', {}).get('date', '9999-12-31')))
+        selected_task = sorted_tasks[0]
+
+    content = selected_task.get('content', 'No task')
+    priority = selected_task.get('priority', 1)
+    is_working = str(selected_task.get('id', '')) == working_task_id
+
     # Truncate if too long (fixed width)
     if len(content) > 40:
         content = content[:37] + '...'
-    
+
+    # Add working indicator
+    if is_working:
+        content = '▶ ' + content
+
     # Priority icon
     if priority == 4:
         icon = '󰄴'  # Urgent/P1
@@ -110,9 +133,9 @@ try:
         icon = '󰄶'  # Medium/P3
     else:
         icon = '󰃯'  # Normal/P4
-    
+
     print(f'{icon}|{content}')
-    
+
 except Exception as e:
     print('󰃯|Error loading tasks')
 ")

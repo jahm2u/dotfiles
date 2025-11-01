@@ -125,7 +125,19 @@ sketchybar --add item todoist q \
     icon.color=$WIDGET_ICON_COLOR \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/todoist.sh" \
-    click_script="open -a Todoist" \
+    click_script="$PLUGIN_SHARED_DIR/todoist_popup.sh" \
+    popup.align=center \
+    popup.height=32 \
+    popup.topmost=off \
+    popup.blur_radius=50 \
+    popup.background.color=0xEE1A1D2E \
+    popup.background.corner_radius=10 \
+    popup.background.border_width=1 \
+    popup.background.border_color=0x40FFFFFF \
+    popup.background.shadow.drawing=on \
+    popup.background.shadow.color=0xC0000000 \
+    popup.background.shadow.distance=15 \
+    popup.background.shadow.angle=90 \
     update_freq=300 \
     --add item todoist.separator q \
     --set todoist.separator \
@@ -138,6 +150,7 @@ sketchybar --add item todoist q \
     icon.padding_right=0 \
     icon.y_offset=1 \
     label.drawing=no \
+    click_script="$PLUGIN_SHARED_DIR/todoist_popup.sh" \
     --add item todoist.name q \
     --set todoist.name \
     background.color=$TRANSPARENT \
@@ -146,14 +159,37 @@ sketchybar --add item todoist q \
     label.font="$FONT_FACE:Bold:12.0" \
     label.padding_left=5 \
     label.drawing=yes \
-    label.max_chars=40
+    label.max_chars=40 \
+    click_script="$PLUGIN_SHARED_DIR/todoist_popup.sh"
+
+# Todoist popup items (5 tasks with action buttons)
+for i in {1..5}; do
+    sketchybar --add item todoist.popup.task_$i popup.todoist \
+        --set todoist.popup.task_$i \
+        icon.font="$FONT_FACE:Regular:14.0" \
+        icon.padding_left=10 \
+        icon.padding_right=5 \
+        label.font="$FONT_FACE:Regular:12.0" \
+        label.padding_right=5 \
+        background.padding_top=3 \
+        background.padding_bottom=3 \
+        drawing=off \
+        --add item todoist.popup.action_$i popup.todoist \
+        --set todoist.popup.action_$i \
+        label.font="$FONT_FACE:Regular:16.0" \
+        label.padding_left=5 \
+        label.padding_right=10 \
+        icon.drawing=off \
+        background.color=$TRANSPARENT \
+        drawing=off
+done
 
 sketchybar --add bracket todoist_bracket \
     todoist \
     todoist.separator \
     todoist.name \
     icon.padding_left=15 \
-    --subscribe todoist system_woke
+    --subscribe todoist system_woke todoist_update
 
 # Fake notch spacer - right side of todoist
 sketchybar --add item todoist_gap q \
@@ -185,7 +221,19 @@ sketchybar --add item meeting e \
     label.drawing=no \
     update_freq=1 \
     script="$PLUGIN_SHARED_DIR/meeting.sh" \
-    click_script="open -a Calendar" \
+    click_script="$PLUGIN_SHARED_DIR/meeting_popup.sh" \
+    popup.align=center \
+    popup.height=32 \
+    popup.topmost=off \
+    popup.blur_radius=50 \
+    popup.background.color=0xEE1A1D2E \
+    popup.background.corner_radius=10 \
+    popup.background.border_width=1 \
+    popup.background.border_color=0x40FFFFFF \
+    popup.background.shadow.drawing=on \
+    popup.background.shadow.color=0xC0000000 \
+    popup.background.shadow.distance=15 \
+    popup.background.shadow.angle=90 \
     --subscribe meeting calendar_synced \
     --add item meeting.separator e \
     --set meeting.separator \
@@ -198,6 +246,7 @@ sketchybar --add item meeting e \
     icon.padding_right=0 \
     icon.y_offset=1 \
     label.drawing=no \
+    click_script="$PLUGIN_SHARED_DIR/meeting_popup.sh" \
     --add item meeting.name e \
     --set meeting.name \
     background.color=$TRANSPARENT \
@@ -205,7 +254,57 @@ sketchybar --add item meeting e \
     icon.drawing=off \
     label.font="$FONT_FACE:Bold:12.0" \
     label.padding_left=5 \
-    label.drawing=yes
+    label.drawing=yes \
+    click_script="$PLUGIN_SHARED_DIR/meeting_popup.sh"
+
+# Meeting popup items
+for i in {1..5}; do
+    sketchybar --add item meeting.popup.prev_$i popup.meeting \
+        --set meeting.popup.prev_$i \
+        icon.font="$FONT_FACE:Regular:14.0" \
+        icon.padding_left=10 \
+        icon.padding_right=5 \
+        label.font="$FONT_FACE:Regular:12.0" \
+        label.padding_right=5 \
+        background.color=$TRANSPARENT \
+        drawing=off \
+        --add item meeting.popup.prev_${i}_note popup.meeting \
+        --set meeting.popup.prev_${i}_note \
+        label="󰠮" \
+        label.font="$FONT_FACE:Regular:14.0" \
+        label.padding_left=0 \
+        label.padding_right=10 \
+        icon.drawing=off \
+        background.color=$TRANSPARENT \
+        drawing=off
+done
+
+sketchybar --add item meeting.popup.divider popup.meeting \
+    --set meeting.popup.divider \
+    background.color=$TRANSPARENT \
+    label.font="$FONT_FACE:Regular:10.0" \
+    drawing=off
+
+for i in {1..5}; do
+    sketchybar --add item meeting.popup.next_$i popup.meeting \
+        --set meeting.popup.next_$i \
+        icon.font="$FONT_FACE:Regular:14.0" \
+        icon.padding_left=10 \
+        icon.padding_right=5 \
+        label.font="$FONT_FACE:Regular:12.0" \
+        label.padding_right=5 \
+        background.color=$TRANSPARENT \
+        drawing=off \
+        --add item meeting.popup.next_${i}_note popup.meeting \
+        --set meeting.popup.next_${i}_note \
+        label="󰠮" \
+        label.font="$FONT_FACE:Regular:14.0" \
+        label.padding_left=0 \
+        label.padding_right=10 \
+        icon.drawing=off \
+        background.color=$TRANSPARENT \
+        drawing=off
+done
 
 sketchybar --add bracket meeting_bracket \
     meeting \
@@ -228,6 +327,20 @@ sketchybar --add item week_num right \
     label="W30" \
     update_freq=3600 \
     script="$PLUGIN_SHARED_DIR/week_simple.sh" \
+    click_script="$PLUGIN_SHARED_DIR/calendar_popup.sh" \
+    popup.align=center \
+    popup.height=26 \
+    popup.horizontal=on \
+    popup.topmost=off \
+    popup.blur_radius=50 \
+    popup.background.color=0xEE1A1D2E \
+    popup.background.corner_radius=10 \
+    popup.background.border_width=1 \
+    popup.background.border_color=0x40FFFFFF \
+    popup.background.shadow.drawing=on \
+    popup.background.shadow.color=0xC0000000 \
+    popup.background.shadow.distance=15 \
+    popup.background.shadow.angle=90 \
     --add item week_num.separator right \
     --set week_num.separator \
     background.color=$TRANSPARENT \
@@ -239,6 +352,7 @@ sketchybar --add item week_num right \
     icon.padding_right=0 \
     icon.y_offset=1 \
     label.drawing=no \
+    click_script="$PLUGIN_SHARED_DIR/calendar_popup.sh" \
     --add item clock right \
     --set clock \
     background.color=$TRANSPARENT \
@@ -248,7 +362,39 @@ sketchybar --add item week_num right \
     label.padding_right=5 \
     label.drawing=yes \
     update_freq=10 \
-    script="$PLUGIN_SHARED_DIR/clock.sh"
+    script="$PLUGIN_SHARED_DIR/clock.sh" \
+    click_script="$PLUGIN_SHARED_DIR/calendar_popup.sh"
+
+# Calendar popup items (9 weeks view)
+for week in {0..8}; do
+    # Month header for each week
+    sketchybar --add item calendar.popup.month_${week} popup.week_num \
+        --set calendar.popup.month_${week} \
+        label.font="$FONT_FACE:Bold:13.0" \
+        icon.drawing=off \
+        background.color=$TRANSPARENT \
+        drawing=off
+
+    # Week number
+    sketchybar --add item calendar.popup.week_${week} popup.week_num \
+        --set calendar.popup.week_${week} \
+        label.font="$FONT_FACE:Bold:11.0" \
+        icon.drawing=off \
+        background.padding_left=5 \
+        background.padding_right=5 \
+        drawing=off
+
+    # 7 days for this week
+    for day in {0..6}; do
+        sketchybar --add item calendar.popup.day_${week}_${day} popup.week_num \
+            --set calendar.popup.day_${week}_${day} \
+            label.font="$FONT_FACE:Regular:11.0" \
+            icon.drawing=off \
+            background.padding_left=4 \
+            background.padding_right=4 \
+            drawing=off
+    done
+done
 
 sketchybar --add bracket datetime_bracket \
     clock \
@@ -271,7 +417,20 @@ sketchybar --add item cpu right \
     icon.y_offset=0 \
     label.drawing=true \
     update_freq=2 \
-    script="$PLUGIN_SHARED_DIR/cpu.sh"
+    script="$PLUGIN_SHARED_DIR/cpu.sh" \
+    click_script="$PLUGIN_SHARED_DIR/system_stats_popup.sh" \
+    popup.align=center \
+    popup.height=32 \
+    popup.topmost=off \
+    popup.blur_radius=50 \
+    popup.background.color=0xEE1A1D2E \
+    popup.background.corner_radius=10 \
+    popup.background.border_width=1 \
+    popup.background.border_color=0x40FFFFFF \
+    popup.background.shadow.drawing=on \
+    popup.background.shadow.color=0xC0000000 \
+    popup.background.shadow.distance=15 \
+    popup.background.shadow.angle=90
 
 sketchybar --add item memory right \
     --set memory \
@@ -281,7 +440,80 @@ sketchybar --add item memory right \
     icon.y_offset=0 \
     label.drawing=true \
     update_freq=3 \
-    script="$PLUGIN_SHARED_DIR/memory.sh"
+    script="$PLUGIN_SHARED_DIR/memory.sh" \
+    click_script="$PLUGIN_SHARED_DIR/system_stats_popup.sh" \
+    popup.align=center \
+    popup.height=32 \
+    popup.topmost=off \
+    popup.blur_radius=50 \
+    popup.background.color=0xEE1A1D2E \
+    popup.background.corner_radius=10 \
+    popup.background.border_width=1 \
+    popup.background.border_color=0x40FFFFFF \
+    popup.background.shadow.drawing=on \
+    popup.background.shadow.color=0xC0000000 \
+    popup.background.shadow.distance=15 \
+    popup.background.shadow.angle=90
+
+# System stats popup items (shared between CPU and Memory)
+# CPU section - 5 processes with kill buttons
+for i in {1..5}; do
+    sketchybar --add item stats.popup.cpu_$i popup.cpu \
+        --set stats.popup.cpu_$i \
+        icon.font="$FONT_FACE:Regular:14.0" \
+        icon.padding_left=10 \
+        icon.padding_right=5 \
+        label.font="$FONT_FACE:Regular:12.0" \
+        label.padding_right=5 \
+        background.color=$TRANSPARENT \
+        drawing=off \
+        --add item stats.popup.cpu_action_$i popup.cpu \
+        --set stats.popup.cpu_action_$i \
+        label.font="$FONT_FACE:Regular:16.0" \
+        label.padding_left=5 \
+        label.padding_right=10 \
+        icon.drawing=off \
+        background.color=$TRANSPARENT \
+        drawing=off
+done
+
+sketchybar --add item stats.popup.divider popup.cpu \
+    --set stats.popup.divider \
+    background.color=$TRANSPARENT \
+    label.font="$FONT_FACE:Regular:10.0" \
+    drawing=off
+
+# Memory section - 5 processes with kill buttons
+for i in {1..5}; do
+    sketchybar --add item stats.popup.mem_$i popup.cpu \
+        --set stats.popup.mem_$i \
+        icon.font="$FONT_FACE:Regular:14.0" \
+        icon.padding_left=10 \
+        icon.padding_right=5 \
+        label.font="$FONT_FACE:Regular:12.0" \
+        label.padding_right=5 \
+        background.color=$TRANSPARENT \
+        drawing=off \
+        --add item stats.popup.mem_action_$i popup.cpu \
+        --set stats.popup.mem_action_$i \
+        label.font="$FONT_FACE:Regular:16.0" \
+        label.padding_left=5 \
+        label.padding_right=10 \
+        icon.drawing=off \
+        background.color=$TRANSPARENT \
+        drawing=off
+done
+
+sketchybar --add item stats.popup.footer popup.cpu \
+    --set stats.popup.footer \
+    icon.font="$FONT_FACE:Regular:14.0" \
+    icon.padding_left=10 \
+    icon.padding_right=5 \
+    label.font="$FONT_FACE:Bold:12.0" \
+    label.padding_right=10 \
+    background.padding_top=5 \
+    background.padding_bottom=5 \
+    drawing=off
 
 
 # osascript -e 'quit app "Rectangle"'
@@ -296,6 +528,31 @@ sketchybar --add event display_change_event system \
     drawing=off \
     script="$PLUGIN_SHARED_DIR/handle-display-change.sh" \
     --subscribe display_change_handler display_change
+
+# Popup dismiss helper script
+cat > "$PLUGIN_SHARED_DIR/dismiss_popups.sh" << 'EOF'
+#!/usr/bin/env bash
+sketchybar --set todoist popup.drawing=off \
+           --set meeting popup.drawing=off \
+           --set cpu popup.drawing=off \
+           --set memory popup.drawing=off \
+           --set week_num popup.drawing=off
+EOF
+chmod +x "$PLUGIN_SHARED_DIR/dismiss_popups.sh"
+
+# Add click-to-dismiss on bar background areas
+sketchybar --add item dismiss_left left \
+    --set dismiss_left \
+    position=left \
+    width=0 \
+    drawing=off \
+    click_script="$PLUGIN_SHARED_DIR/dismiss_popups.sh" \
+    --add item dismiss_right right \
+    --set dismiss_right \
+    position=right \
+    width=0 \
+    drawing=off \
+    click_script="$PLUGIN_SHARED_DIR/dismiss_popups.sh"
 
 ##### Finalizing Setup #####
 # Initialize aerospace workspace highlighting
