@@ -294,16 +294,57 @@ validate_installation() {
         warn "  ✗ khal not configured"
     fi
 
-    # Validate fonts
+    # Validate critical Brewfile dependencies
     log ""
-    log "Validating fonts:"
+    log "Validating critical dependencies:"
+
+    # Check font
     ((validations_total++))
     if fc-list 2>/dev/null | grep -qi "jetbrainsmono nerd font"; then
         log "  ✓ JetBrains Mono Nerd Font installed"
         ((validations_passed++))
     else
-        error "  ✗ JetBrains Mono Nerd Font missing (icons will not display)"
-        log "    Install with: brew install --cask font-jetbrains-mono-nerd-font"
+        error "  ✗ Font missing (Sketchybar icons won't display)"
+    fi
+
+    # Check AeroSpace
+    ((validations_total++))
+    if command -v aerospace &>/dev/null; then
+        log "  ✓ AeroSpace installed"
+        ((validations_passed++))
+    else
+        warn "  ✗ AeroSpace not installed (window management disabled)"
+    fi
+
+    # Check Sketchybar
+    ((validations_total++))
+    if command -v sketchybar &>/dev/null; then
+        log "  ✓ Sketchybar installed"
+        ((validations_passed++))
+    else
+        error "  ✗ Sketchybar not installed (status bar disabled)"
+    fi
+
+    # Check khal
+    ((validations_total++))
+    if command -v khal &>/dev/null; then
+        log "  ✓ khal installed"
+        ((validations_passed++))
+    else
+        warn "  ✗ khal not installed (calendar sync disabled)"
+    fi
+
+    # Check if all Brewfile dependencies are satisfied
+    ((validations_total++))
+    if command -v brew &>/dev/null && [[ -f "$DOTFILES_DIR/Brewfile" ]]; then
+        cd "$DOTFILES_DIR"
+        if brew bundle check &>/dev/null; then
+            log "  ✓ All Brewfile dependencies installed"
+            ((validations_passed++))
+        else
+            warn "  ✗ Some Brewfile dependencies missing"
+            log "    Run: cd $DOTFILES_DIR && brew bundle"
+        fi
     fi
 
     # Test calendar sync
@@ -406,40 +447,66 @@ create_symlink() {
     fi
 }
 
-install_required_fonts() {
-    log "Checking required fonts for Sketchybar icons..."
-
-    # Check if JetBrains Mono Nerd Font is installed
-    if fc-list 2>/dev/null | grep -qi "jetbrainsmono nerd font"; then
-        log "✓ JetBrains Mono Nerd Font already installed"
-        return 0
-    fi
-
-    warn "JetBrains Mono Nerd Font not found (required for Sketchybar icons)"
+check_and_install_brewfile_dependencies() {
+    log "Checking Brewfile dependencies..."
 
     # Check if brew is available
     if ! command -v brew &>/dev/null; then
-        error "Homebrew not installed - cannot auto-install font"
-        log "Please install manually: brew install --cask font-jetbrains-mono-nerd-font"
+        error "Homebrew not installed - cannot check/install dependencies"
+        log "Install Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        log "Then run: brew bundle in the dotfiles directory"
         return 1
     fi
 
-    if ask_user "Install JetBrains Mono Nerd Font now? (Required for icons)"; then
-        log "Installing font..."
-        if brew install --cask font-jetbrains-mono-nerd-font; then
-            log "✓ Font installed successfully"
-            log "You may need to restart Sketchybar for fonts to load"
-            return 0
+    # Check if Brewfile exists
+    if [[ ! -f "$DOTFILES_DIR/Brewfile" ]]; then
+        error "Brewfile not found at $DOTFILES_DIR/Brewfile"
+        return 1
+    fi
+
+    # Use brew bundle check to see if anything is missing
+    cd "$DOTFILES_DIR"
+
+    log "Checking which dependencies are missing..."
+
+    # Capture missing dependencies
+    local missing_output
+    if missing_output=$(brew bundle check 2>&1); then
+        log "✓ All Brewfile dependencies are installed"
+        return 0
+    else
+        # Parse the output to show what's missing
+        warn "Some Brewfile dependencies are missing:"
+        echo "$missing_output" | grep -i "missing" || echo "$missing_output"
+        echo ""
+
+        if ask_user "Install all missing Brewfile dependencies now? (Recommended)"; then
+            log "Installing missing dependencies..."
+            log "This may take several minutes..."
+            echo ""
+
+            if brew bundle --verbose; then
+                log ""
+                log "✓ All dependencies installed successfully"
+                return 0
+            else
+                warn "Some dependencies failed to install"
+                log "You can retry later with: cd $DOTFILES_DIR && brew bundle"
+                return 1
+            fi
         else
-            error "Failed to install font"
-            log "You can manually install: brew install --cask font-jetbrains-mono-nerd-font"
+            warn "Skipping dependency installation"
+            log ""
+            log "Some features may not work correctly without all dependencies:"
+            log "  - AeroSpace: Window manager"
+            log "  - Sketchybar: Status bar (with icons)"
+            log "  - Karabiner: Keyboard customization"
+            log "  - khal: Calendar sync for meeting widget"
+            log "  - Font: Required for Sketchybar icons"
+            log ""
+            log "Install later with: cd $DOTFILES_DIR && brew bundle"
             return 1
         fi
-    else
-        warn "Skipping font installation"
-        warn "Sketchybar icons will not display correctly without this font"
-        log "Install later with: brew install --cask font-jetbrains-mono-nerd-font"
-        return 1
     fi
 }
 
@@ -613,9 +680,9 @@ main() {
         "$HOME/.config/khal" \
         "Khal calendar config"
 
-    # Install required fonts for Sketchybar
+    # Check and install all Brewfile dependencies
     log ""
-    install_required_fonts
+    check_and_install_brewfile_dependencies
 
     # Initialize calendar automation infrastructure
     log ""
