@@ -5,6 +5,9 @@ CACHE_DIR="$HOME/.cache/sketchybar"
 WORKING_TASK_FILE="$CACHE_DIR/todoist_working_task"
 mkdir -p "$CACHE_DIR"
 
+# Subscribe to focus task change events
+sketchybar --subscribe todoist todoist_focus_changed
+
 # Completion messages for when all tasks are done (Story 3.1)
 COMPLETION_MESSAGES=(
     "All done! 🎉"

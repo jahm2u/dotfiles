@@ -142,7 +142,7 @@ while IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID; do
             icon="$ICON" \
             icon.color="$TASK_ICON_COLOR" \
             background.color="$TASK_BG" \
-            click_script="sketchybar --set todoist popup.drawing=off && (echo '$TASK_ID' > '$WORKING_TASK_FILE' && sketchybar --update todoist) &" \
+            click_script="sketchybar --set todoist popup.drawing=off && echo '$TASK_ID' > '$WORKING_TASK_FILE' && sketchybar --trigger todoist_focus_changed" \
             drawing=on
 
         # Action button removed - no external link buttons
