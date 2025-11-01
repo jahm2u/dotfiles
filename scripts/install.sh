@@ -215,6 +215,78 @@ preflight_checks() {
     fi
 }
 
+# Install Nerd Font from local repo or download if missing
+install_nerd_font() {
+    local fonts_dir="$DOTFILES_DIR/fonts"
+    local installed_count=0
+
+    # First, try to install from local fonts directory
+    if [[ -d "$fonts_dir" ]] && ls "$fonts_dir"/*.ttf &>/dev/null; then
+        log "  → Installing fonts from repository..."
+
+        while IFS= read -r -d '' font_file; do
+            local font_basename=$(basename "$font_file")
+            cp "$font_file" "$HOME/Library/Fonts/"
+            ((installed_count++))
+        done < <(find "$fonts_dir" -name "*.ttf" -print0)
+
+        if [[ $installed_count -gt 0 ]]; then
+            log "  → Installed $installed_count font files from repo"
+            return 0
+        fi
+    fi
+
+    # Fallback: Download from GitHub if local fonts not found
+    log "  → Local fonts not found, downloading from GitHub..."
+    local font_name="JetBrainsMono"
+    local nerd_fonts_version="v3.2.1"
+    local download_url="https://github.com/ryanoasis/nerd-fonts/releases/download/${nerd_fonts_version}/${font_name}.zip"
+    local temp_dir=$(mktemp -d)
+
+    # Download font zip
+    if ! curl -sL "$download_url" -o "$temp_dir/${font_name}.zip"; then
+        error "  ✗ Failed to download font"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Extract to temp directory
+    if ! unzip -q "$temp_dir/${font_name}.zip" -d "$temp_dir" 2>/dev/null; then
+        error "  ✗ Failed to extract font"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Install only essential weights
+    local essential_fonts=(
+        "JetBrainsMonoNLNerdFont-Regular.ttf"
+        "JetBrainsMonoNLNerdFont-Medium.ttf"
+        "JetBrainsMonoNLNerdFont-Bold.ttf"
+        "JetBrainsMonoNLNerdFont-SemiBold.ttf"
+        "JetBrainsMonoNLNerdFont-Italic.ttf"
+        "JetBrainsMonoNLNerdFont-BoldItalic.ttf"
+    )
+
+    installed_count=0
+    for font_name in "${essential_fonts[@]}"; do
+        if [[ -f "$temp_dir/$font_name" ]]; then
+            cp "$temp_dir/$font_name" "$HOME/Library/Fonts/"
+            ((installed_count++))
+        fi
+    done
+
+    # Clean up temp directory
+    rm -rf "$temp_dir"
+
+    if [[ $installed_count -gt 0 ]]; then
+        log "  → Downloaded and installed $installed_count font files"
+        return 0
+    else
+        error "  ✗ No font files found in download"
+        return 1
+    fi
+}
+
 # Post-installation validation
 validate_installation() {
     log ""
@@ -300,12 +372,18 @@ validate_installation() {
 
     # Check font (use macOS-native font check)
     ((validations_total++))
-    if ls ~/Library/Fonts/JetBrainsMonoNerdFont-*.ttf &>/dev/null || \
-       ls /Library/Fonts/JetBrainsMonoNerdFont-*.ttf &>/dev/null; then
+    if ls ~/Library/Fonts/JetBrainsMono*NerdFont*.ttf &>/dev/null 2>&1 || \
+       ls /Library/Fonts/JetBrainsMono*NerdFont*.ttf &>/dev/null 2>&1; then
         log "  ✓ JetBrains Mono Nerd Font installed"
         ((validations_passed++))
     else
-        error "  ✗ Font missing (Sketchybar icons won't display)"
+        log "  → JetBrains Mono Nerd Font not found, installing..."
+        if install_nerd_font; then
+            log "  ✓ JetBrains Mono Nerd Font installed successfully"
+            ((validations_passed++))
+        else
+            warn "  ✗ Could not auto-install font (try: brew install --cask font-jetbrains-mono-nerd-font)"
+        fi
     fi
 
     # Check AeroSpace
