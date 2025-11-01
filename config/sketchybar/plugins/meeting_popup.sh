@@ -45,8 +45,9 @@ format_meeting_display() {
     echo "$time - $title"
 }
 
-# Get current timestamp
+# Get current timestamp and today's date
 CURRENT_TIMESTAMP=$(date "+%s")
+TODAY=$(date "+%Y-%m-%d")
 
 # Read cached event list
 if [[ ! -f "$EVENTS_LIST_CACHE" ]]; then
@@ -56,7 +57,7 @@ fi
 
 EVENTS=$(sed '1,/^EVENTS_START$/d' "$EVENTS_LIST_CACHE")
 
-# Separate into past and future meetings
+# Separate into past and future meetings (TODAY ONLY - never show tomorrow/yesterday)
 PAST_MEETINGS=()
 FUTURE_MEETINGS=()
 
@@ -66,6 +67,11 @@ while IFS= read -r event; do
     # Parse format: "Meeting Title|09:00 AM|2025-10-29"
     EVENT_TIME=$(echo "$event" | cut -d'|' -f2)
     EVENT_DATE=$(echo "$event" | cut -d'|' -f3)
+
+    # CRITICAL: Only show TODAY's meetings (filter out tomorrow/yesterday)
+    if [[ "$EVENT_DATE" != "$TODAY" ]]; then
+        continue
+    fi
 
     # Calculate event timestamp
     EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)

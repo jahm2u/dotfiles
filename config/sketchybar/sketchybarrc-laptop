@@ -163,15 +163,16 @@ sketchybar --add item todoist q \
     label.drawing=yes \
     label.max_chars=40
 
-# Todoist popup items (5 tasks with action buttons)
-for i in {1..5}; do
+# Todoist popup items (25 tasks with colored priority circles, no action buttons)
+for i in {1..25}; do
     sketchybar --add item todoist.popup.task_$i popup.todoist \
         --set todoist.popup.task_$i \
         icon.font="$FONT_FACE:Regular:14.0" \
         icon.padding_left=10 \
         icon.padding_right=5 \
         label.font="$FONT_FACE:Regular:12.0" \
-        label.padding_right=5 \
+        label.padding_right=10 \
+        label.max_chars=80 \
         background.padding_top=3 \
         background.padding_bottom=3 \
         drawing=off \
@@ -190,7 +191,7 @@ sketchybar --add bracket todoist_bracket \
     todoist.separator \
     todoist.name \
     icon.padding_left=15 \
-    --subscribe todoist system_woke todoist_update
+    --subscribe todoist system_woke
 
 
 # Spacer before Meeting
