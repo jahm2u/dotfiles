@@ -1,0 +1,557 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>3</epicId>
+    <storyId>2</storyId>
+    <title>Sketchybar Popup Enhancements (Performance &amp; Fixes)</title>
+    <status>Draft</status>
+    <generatedAt>2025-11-01</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>/Users/v/repos/02_personal/dotfiles/docs/stories/story-3.2.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Sketchybar power user</asA>
+    <iWant>instant popup responses, reliable focus task updates, and accurate calendar day boundaries</iWant>
+    <soThat>my widgets provide fast, trustworthy information without misleading countdowns or stale task displays</soThat>
+    <tasks>
+      <phase name="Phase 1: Todoist Focus Task Fix" duration="30 minutes">
+        <task id="1.1" ac="1">Add event subscription to todoist.sh - Subscribe to todoist_focus_changed event after line 6</task>
+        <task id="1.2" ac="1">Modify popup click handler - Update click_script line 148, add trigger and auto-close</task>
+        <task id="1.3" ac="1">Remove "[WORKING]" text indicator - Set WORKING_INDICATOR="" at lines 134, 139</task>
+        <task id="1.4" ac="1">Test focus task functionality - Verify immediate updates and persistence</task>
+      </phase>
+      <phase name="Phase 2: Todoist Precache System" duration="90 minutes">
+        <task id="2.1" ac="2">Create todoist-precache.sh script - Background sync with API fetch, Python parsing, cache write</task>
+        <task id="2.2" ac="2">Create LaunchAgent plist - 300s interval, RunAtLoad, PATH environment variable</task>
+        <task id="2.3" ac="2">Modify todoist_popup.sh to use cache - Replace API call (lines 52-61) with cache read</task>
+        <task id="2.4" ac="2">Install and test LaunchAgent - Load, verify, test popup performance</task>
+      </phase>
+      <phase name="Phase 3: Calendar Day Boundary Logic" duration="45 minutes">
+        <task id="3.1" ac="3">Fix check_meetings_today() function - Simplify to khal list today today</task>
+        <task id="3.2" ac="3">Add day boundary check - Compare DATE with TODAY after line 182</task>
+        <task id="3.3" ac="3">Test calendar scenarios - Verify all message types display correctly</task>
+      </phase>
+      <phase name="Phase 4: Integration Testing" duration="30 minutes">
+        <task id="4.1" ac="all">End-to-end testing - Test all ACs with real scenarios</task>
+        <task id="4.2" ac="all">Error scenario testing - Test failures and edge cases</task>
+        <task id="4.3" ac="all">Create git commits - Incremental commits by phase</task>
+      </phase>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1" priority="high">
+      <title>Todoist Focus Task Updates Main Widget</title>
+      <given>I click a task in the Todoist popup</given>
+      <when>the task is selected</when>
+      <then>
+        - Main Todoist widget immediately updates to display the focused task
+        - The "[WORKING]" text is removed (yellow highlight remains in popup only)
+        - The popup automatically closes after selection
+        - The focused task persists across Sketchybar restarts
+      </then>
+      <implementation>
+        <file>config/sketchybar/plugins/todoist.sh</file>
+        <changes>
+          - Add todoist_focus_changed event subscription after line 6
+          - Script already reads from todoist_working_task cache file
+        </changes>
+      </implementation>
+      <implementation>
+        <file>config/sketchybar/plugins/todoist_popup.sh</file>
+        <changes>
+          - Line 148: Modify click_script to trigger todoist_focus_changed event
+          - Line 148: Add auto-close command: sketchybar --set todoist popup.drawing=off
+          - Lines 134, 139: Set WORKING_INDICATOR="" (remove text, keep yellow background)
+        </changes>
+      </implementation>
+    </criterion>
+
+    <criterion id="2" priority="high">
+      <title>Todoist Popup Opens Instantly (&lt;100ms)</title>
+      <given>the Todoist precache system is running</given>
+      <when>I click the Todoist widget to open the popup</when>
+      <then>
+        - Popup appears in under 100ms (instant feel)
+        - Task data is current within the last 5 minutes
+        - If cache is stale or missing, show "Refreshing tasks..." with loading icon
+        - Precache runs automatically every 5 minutes via LaunchAgent
+      </then>
+      <implementation>
+        <file>config/sketchybar/helpers/todoist-precache.sh (NEW)</file>
+        <changes>
+          - Create background precache script following calendar sync pattern
+          - Fetch tasks from Todoist API with 30-second timeout
+          - Parse JSON with Python (top 5 tasks, sorted by priority)
+          - Write to ~/.cache/sketchybar/todoist_tasks_cache
+          - Cache format: SYNC_STATUS=success|failed, TASKS_START, then pipe-delimited task lines
+          - Comprehensive logging to logs/todoist-precache.log
+          - Trigger todoist_synced custom event on success
+        </changes>
+      </implementation>
+      <implementation>
+        <file>~/Library/LaunchAgents/com.user.todoist-precache.plist (NEW)</file>
+        <changes>
+          - StartInterval: 300 seconds (5 minutes)
+          - RunAtLoad: true (immediate first sync)
+          - EnvironmentVariables: PATH with /opt/homebrew/bin (CRITICAL for Homebrew tools)
+          - StandardOutPath/StandardErrorPath: logs for debugging
+        </changes>
+      </implementation>
+      <implementation>
+        <file>config/sketchybar/plugins/todoist_popup.sh</file>
+        <changes>
+          - Lines 52-61: Replace API call with cache read
+          - Read SYNC_STATUS and TASKS from cache file
+          - Handle missing cache: show "Refreshing tasks..." and trigger manual sync
+          - Handle failed sync: show retry option
+          - Remove Python parsing block (lines 63-101) - now done in precache script
+        </changes>
+      </implementation>
+    </criterion>
+
+    <criterion id="3" priority="high">
+      <title>Calendar Day Boundary Logic Works Correctly</title>
+      <given>various meeting scenarios throughout the day</given>
+      <when>the calendar widget updates</when>
+      <then>
+        Scenario A: No meetings today, has tomorrow
+        - Shows random FREE_DAY_MESSAGES (not tomorrow's countdown)
+
+        Scenario B: Had meetings today, all complete, has tomorrow
+        - Shows random END_OF_DAY_MESSAGES
+
+        Scenario C: Has upcoming meeting today
+        - Shows countdown timer to that meeting
+      </then>
+      <implementation>
+        <file>config/sketchybar/plugins/meeting.sh</file>
+        <changes>
+          - Lines 92-104: Fix check_meetings_today() function
+          - Simplified logic: khal list today today --format "{title}"
+          - Return "had_meetings" if output non-empty, else "no_meetings"
+          - After line 182: Add day boundary check in update_display_from_cache()
+          - Extract MEETING_DATE from NEXT_MEETING
+          - Compare with TODAY=$(date +%Y-%m-%d)
+          - If DATE != TODAY: call check_meetings_today() and show appropriate message
+          - Preserve existing countdown logic for today's meetings (lines 190-230)
+        </changes>
+      </implementation>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/tech-spec.md" relevance="primary">
+        <title>Technical Specification for Sketchybar Popup Enhancements</title>
+        <sections>
+          <section name="Source Tree Structure">Lines 11-33: Complete file structure with NEW and MODIFY markers</section>
+          <section name="Problem 1: Todoist Focus Task">Lines 38-58: Root cause analysis and event-based solution</section>
+          <section name="Problem 2: Popup Performance">Lines 60-99: Precaching architecture following calendar sync pattern</section>
+          <section name="Problem 3: Calendar Day Boundary">Lines 100-153: Day boundary logic and check_meetings_today() fix</section>
+          <section name="Component 1: Todoist Focus Task Fix">Lines 186-222: Exact line numbers and code changes for todoist.sh and todoist_popup.sh</section>
+          <section name="Component 2: Todoist Precache System">Lines 224-451: Complete todoist-precache.sh script (400+ lines), LaunchAgent plist, popup modifications</section>
+          <section name="Component 3: Calendar Day Boundary Logic">Lines 453-514: Exact code changes for meeting.sh with before/after examples</section>
+          <section name="Implementation Guide">Lines 558-705: Phase-by-phase implementation steps with verification commands</section>
+          <section name="Testing Approach">Lines 707-854: Unit, integration, performance, and error scenario tests</section>
+        </sections>
+        <keyInsights>
+          - All modifications documented with exact line numbers
+          - Follows established calendar sync architecture pattern
+          - LaunchAgent PATH configuration is CRITICAL (discovered in Story 2.7)
+          - Incremental git commits by phase for rollback capability
+          - Target: popup open time &lt;100ms (down from 500-1000ms)
+        </keyInsights>
+      </doc>
+
+      <doc path="docs/epics.md" relevance="secondary">
+        <title>Epic Breakdown - Epic 3: Widget Experience Enhancement</title>
+        <sections>
+          <section name="Epic 3 Overview">Lines 320-327: Goal to enhance widget UX with visual feedback and performance</section>
+          <section name="Story 3.1">Lines 329-353: Related story covering icon blinking, color thresholds, and randomized messages</section>
+        </sections>
+        <note>Story 3.2 addresses different technical issues (performance optimization and bug fixes) vs Story 3.1 (UX enhancements)</note>
+      </doc>
+
+      <doc path="CLAUDE.md" relevance="critical">
+        <title>Project Context and LaunchAgent Best Practices</title>
+        <sections>
+          <section name="Calendar Automation Architecture">Lines 50-150: Complete reference architecture for precache pattern</section>
+          <section name="macOS LaunchAgent Best Practices">Lines 152-220: CRITICAL PATH configuration requirements</section>
+          <section name="Calendar Sync Issues - Troubleshooting">Lines 340-480: Diagnostic commands and common scenarios</section>
+        </sections>
+        <criticalLearning>
+          LaunchAgents MUST include EnvironmentVariables PATH in plist with Homebrew paths (/opt/homebrew/bin).
+          Without this, Homebrew-installed tools (curl, python3, jq, khal) fail with "command not found" (exit 127).
+          This was discovered as critical bug during Story 2.7 E2E testing.
+        </criticalLearning>
+      </doc>
+
+      <doc path="docs/prd.md" relevance="context">
+        <title>Product Requirements Document</title>
+        <sections>
+          <section name="Goals">Lines 10-17: Zero-touch automation and environment awareness</section>
+          <section name="UX Design Principles">Lines 83-88: Zero-Touch Automation, Visual Feedback, Fail-Safe Operation</section>
+        </sections>
+        <alignment>Story 3.2 aligns with "Zero-Touch Automation" and "Visual Feedback" principles by eliminating manual sync lag and providing instant, accurate widget data</alignment>
+      </doc>
+    </docs>
+
+    <code>
+      <artifact path="config/sketchybar/plugins/todoist.sh" kind="plugin" relevance="modify">
+        <symbol>todoist widget main plugin</symbol>
+        <lines>1-250</lines>
+        <currentBehavior>
+          - Lines 1-6: Setup cache directory and working task file
+          - Lines 8-32: Completion messages array (from Story 3.1)
+          - Lines 34-50: .env file sourcing for TODOIST_API_TOKEN
+          - Lines 50+: Widget display logic (reads from todoist_working_task cache)
+        </currentBehavior>
+        <requiredChanges>
+          - After line 6: Add event subscription check and subscribe to todoist_focus_changed
+          - No other changes needed - existing logic already reads from cache correctly
+        </requiredChanges>
+        <reason>Need to subscribe to custom event so widget refreshes when focus task changes in popup</reason>
+      </artifact>
+
+      <artifact path="config/sketchybar/plugins/todoist_popup.sh" kind="plugin" relevance="modify">
+        <symbol>todoist popup plugin</symbol>
+        <lines>1-200</lines>
+        <currentBehavior>
+          - Lines 8-21: Toggle logic and close other popups
+          - Lines 23-49: Load environment and API token
+          - Lines 52-61: Synchronous API call to Todoist (PERFORMANCE BOTTLENECK)
+          - Lines 63-101: Python JSON parsing (will move to precache script)
+          - Lines 134, 139: WORKING_INDICATOR = " [WORKING]" text label
+          - Line 148: click_script writes to cache and triggers todoist_update
+        </currentBehavior>
+        <requiredChanges>
+          - Line 148: Change click_script to trigger todoist_focus_changed and close popup
+          - Lines 134, 139: Set WORKING_INDICATOR="" (remove text, keep yellow highlight)
+          - Lines 52-61: Replace API call with cache read from ~/.cache/sketchybar/todoist_tasks_cache
+          - Lines 63-101: Delete Python parsing block (now done in precache script)
+          - Add fallback handling for missing/stale cache
+        </requiredChanges>
+        <reason>Eliminate synchronous API call to achieve &lt;100ms popup performance; fix focus task event trigger</reason>
+      </artifact>
+
+      <artifact path="config/sketchybar/plugins/meeting.sh" kind="plugin" relevance="modify">
+        <symbol>meeting widget plugin</symbol>
+        <lines>1-300</lines>
+        <currentBehavior>
+          - Lines 17-23: Cache directory setup
+          - Lines 46-81: Random message arrays (END_OF_DAY_MESSAGES, FREE_DAY_MESSAGES)
+          - Lines 92-104: check_meetings_today() function (HAS BUG: complex date logic)
+          - Lines 163-182: While loop to find NEXT_MEETING from cache
+          - Lines 190-230: Countdown timer display logic
+        </currentBehavior>
+        <requiredChanges>
+          - Lines 92-104: Simplify check_meetings_today() to "khal list today today --format {title}"
+          - After line 182: Add day boundary check before displaying meeting
+          - Extract MEETING_DATE, compare with TODAY, branch logic for tomorrow+ meetings
+          - Call check_meetings_today() and show appropriate message array
+          - Preserve countdown logic for today's meetings (no changes to 190-230)
+        </requiredChanges>
+        <reason>Fix bug where tomorrow's meeting shows when today is empty; distinguish between "had meetings" and "no meetings" states</reason>
+      </artifact>
+
+      <artifact path="config/sketchybar/helpers/sync-calendars.sh" kind="helper" relevance="reference">
+        <symbol>calendar sync reference architecture</symbol>
+        <lines>1-400</lines>
+        <pattern>
+          - Lines 7-22: Logging setup with rotation
+          - Lines 56-79: .env file sourcing with fallback locations
+          - Lines 81-91: Configuration validation and defaults
+          - Lines 93-200: Main sync logic with error handling
+          - Lines 300+: Trigger custom Sketchybar event on success
+        </pattern>
+        <reason>Reference architecture for todoist-precache.sh - follow same patterns for logging, .env sourcing, error handling, and event triggering</reason>
+      </artifact>
+
+      <artifact path="config/sketchybar/helpers/todoist-precache.sh" kind="helper" relevance="create">
+        <symbol>NEW: Todoist task precache script</symbol>
+        <lines>N/A (new file)</lines>
+        <specification>
+          Complete implementation provided in tech-spec.md lines 227-353:
+          - Bash script with comprehensive logging
+          - Sources .env for TODOIST_API_TOKEN
+          - curl API call with --max-time 30 timeout
+          - Python JSON parsing (top 5 tasks, sorted by priority)
+          - Cache format: SYNC_STATUS header, TASKS_START delimiter, pipe-delimited task lines
+          - Triggers todoist_synced custom event on success
+          - Error handling with exit codes (0=success, 1=partial, 2=complete failure)
+        </specification>
+        <reason>Background script to provide instant popup performance by eliminating real-time API calls</reason>
+      </artifact>
+
+      <artifact path="~/Library/LaunchAgents/com.user.todoist-precache.plist" kind="launchagent" relevance="create">
+        <symbol>NEW: LaunchAgent for periodic precache execution</symbol>
+        <lines>N/A (new file)</lines>
+        <specification>
+          Complete plist provided in tech-spec.md lines 357-392:
+          - Label: com.user.todoist-precache
+          - ProgramArguments: /bin/bash path-to-precache-script
+          - StartInterval: 300 seconds (5 minutes)
+          - RunAtLoad: true
+          - EnvironmentVariables: PATH with /opt/homebrew/bin (CRITICAL)
+          - StandardOutPath/StandardErrorPath for logs
+        </specification>
+        <criticalRequirement>
+          MUST include EnvironmentVariables PATH with Homebrew paths.
+          Without this, curl/python3 commands fail with exit code 127.
+          See CLAUDE.md "macOS LaunchAgent Best Practices" section.
+        </criticalRequirement>
+        <reason>Automatic periodic execution of precache script without user intervention</reason>
+      </artifact>
+    </code>
+
+    <dependencies>
+      <runtime>
+        <dependency name="bash" version="5.2+" ecosystem="system">Scripting language for all plugins</dependency>
+        <dependency name="curl" version="8.4.0+" ecosystem="system">HTTP client for Todoist API calls</dependency>
+        <dependency name="python3" version="3.11+" ecosystem="system">JSON parsing in precache and popup scripts</dependency>
+        <dependency name="khal" version="0.11.2+" ecosystem="homebrew">Calendar CLI for meeting queries</dependency>
+        <dependency name="sketchybar" version="2.20+" ecosystem="homebrew">Status bar with custom event system</dependency>
+      </runtime>
+      <external>
+        <api name="Todoist REST API v2" endpoint="https://api.todoist.com/rest/v2/tasks">
+          <authentication>Bearer token via TODOIST_API_TOKEN in .env</authentication>
+          <rateLimit>450 requests per 15 minutes</rateLimit>
+          <filter>today%20%7C%20overdue (URL-encoded)</filter>
+          <note>Precache system stays well under rate limit (12 requests/hour)</note>
+        </api>
+      </external>
+      <configuration>
+        <file path=".env" required="true">
+          <variable name="TODOIST_API_TOKEN" type="string" required="true">Authentication token for Todoist API</variable>
+          <location>~/dotfiles/.env or ~/repos/02_personal/dotfiles/.env</location>
+        </file>
+      </configuration>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <architectural>
+      <constraint type="pattern">Follow established calendar sync architecture for precache system (see sync-calendars.sh)</constraint>
+      <constraint type="pattern">Use Sketchybar custom event system for reactive updates (todoist_focus_changed, todoist_synced)</constraint>
+      <constraint type="pattern">Cache files in ~/.cache/sketchybar/ for state persistence</constraint>
+      <constraint type="pattern">Logs in ~/.config/sketchybar/logs/ with timestamped entries</constraint>
+      <constraint type="pattern">.env file sourcing with fallback location search</constraint>
+    </architectural>
+
+    <technical>
+      <constraint type="performance">Popup open time MUST be &lt;100ms after precaching (down from 500-1000ms)</constraint>
+      <constraint type="performance">Precache interval: 300 seconds (5 minutes) balances freshness vs API usage</constraint>
+      <constraint type="performance">API timeout: 30 seconds prevents hanging on network issues</constraint>
+      <constraint type="critical">LaunchAgent MUST include EnvironmentVariables PATH with Homebrew paths (/opt/homebrew/bin)</constraint>
+      <constraint type="reliability">Sync failures MUST NOT crash Sketchybar or prevent widget display</constraint>
+      <constraint type="reliability">Graceful degradation: show cached data with "stale" indicator on failures</constraint>
+    </technical>
+
+    <development>
+      <constraint type="process">Backup original files with .backup extension before modifications</constraint>
+      <constraint type="process">Commit incrementally by phase for rollback capability</constraint>
+      <constraint type="process">Test each phase independently before proceeding to next</constraint>
+      <constraint type="code">All modifications documented with exact line numbers in tech spec</constraint>
+      <constraint type="code">No breaking changes to existing widget behavior</constraint>
+      <constraint type="code">Maintain brownfield patterns and conventions</constraint>
+    </development>
+  </constraints>
+
+  <interfaces>
+    <sketchybar>
+      <event name="todoist_focus_changed" direction="trigger">
+        <trigger>todoist_popup.sh line 148 after user clicks task</trigger>
+        <subscriber>todoist.sh (add subscription after line 6)</subscriber>
+        <purpose>Force widget refresh when focused task changes</purpose>
+      </event>
+
+      <event name="todoist_synced" direction="trigger">
+        <trigger>todoist-precache.sh after successful cache write</trigger>
+        <subscriber>todoist.sh (optional: could subscribe for cache freshness indicator)</subscriber>
+        <purpose>Notify widgets that task cache has been updated</purpose>
+      </event>
+
+      <event name="calendar_synced" direction="subscribe">
+        <trigger>sync-calendars.sh (existing)</trigger>
+        <subscriber>meeting.sh (existing)</subscriber>
+        <note>Referenced for pattern consistency - no changes needed</note>
+      </event>
+
+      <command name="sketchybar --trigger EVENT_NAME">
+        <description>Trigger custom event that subscribers will receive</description>
+        <usage>Used in precache scripts to notify widgets of data updates</usage>
+      </command>
+
+      <command name="sketchybar --subscribe ITEM EVENT">
+        <description>Subscribe an item to receive custom events</description>
+        <usage>Used in plugins to listen for data change events</usage>
+      </command>
+
+      <command name="sketchybar --set ITEM popup.drawing=on|off">
+        <description>Show or hide popup for an item</description>
+        <usage>Used to auto-close popup after task selection</usage>
+      </command>
+    </sketchybar>
+
+    <todoist-api>
+      <endpoint method="GET" url="https://api.todoist.com/rest/v2/tasks">
+        <header name="Authorization">Bearer {TODOIST_API_TOKEN}</header>
+        <param name="filter">today | overdue (URL-encoded: today%20%7C%20overdue)</param>
+        <response type="application/json">
+          <field name="id" type="string">Task ID</field>
+          <field name="content" type="string">Task title/description</field>
+          <field name="priority" type="integer">1-4 (4=urgent, 1=normal)</field>
+          <field name="url" type="string">Task URL in Todoist app</field>
+          <field name="due" type="object">Due date information (optional)</field>
+        </response>
+        <rateLimit>450 requests per 15 minutes</rateLimit>
+      </endpoint>
+    </todoist-api>
+
+    <cache-format>
+      <file path="~/.cache/sketchybar/todoist_tasks_cache">
+        <format>
+          Line 1: SYNC_STATUS=success|failed
+          Line 2: TASKS_START
+          Line 3+: {task_id}|{icon}|{content}|{url} (pipe-delimited, one per line)
+        </format>
+        <example>
+          SYNC_STATUS=success
+          TASKS_START
+          12345678|󰄴|Review PR for auth module|https://todoist.com/...
+          87654321|󰄵|Update documentation|https://todoist.com/...
+        </example>
+      </file>
+
+      <file path="~/.cache/sketchybar/todoist_working_task">
+        <format>Single line containing task ID</format>
+        <purpose>Persists focused task across widget restarts</purpose>
+      </file>
+    </cache-format>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing follows brownfield project patterns with manual verification and shell script-based tests.
+
+      Unit Testing: Individual functions tested in isolation (check_meetings_today, cache read/write, API calls)
+
+      Integration Testing: Full workflows tested end-to-end (precache → popup → focus → persist, calendar state transitions)
+
+      Performance Testing: Popup open speed measured with `time` command, targeting &lt;100ms after precaching
+
+      Error Scenario Testing: Network failures, missing tokens, stale cache, invalid data gracefully handled
+
+      Each phase tested independently before proceeding to next phase. Manual testing with real Sketchybar environment.
+    </standards>
+
+    <locations>
+      <location type="helper">config/sketchybar/helpers/test-*.sh - Test scripts for individual components</location>
+      <location type="manual">Manual testing via Sketchybar UI - Click widgets, verify behavior, check logs</location>
+      <location type="logs">~/.config/sketchybar/logs/ - Runtime logs for debugging and verification</location>
+    </locations>
+
+    <ideas>
+      <test ac="1" type="unit">
+        <name>Test focus task file write and read</name>
+        <steps>
+          1. Write test task ID to ~/.cache/sketchybar/todoist_working_task
+          2. Trigger todoist_focus_changed event
+          3. Query todoist widget and verify label matches focused task
+        </steps>
+      </test>
+
+      <test ac="1" type="integration">
+        <name>Test focus task persistence across restart</name>
+        <steps>
+          1. Select focus task via popup
+          2. Restart Sketchybar: brew services restart sketchybar
+          3. Verify widget still shows focused task (reads from cache)
+        </steps>
+      </test>
+
+      <test ac="2" type="unit">
+        <name>Test precache script execution</name>
+        <steps>
+          1. Run: bash ~/.config/sketchybar/helpers/todoist-precache.sh
+          2. Verify cache file created: ~/.cache/sketchybar/todoist_tasks_cache
+          3. Verify log entry: tail -n 5 ~/.config/sketchybar/logs/todoist-precache.log
+          4. Verify cache format: SYNC_STATUS, TASKS_START, pipe-delimited lines
+        </steps>
+      </test>
+
+      <test ac="2" type="performance">
+        <name>Measure popup open speed</name>
+        <steps>
+          1. Ensure cache is populated (run precache script)
+          2. Use time command: time (sketchybar --set todoist popup.drawing=on && sleep 0.1)
+          3. Verify total time &lt;100ms
+          4. Compare with pre-optimization baseline (500-1000ms)
+        </steps>
+      </test>
+
+      <test ac="2" type="integration">
+        <name>Test LaunchAgent periodic execution</name>
+        <steps>
+          1. Load LaunchAgent: launchctl load -w ~/Library/LaunchAgents/com.user.todoist-precache.plist
+          2. Verify running: launchctl list | grep todoist-precache
+          3. Wait 5+ minutes, check cache modification time: ls -lh ~/.cache/sketchybar/todoist_tasks_cache
+          4. Verify logs show periodic sync: tail -f ~/.config/sketchybar/logs/todoist-precache.log
+        </steps>
+      </test>
+
+      <test ac="3" type="unit">
+        <name>Test check_meetings_today function</name>
+        <steps>
+          1. Source meeting.sh: source ~/.config/sketchybar/plugins/meeting.sh
+          2. Call function: check_meetings_today
+          3. Verify returns "had_meetings" or "no_meetings" based on khal data
+          4. Test with known calendar states (empty day, past meetings, upcoming meetings)
+        </steps>
+      </test>
+
+      <test ac="3" type="integration">
+        <name>Test calendar day boundary scenarios</name>
+        <steps>
+          Scenario A: No meetings today, has tomorrow
+          1. Clear today's calendar in khal
+          2. Add meeting for tomorrow
+          3. Trigger calendar sync
+          4. Verify widget shows FREE_DAY_MESSAGES (not tomorrow's countdown)
+
+          Scenario B: Had meetings today, all complete
+          1. Ensure today had meetings (check past events in khal)
+          2. Verify no upcoming meetings today
+          3. Trigger calendar sync
+          4. Verify widget shows END_OF_DAY_MESSAGES
+
+          Scenario C: Upcoming meeting today
+          1. Schedule meeting for later today
+          2. Trigger calendar sync
+          3. Verify widget shows countdown timer (not random message)
+        </steps>
+      </test>
+
+      <test ac="all" type="error">
+        <name>Test error scenarios</name>
+        <steps>
+          1. Missing API token: Rename .env, verify graceful failure with error message
+          2. API failure: Corrupt token, verify SYNC_STATUS=failed in cache
+          3. Stale cache: Delete cache file, verify "Refreshing tasks..." message
+          4. Network failure: Disconnect network, verify timeout and error logging
+        </steps>
+      </test>
+
+      <test ac="all" type="regression">
+        <name>Verify no breaking changes to existing behavior</name>
+        <steps>
+          1. Test Todoist widget without focus task selected (should show highest priority)
+          2. Test calendar widget with meetings today (should show countdown)
+          3. Test popup display with API errors (should show error state)
+          4. Verify all other Sketchybar widgets still function normally
+        </steps>
+      </test>
+    </ideas>
+  </tests>
+</story-context>

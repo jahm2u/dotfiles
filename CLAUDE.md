@@ -109,6 +109,103 @@ meeting.sh plugin → widget display (countdown timer)
 - **Parse errors**: Logged with event details and source URL
 - **Widget shows "stale"**: Last sync failed - check logs, verify calendar URLs in `.env` are accessible
 
+#### Todoist Automation Architecture
+
+The Todoist automation system provides instant popup performance and reactive focus task updates through background precaching and event-based widget synchronization.
+
+**Complete Data Flow:**
+```
+.env (TODOIST_API_TOKEN) → LaunchAgent (30sec) → todoist-precache.sh →
+curl fetch (Todoist API) → Python parse → cache → todoist_synced event →
+todoist_popup.sh (instant) → user clicks task → todoist_focus_changed event →
+todoist.sh widget (immediate update)
+```
+
+**Component Details:**
+
+1. **todoist-precache.sh** (`config/sketchybar/helpers/todoist-precache.sh`)
+   - Background precache script with 30-second timeout
+   - Sources `.env` for `TODOIST_API_TOKEN`
+   - Fetches tasks from Todoist REST API v2 (filter: today | overdue)
+   - Python JSON parsing (top 25 tasks, sorted by priority)
+   - Writes cache with `SYNC_STATUS` header and pipe-delimited task format
+   - Comprehensive logging to `logs/todoist-precache.log`
+   - Triggers `todoist_synced` custom event on success
+   - **Performance**: Sync completes in <1 second, enables <100ms popup open time
+
+2. **todoist_popup.sh** (`config/sketchybar/plugins/todoist_popup.sh`)
+   - Sketchybar popup plugin showing top 25 priority tasks
+   - Reads from cache instead of making live API calls (instant performance)
+   - Priority circles: P1=red, P2=orange, P3=blue, P4=unfilled
+   - Yellow highlight shows currently focused task
+   - Click handler: writes task ID to cache + triggers `todoist_focus_changed` event + auto-closes popup
+   - Handles missing cache ("Refreshing tasks..."), failed sync (retry option)
+   - Falls back gracefully on errors - never blocks user
+
+3. **todoist.sh** (`config/sketchybar/plugins/todoist.sh`)
+   - Main Todoist widget plugin
+   - Subscribes to `todoist_focus_changed` event for reactive updates
+   - Reads focused task from `~/.cache/sketchybar/todoist_working_task`
+   - Displays focused task with randomized completion messages when done
+   - Focus task persists across Sketchybar restarts (cache-based)
+
+4. **LaunchAgent** (`~/Library/LaunchAgents/com.user.todoist-precache.plist`)
+   - macOS background service for periodic precaching
+   - Runs sync every 30 seconds (user preference for fast updates)
+   - Within Todoist API rate limits (450 req/15min, using 120 req/hour)
+   - RunAtLoad: true for immediate first sync
+   - Logs stdout/stderr to separate log files
+
+5. **Event System** (Sketchybar custom events)
+   - `todoist_synced`: Triggered after successful precache (optional)
+   - `todoist_focus_changed`: Triggered when user clicks task in popup
+   - Enables reactive widget updates without polling
+   - Todoist widget subscribes via `--subscribe todoist todoist_focus_changed`
+
+**Configuration:**
+- API Token: `.env` file in project root (git-ignored)
+- Format: `TODOIST_API_TOKEN="your-token-here"`
+- Token location: `~/dotfiles/.env` or `~/repos/02_personal/dotfiles/.env`
+- Precache interval: 30 seconds (configurable in LaunchAgent plist)
+- API timeout: 30 seconds
+
+**Manual Sync Options:**
+- Trigger immediate precache: `bash ~/.config/sketchybar/helpers/todoist-precache.sh`
+- Via LaunchAgent: `launchctl start com.user.todoist-precache`
+- Check sync status: `cat ~/.cache/sketchybar/todoist_tasks_cache | head -2`
+
+**LaunchAgent Management:**
+- Check status: `launchctl list | grep todoist-precache`
+- View logs: `tail -f ~/.config/sketchybar/logs/todoist-precache.log`
+- View stdout: `tail -f ~/.config/sketchybar/logs/todoist-precache-stdout.log`
+- View stderr: `tail -f ~/.config/sketchybar/logs/todoist-precache-stderr.log`
+- Unload: `launchctl unload ~/Library/LaunchAgents/com.user.todoist-precache.plist`
+- Reload: `launchctl load -w ~/Library/LaunchAgents/com.user.todoist-precache.plist`
+
+**Error Handling & Logging:**
+- **Log Location**: `~/.config/sketchybar/logs/todoist-precache.log`
+- **Log Format**: `YYYY-MM-DD HH:MM:SS [LEVEL] message`
+- **Log Levels**: INFO (success), ERROR (failure)
+- **Exit Codes**: 0=success, 1=partial failure, 2=complete failure
+- **Cache Format**: Line 1: `SYNC_STATUS=success|failed`, Line 2: `TASKS_START`, Line 3+: pipe-delimited tasks
+- **Graceful Degradation**: Popup shows cached data with "Sync failed - click to retry" on failure
+- **Non-blocking**: Sync failures never crash Sketchybar or prevent widget display
+
+**Troubleshooting:**
+- If LaunchAgent not running: `launchctl list | grep todoist-precache` should show PID
+- If sync fails: Check `~/.config/sketchybar/logs/todoist-precache.log` for errors
+- If popup slow: Verify cache exists at `~/.cache/sketchybar/todoist_tasks_cache`
+- **Missing API token**: Popup closes silently - verify `TODOIST_API_TOKEN` in `.env`
+- **Invalid token**: Check stderr log for HTTP 401/403 errors
+- **Network errors**: Logged with curl exit codes (6=DNS, 7=connection refused, 28=timeout)
+- **Empty popup**: Verify tasks match filter "today | overdue" in Todoist app
+
+**Performance Metrics:**
+- Popup open time: <100ms (down from 500-1000ms before precaching)
+- Precache sync duration: <1 second typical
+- Focus task update: Instant (event-triggered, no polling)
+- API rate usage: ~120 requests/hour (well under 450/15min limit)
+
 #### macOS LaunchAgent Best Practices
 
 **Critical PATH Configuration:**
