@@ -22,7 +22,7 @@ fi
 
 # Check if already in countdown
 if [[ -f "$PENDING_COMPLETE_FILE" ]]; then
-    PENDING_ID=$(cat "$PENDING_COMPLETE_FILE")
+    PENDING_ID=$(head -n 1 "$PENDING_COMPLETE_FILE")
     if [[ "$PENDING_ID" == "$TASK_ID" ]]; then
         # UNDO - cancel the completion
         rm -f "$PENDING_COMPLETE_FILE"
