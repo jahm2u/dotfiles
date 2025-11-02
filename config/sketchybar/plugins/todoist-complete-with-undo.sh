@@ -1,0 +1,90 @@
+#!/bin/bash
+# Complete task with 5 second countdown and undo option
+# Shows undo arrow and strikethrough during countdown
+
+CACHE_DIR="$HOME/.cache/sketchybar"
+CURRENT_TASK_FILE="$CACHE_DIR/todoist_current_task"
+PENDING_COMPLETE_FILE="$CACHE_DIR/todoist_pending_complete"
+TASKS_CACHE="$CACHE_DIR/todoist_tasks_cache"
+
+# Get the currently displayed task
+if [[ ! -f "$CURRENT_TASK_FILE" ]]; then
+    echo "No current task"
+    exit 0
+fi
+
+TASK_ID=$(cat "$CURRENT_TASK_FILE")
+
+if [[ -z "$TASK_ID" ]]; then
+    echo "Current task file is empty"
+    exit 0
+fi
+
+# Check if already in countdown
+if [[ -f "$PENDING_COMPLETE_FILE" ]]; then
+    PENDING_ID=$(cat "$PENDING_COMPLETE_FILE")
+    if [[ "$PENDING_ID" == "$TASK_ID" ]]; then
+        # UNDO - cancel the completion
+        rm -f "$PENDING_COMPLETE_FILE"
+        echo "Completion cancelled"
+        # Trigger widget update to remove strikethrough
+        sketchybar --trigger todoist_update
+        exit 0
+    fi
+fi
+
+# Start countdown - mark as pending completion
+echo "$TASK_ID" > "$PENDING_COMPLETE_FILE"
+echo "$(date +%s)" >> "$PENDING_COMPLETE_FILE"  # Store start time
+
+# Trigger widget update to show undo arrow + strikethrough
+sketchybar --trigger todoist_update
+
+# Wait 5 seconds in background, then complete
+(
+    sleep 5
+
+    # Check if still pending (not cancelled)
+    if [[ -f "$PENDING_COMPLETE_FILE" ]] && grep -q "^${TASK_ID}$" "$PENDING_COMPLETE_FILE"; then
+        # Complete the task via API
+        ENV_FILE=""
+        for possible_location in \
+            "$HOME/dotfiles/.env" \
+            "$HOME/repos/02_personal/dotfiles/.env" \
+            "$HOME/.config/sketchybar/../../.env"
+        do
+            if [[ -f "$possible_location" ]]; then
+                ENV_FILE="$possible_location"
+                break
+            fi
+        done
+
+        if [[ -n "$ENV_FILE" ]] && [[ -f "$ENV_FILE" ]]; then
+            source "$ENV_FILE"
+        fi
+
+        if [[ -n "$TODOIST_API_TOKEN" ]]; then
+            HTTP_CODE=$(curl -s -w "%{http_code}" -o /dev/null -X POST \
+                "https://api.todoist.com/rest/v2/tasks/${TASK_ID}/close" \
+                -H "Authorization: Bearer $TODOIST_API_TOKEN")
+
+            if [[ "$HTTP_CODE" == "204" ]] || [[ "$HTTP_CODE" == "200" ]]; then
+                echo "Task $TASK_ID marked as complete"
+
+                # Clean up
+                rm -f "$PENDING_COMPLETE_FILE"
+
+                # Pick random new task
+                ~/.config/sketchybar/plugins/todoist-pick-random.sh &
+
+                # Trigger precache refresh
+                ~/.config/sketchybar/helpers/todoist-precache.sh &
+            else
+                echo "Error: API returned $HTTP_CODE"
+                rm -f "$PENDING_COMPLETE_FILE"
+            fi
+        fi
+    fi
+) &
+
+exit 0

@@ -27,7 +27,7 @@ sketchybar --bar \
     display=all
 
 # Register custom events
-sketchybar --add event todoist_focus_changed
+sketchybar --add event todoist_update
 
 # Alternatiive background colors
 # label.color=0xffffffff
@@ -137,15 +137,15 @@ sketchybar --add item todoist q \
     icon.color=$WIDGET_ICON_COLOR \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/todoist.sh" \
-    click_script="$PLUGIN_SHARED_DIR/todoist-complete-working-task.sh" \
+    click_script="$PLUGIN_SHARED_DIR/todoist-complete-with-undo.sh" \
     popup.align=right \
     popup.height=28 \
     popup.background.color=$SURFACE1 \
     popup.background.corner_radius=8 \
     popup.background.border_width=2 \
     popup.background.border_color=$BLUE \
-    update_freq=300 \
-    --subscribe todoist system_woke todoist_focus_changed \
+    update_freq=5 \
+    --subscribe todoist system_woke todoist_update \
     --add item todoist.separator q \
     --set todoist.separator \
     background.color=$TRANSPARENT \

@@ -2,10 +2,12 @@
 
 # Cache directory for state management
 CACHE_DIR="$HOME/.cache/sketchybar"
-WORKING_TASK_FILE="$CACHE_DIR/todoist_working_task"
+CURRENT_TASK_FILE="$CACHE_DIR/todoist_current_task"
+PENDING_COMPLETE_FILE="$CACHE_DIR/todoist_pending_complete"
+TASKS_CACHE="$CACHE_DIR/todoist_tasks_cache"
 mkdir -p "$CACHE_DIR"
 
-# Completion messages for when all tasks are done (Story 3.1)
+# Completion messages for when all tasks are done
 COMPLETION_MESSAGES=(
     "All done! 🎉"
     "Inbox zero! ✨"
@@ -32,13 +34,11 @@ get_random_completion_message() {
 }
 
 # Source the .env file to get TODOIST_API_TOKEN
-# Try multiple locations to find .env file
 ENV_FILE=""
 for possible_location in \
     "$HOME/dotfiles/.env" \
     "$HOME/repos/02_personal/dotfiles/.env" \
-    "$HOME/.config/sketchybar/../../.env" \
-    "$(dirname "$(dirname "$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")")")/../../.env"
+    "$HOME/.config/sketchybar/../../.env"
 do
     if [[ -f "$possible_location" ]]; then
         ENV_FILE="$possible_location"
@@ -55,17 +55,15 @@ if [[ -z "$TODOIST_API_TOKEN" ]]; then
     exit 0
 fi
 
-# Read from precached tasks (updated every 30 seconds by LaunchAgent)
-CACHE_FILE="$CACHE_DIR/todoist_tasks_cache"
-
-if [[ ! -f "$CACHE_FILE" ]]; then
+# Read from precached tasks
+if [[ ! -f "$TASKS_CACHE" ]]; then
     sketchybar --set "${NAME}.name" label="Loading tasks..."
     exit 0
 fi
 
 # Read cache status and tasks
-SYNC_STATUS=$(grep "^SYNC_STATUS=" "$CACHE_FILE" | cut -d= -f2)
-TASKS_DATA=$(sed '1,/^TASKS_START$/d' "$CACHE_FILE")
+SYNC_STATUS=$(grep "^SYNC_STATUS=" "$TASKS_CACHE" | cut -d= -f2)
+TASKS_DATA=$(sed '1,/^TASKS_START$/d' "$TASKS_CACHE")
 
 # Check sync status
 if [[ "$SYNC_STATUS" == "failed" ]]; then
@@ -77,52 +75,70 @@ fi
 if [[ -z "$TASKS_DATA" ]]; then
     COMPLETION_MSG=$(get_random_completion_message)
     sketchybar --set "${NAME}.name" label="$COMPLETION_MSG"
+    sketchybar --set "$NAME" icon="✨"
+    rm -f "$CURRENT_TASK_FILE"
     exit 0
 fi
 
-# Check if there's a "working on" task
-WORKING_TASK_ID=""
-if [[ -f "$WORKING_TASK_FILE" ]]; then
-    WORKING_TASK_ID=$(cat "$WORKING_TASK_FILE")
-fi
-
-# Parse tasks from cache (format: TASK_ID|ICON|COLOR|CONTENT|URL|PROJECT_ID)
-TASK=""
-
-# If working task exists, find it quickly with grep
-if [[ -n "$WORKING_TASK_ID" ]]; then
-    TASK_LINE=$(grep "^${WORKING_TASK_ID}|" <<< "$TASKS_DATA" | head -n 1)
-    if [[ -n "$TASK_LINE" ]]; then
-        IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID <<< "$TASK_LINE"
-        TASK="$ICON|▶ $CONTENT"
-    fi
-fi
-
-# If no working task found, use first task (highest priority from cache)
-if [[ -z "$TASK" ]]; then
+# Get current task ID (or pick one if none set)
+if [[ ! -f "$CURRENT_TASK_FILE" ]] || [[ ! -s "$CURRENT_TASK_FILE" ]]; then
+    # No current task - pick first one (highest priority)
     FIRST_LINE=$(echo "$TASKS_DATA" | head -n 1)
-    if [[ -n "$FIRST_LINE" ]]; then
-        IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID <<< "$FIRST_LINE"
-        TASK="$ICON|$CONTENT"
+    TASK_ID=$(echo "$FIRST_LINE" | cut -d'|' -f1)
+    echo "$TASK_ID" > "$CURRENT_TASK_FILE"
+else
+    TASK_ID=$(cat "$CURRENT_TASK_FILE")
+fi
+
+# Every 5 seconds, check via API if current task is complete
+# Only check if SENDER is "routine" (from update_freq)
+if [[ "$SENDER" == "routine" ]]; then
+    # Check if task still exists in Todoist
+    HTTP_CODE=$(curl -s -w "%{http_code}" -o /dev/null -X GET \
+        "https://api.todoist.com/rest/v2/tasks/${TASK_ID}" \
+        -H "Authorization: Bearer $TODOIST_API_TOKEN")
+
+    if [[ "$HTTP_CODE" == "404" ]]; then
+        # Task completed elsewhere (phone, web, etc) - pick new random task
+        ~/.config/sketchybar/plugins/todoist-pick-random.sh &
+        exit 0
     fi
 fi
 
-# Fallback if still nothing
-if [[ -z "$TASK" ]]; then
-    TASK="󰃯|No tasks"
+# Find the task in cache
+TASK_LINE=$(grep "^${TASK_ID}|" <<< "$TASKS_DATA" | head -n 1)
+
+if [[ -z "$TASK_LINE" ]]; then
+    # Task not in cache anymore - pick new one
+    ~/.config/sketchybar/plugins/todoist-pick-random.sh &
+    exit 0
 fi
 
-# Split icon and content
-IFS='|' read -r ICON CONTENT <<< "$TASK"
+# Parse task details
+IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID <<< "$TASK_LINE"
 
-if [[ -z "$ICON" ]]; then
-    ICON="󰃯"
+# Check if pending completion (countdown active)
+IS_PENDING=false
+if [[ -f "$PENDING_COMPLETE_FILE" ]] && grep -q "^${TASK_ID}$" "$PENDING_COMPLETE_FILE"; then
+    IS_PENDING=true
 fi
 
-if [[ -z "$CONTENT" ]]; then
-    CONTENT="No tasks"
+# Set icon and content based on state
+if [[ "$IS_PENDING" == true ]]; then
+    # Pending completion - show undo arrow and strikethrough
+    DISPLAY_ICON="↶"  # Undo arrow
+    DISPLAY_CONTENT="$(echo "$CONTENT" | sed 's/./&̶/g')"  # Strikethrough
+else
+    # Normal state
+    DISPLAY_ICON="$ICON"
+    DISPLAY_CONTENT="$CONTENT"
+fi
+
+# Truncate if too long
+if [[ ${#DISPLAY_CONTENT} -gt 40 ]]; then
+    DISPLAY_CONTENT="${DISPLAY_CONTENT:0:37}..."
 fi
 
 # Update sketchybar items
-sketchybar --set "$NAME" icon="$ICON" \
-           --set "${NAME}.name" label="$CONTENT"
+sketchybar --set "$NAME" icon="$DISPLAY_ICON" \
+           --set "${NAME}.name" label="$DISPLAY_CONTENT"
