@@ -33,6 +33,25 @@ if [[ -f "$PENDING_COMPLETE_FILE" ]]; then
     fi
 fi
 
+# Get countdown duration from .env (default 15 seconds)
+ENV_FILE=""
+for possible_location in \
+    "$HOME/dotfiles/.env" \
+    "$HOME/repos/02_personal/dotfiles/.env" \
+    "$HOME/.config/sketchybar/../../.env"
+do
+    if [[ -f "$possible_location" ]]; then
+        ENV_FILE="$possible_location"
+        break
+    fi
+done
+
+if [[ -n "$ENV_FILE" ]] && [[ -f "$ENV_FILE" ]]; then
+    source "$ENV_FILE"
+fi
+
+COUNTDOWN_SECONDS="${TODOIST_COUNTDOWN_SECONDS:-15}"
+
 # Start countdown - mark as pending completion
 echo "$TASK_ID" > "$PENDING_COMPLETE_FILE"
 echo "$(date +%s)" >> "$PENDING_COMPLETE_FILE"  # Store start time
@@ -40,9 +59,9 @@ echo "$(date +%s)" >> "$PENDING_COMPLETE_FILE"  # Store start time
 # Trigger widget update to show undo arrow + strikethrough
 sketchybar --trigger todoist_update
 
-# Wait 5 seconds in background, then complete
+# Wait for configured seconds in background, then complete
 (
-    sleep 5
+    sleep "$COUNTDOWN_SECONDS"
 
     # Check if still pending (not cancelled)
     if [[ -f "$PENDING_COMPLETE_FILE" ]] && grep -q "^${TASK_ID}$" "$PENDING_COMPLETE_FILE"; then
