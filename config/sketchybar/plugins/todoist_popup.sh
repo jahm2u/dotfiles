@@ -13,15 +13,15 @@ if [[ "$POPUP_STATE" == "on" ]]; then
     exit 0
 fi
 
-# Close all other popups (but don't show todoist popup yet)
+# Close all other popups and show this one immediately
 sketchybar --set meeting popup.drawing=off \
            --set cpu popup.drawing=off \
            --set memory popup.drawing=off \
-           --set week_num popup.drawing=off
+           --set week_num popup.drawing=off \
+           --set todoist popup.drawing=on
 
 CACHE_DIR="$HOME/.cache/sketchybar"
 WORKING_TASK_FILE="$CACHE_DIR/todoist_working_task"
-COMPLETED_TASKS_FILE="$CACHE_DIR/todoist_completed_tasks_session"
 
 # Load environment colors
 source "$HOME/.config/sketchybar/helpers/source-colors.sh"
@@ -123,59 +123,30 @@ while IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID; do
             WORKING_TASK_ID=$(cat "$WORKING_TASK_FILE")
         fi
 
-        # Check if task was completed in this session
-        IS_COMPLETED=false
-        if [[ -f "$COMPLETED_TASKS_FILE" ]] && grep -q "^${TASK_ID}$" "$COMPLETED_TASKS_FILE"; then
-            IS_COMPLETED=true
-        fi
-
-        # Set visual appearance based on state
-        if [[ "$IS_COMPLETED" == true ]]; then
-            # Completed: grey strikethrough text, filled circle
-            TASK_BG="$TRANSPARENT"
-            TASK_LABEL_COLOR="0xff6e738d"  # Grey
-            TASK_ICON="●"  # Filled circle
-            TASK_ICON_COLOR="0xff6e738d"  # Grey
-            LABEL_DISPLAY="$(echo "$CONTENT" | sed 's/./&̶/g')"  # Strikethrough (combining character)
-            COMPLETION_STATE="completed"
-        elif [[ "$TASK_ID" == "$WORKING_TASK_ID" ]]; then
+        if [[ "$TASK_ID" == "$WORKING_TASK_ID" ]]; then
             # Highlight working task with yellow background
             TASK_BG="$YELLOW"
             TASK_LABEL_COLOR="$BLACK"
-            TASK_ICON="$ICON"
             TASK_ICON_COLOR="$BLACK"
-            LABEL_DISPLAY="$CONTENT"
-            COMPLETION_STATE="active"
         else
-            # Normal active task
             TASK_BG="$TRANSPARENT"
             TASK_LABEL_COLOR="$LABEL_COLOR"
-            TASK_ICON="$ICON"
+            # Use priority color for icon
             TASK_ICON_COLOR="${COLORS[$COLOR]}"
-            LABEL_DISPLAY="$CONTENT"
-            COMPLETION_STATE="active"
         fi
 
-        # Task label - clickable to set as working task
+        # Optimized close timing: Hide popup FIRST, then update in background
         sketchybar --set "$item_name" \
-            label="${LABEL_DISPLAY}" \
+            label="${CONTENT}" \
             label.color="$TASK_LABEL_COLOR" \
-            icon.drawing=off \
+            icon="$ICON" \
+            icon.color="$TASK_ICON_COLOR" \
             background.color="$TASK_BG" \
-            click_script="echo '$TASK_ID' > '$WORKING_TASK_FILE' && sketchybar --trigger todoist_focus_changed && sketchybar --set todoist popup.drawing=off" \
+            click_script="sketchybar --set todoist popup.drawing=off && echo '$TASK_ID' > '$WORKING_TASK_FILE' && sketchybar --trigger todoist_focus_changed" \
             drawing=on
 
-        # Action button repurposed as completion checkbox - clickable icon
-        sketchybar --set "$action_name" \
-            label="$TASK_ICON" \
-            label.color="$TASK_ICON_COLOR" \
-            label.font="$FONT_FACE:Regular:14.0" \
-            label.padding_left=10 \
-            label.padding_right=5 \
-            icon.drawing=off \
-            background.color="$TRANSPARENT" \
-            click_script="~/.config/sketchybar/helpers/todoist-toggle-complete.sh '$TASK_ID' '$COMPLETION_STATE' && sleep 0.3 && ~/.config/sketchybar/plugins/todoist_popup.sh" \
-            drawing=on
+        # Action button removed - no external link buttons
+        sketchybar --set "$action_name" drawing=off
     fi
 
     TASK_INDEX=$((TASK_INDEX + 1))
@@ -188,5 +159,4 @@ while [[ $TASK_INDEX -le 25 ]]; do
     TASK_INDEX=$((TASK_INDEX + 1))
 done
 
-# Now show popup with all items correctly configured
-sketchybar --set todoist popup.drawing=on
+# Popup already shown at the start - no need to toggle again
