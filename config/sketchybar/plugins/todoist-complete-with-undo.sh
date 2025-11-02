@@ -28,9 +28,19 @@ if [[ -f "$PENDING_COMPLETE_FILE" ]]; then
         rm -f "$PENDING_COMPLETE_FILE"
         echo "Completion cancelled"
 
-        # Force immediate UI update by calling script directly
-        # This ensures strikethrough and undo arrow are removed right away
-        ~/.config/sketchybar/plugins/todoist.sh &
+        # Get original task content
+        TASKS_CACHE="$CACHE_DIR/todoist_tasks_cache"
+        TASKS_DATA=$(sed '1,/^TASKS_START$/d' "$TASKS_CACHE")
+        TASK_LINE=$(grep "^${TASK_ID}|" <<< "$TASKS_DATA" | head -n 1)
+        IFS='|' read -r _ _ _ CONTENT _ _ <<< "$TASK_LINE"
+
+        # INSTANT visual revert - uncheck and remove strikethrough immediately
+        # Truncate if too long
+        if [[ ${#CONTENT} -gt 40 ]]; then
+            CONTENT="${CONTENT:0:37}..."
+        fi
+        sketchybar --set todoist icon="󰄱" \
+                   --set todoist.name label="$CONTENT"
 
         exit 0
     fi
@@ -55,12 +65,24 @@ fi
 
 COUNTDOWN_SECONDS="${TODOIST_COUNTDOWN_SECONDS:-15}"
 
-# Start countdown - mark as pending completion
-echo "$TASK_ID" > "$PENDING_COMPLETE_FILE"
-echo "$(date +%s)" >> "$PENDING_COMPLETE_FILE"  # Store start time
+# Get current task content for immediate visual update
+TASKS_CACHE="$CACHE_DIR/todoist_tasks_cache"
+TASKS_DATA=$(sed '1,/^TASKS_START$/d' "$TASKS_CACHE")
+TASK_LINE=$(grep "^${TASK_ID}|" <<< "$TASKS_DATA" | head -n 1)
+IFS='|' read -r _ _ _ CONTENT _ _ <<< "$TASK_LINE"
 
-# Force immediate widget update to show undo arrow + strikethrough
-~/.config/sketchybar/plugins/todoist.sh &
+# INSTANT visual feedback - update UI immediately (no delay)
+STRIKETHROUGH_TEXT="$(echo "$CONTENT" | sed 's/./&̶/g')"
+# Truncate if too long
+if [[ ${#STRIKETHROUGH_TEXT} -gt 40 ]]; then
+    STRIKETHROUGH_TEXT="${STRIKETHROUGH_TEXT:0:37}..."
+fi
+sketchybar --set todoist icon="󰄵" \
+           --set todoist.name label="$STRIKETHROUGH_TEXT"
+
+# Mark as pending in background
+echo "$TASK_ID" > "$PENDING_COMPLETE_FILE"
+echo "$(date +%s)" >> "$PENDING_COMPLETE_FILE"
 
 # Wait for configured seconds in background, then complete
 (
@@ -104,6 +126,9 @@ echo "$(date +%s)" >> "$PENDING_COMPLETE_FILE"  # Store start time
             else
                 echo "Error: API returned $HTTP_CODE"
                 rm -f "$PENDING_COMPLETE_FILE"
+
+                # Revert visual state - uncheck and remove strikethrough
+                ~/.config/sketchybar/plugins/todoist.sh &
             fi
         fi
     fi

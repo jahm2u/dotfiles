@@ -122,9 +122,10 @@ sketchybar --add item todoist q \
     background.padding_left=0 \
     background.padding_right=0 \
     icon=󰃯 \
+    icon.font="$FONT_FACE:Regular:16.0" \
     icon.padding_left=8 \
     icon.padding_right=8 \
-    icon.y_offset=1 \
+    icon.y_offset=0 \
     icon.color=$WIDGET_ICON_COLOR \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/todoist.sh" \

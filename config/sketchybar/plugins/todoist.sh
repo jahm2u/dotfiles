@@ -126,11 +126,11 @@ fi
 # Set icon and content based on state
 if [[ "$IS_PENDING" == true ]]; then
     # Pending completion - show checked box and strikethrough
-    DISPLAY_ICON="☑"  # Checked box (click to undo)
+    DISPLAY_ICON="󰄵"  # Nerd Font: checkbox-marked (click to undo)
     DISPLAY_CONTENT="$(echo "$CONTENT" | sed 's/./&̶/g')"  # Strikethrough
 else
     # Normal state - show unchecked box
-    DISPLAY_ICON="☐"  # Unchecked box (click to mark complete)
+    DISPLAY_ICON="󰄱"  # Nerd Font: checkbox-blank-outline (click to mark complete)
     DISPLAY_CONTENT="$CONTENT"
 fi
 
