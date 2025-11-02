@@ -27,8 +27,11 @@ if [[ -f "$PENDING_COMPLETE_FILE" ]]; then
         # UNDO - cancel the completion
         rm -f "$PENDING_COMPLETE_FILE"
         echo "Completion cancelled"
-        # Trigger widget update to remove strikethrough
-        sketchybar --trigger todoist_update
+
+        # Force immediate UI update by calling script directly
+        # This ensures strikethrough and undo arrow are removed right away
+        ~/.config/sketchybar/plugins/todoist.sh &
+
         exit 0
     fi
 fi
@@ -56,8 +59,8 @@ COUNTDOWN_SECONDS="${TODOIST_COUNTDOWN_SECONDS:-15}"
 echo "$TASK_ID" > "$PENDING_COMPLETE_FILE"
 echo "$(date +%s)" >> "$PENDING_COMPLETE_FILE"  # Store start time
 
-# Trigger widget update to show undo arrow + strikethrough
-sketchybar --trigger todoist_update
+# Force immediate widget update to show undo arrow + strikethrough
+~/.config/sketchybar/plugins/todoist.sh &
 
 # Wait for configured seconds in background, then complete
 (

@@ -48,7 +48,7 @@ else
     echo "Picked first task: $TASK_ID"
 fi
 
-# Trigger widget update
-sketchybar --trigger todoist_update
+# Force immediate widget update by calling script directly
+~/.config/sketchybar/plugins/todoist.sh &
 
 exit 0
