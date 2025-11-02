@@ -21,7 +21,7 @@ sketchybar --set meeting popup.drawing=off \
            --set todoist popup.drawing=on
 
 CACHE_DIR="$HOME/.cache/sketchybar"
-WORKING_TASK_FILE="$CACHE_DIR/todoist_working_task"
+CURRENT_TASK_FILE="$CACHE_DIR/todoist_current_task"
 
 # Load environment colors
 source "$HOME/.config/sketchybar/helpers/source-colors.sh"
@@ -117,14 +117,14 @@ while IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID; do
             drawing=on \
             --set "$action_name" drawing=off
     else
-        # Check if this task is currently being worked on
-        WORKING_TASK_ID=""
-        if [[ -f "$WORKING_TASK_FILE" ]]; then
-            WORKING_TASK_ID=$(cat "$WORKING_TASK_FILE")
+        # Check if this task is currently displayed in the widget
+        CURRENT_TASK_ID=""
+        if [[ -f "$CURRENT_TASK_FILE" ]]; then
+            CURRENT_TASK_ID=$(cat "$CURRENT_TASK_FILE")
         fi
 
-        if [[ "$TASK_ID" == "$WORKING_TASK_ID" ]]; then
-            # Highlight working task with yellow background
+        if [[ "$TASK_ID" == "$CURRENT_TASK_ID" ]]; then
+            # Highlight current task with yellow background
             TASK_BG="$YELLOW"
             TASK_LABEL_COLOR="$BLACK"
             TASK_ICON_COLOR="$BLACK"
@@ -142,7 +142,7 @@ while IFS='|' read -r TASK_ID ICON COLOR CONTENT URL PROJECT_ID; do
             icon="$ICON" \
             icon.color="$TASK_ICON_COLOR" \
             background.color="$TASK_BG" \
-            click_script="sketchybar --set todoist popup.drawing=off && echo '$TASK_ID' > '$WORKING_TASK_FILE' && sketchybar --trigger todoist_focus_changed" \
+            click_script="sketchybar --set todoist popup.drawing=off && echo '$TASK_ID' > '$CURRENT_TASK_FILE' && sketchybar --trigger todoist_update" \
             drawing=on
 
         # Action button removed - no external link buttons
