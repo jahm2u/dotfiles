@@ -128,7 +128,7 @@ sketchybar --add item todoist q \
     icon.color=$WIDGET_ICON_COLOR \
     label.drawing=no \
     script="$PLUGIN_SHARED_DIR/todoist.sh" \
-    click_script="$PLUGIN_SHARED_DIR/todoist_popup.sh" \
+    click_script="$PLUGIN_SHARED_DIR/todoist-complete-working-task.sh" \
     popup.align=right \
     popup.height=32 \
     popup.topmost=on \
@@ -154,7 +154,6 @@ sketchybar --add item todoist q \
     icon.padding_right=0 \
     icon.y_offset=1 \
     label.drawing=no \
-    click_script="$PLUGIN_SHARED_DIR/todoist_popup.sh" \
     --add item todoist.name q \
     --set todoist.name \
     background.color=$TRANSPARENT \
