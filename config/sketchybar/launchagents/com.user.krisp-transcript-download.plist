@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.krisp-transcript-download</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>HOME_DIR/.config/sketchybar/venv/bin/python3</string>
+        <string>HOME_DIR/.config/sketchybar/helpers/krisp-download-transcripts.py</string>
+        <string>--download-new</string>
+        <string>--days-back</string>
+        <string>1</string>
+        <string>--limit</string>
+        <string>20</string>
+        <string>--headless</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>HOME_DIR/.config/sketchybar/logs/krisp-download-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>HOME_DIR/.config/sketchybar/logs/krisp-download-stderr.log</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
