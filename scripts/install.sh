@@ -476,10 +476,10 @@ generate_plan() {
         PLAN+=("$step_num|deps|Install missing dependencies|${STATE_MISSING_DEPS[*]}")
     fi
 
-    # Brewfile dependencies
+    # Brewfile dependencies (check and offer to install missing)
     if [[ "$STATE_BREW_INSTALLED" == "true" ]]; then
         ((step_num++))
-        PLAN+=("$step_num|brewfile|Check Brewfile dependencies|Validate installations")
+        PLAN+=("$step_num|brewfile|Install Brewfile dependencies|Node, gh, fonts, apps, etc.")
     fi
 
     # Create/update .env
@@ -683,7 +683,7 @@ execute_plan() {
                 ;;
 
             brewfile)
-                if exec_quiet "Checking Brewfile" execute_brewfile_check; then
+                if exec_quiet "Checking/Installing Brewfile deps" check_and_install_brewfile_dependencies; then
                     show_result 0
                 else
                     show_result 1
