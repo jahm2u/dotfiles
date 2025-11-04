@@ -513,14 +513,20 @@ generate_plan() {
     PLAN+=("$step_num|calendar_infra|Initialize calendar infrastructure|Directories and scripts")
 
     # LaunchAgents
+    # Calendar LaunchAgent - always offer to install if not running
     if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
         ((step_num++))
         PLAN+=("$step_num|launchagent_calendar|Install calendar sync LaunchAgent|Auto-sync every 15 min")
     fi
 
+    # Krisp LaunchAgent - install or cleanup based on config
     if [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
         ((step_num++))
         PLAN+=("$step_num|launchagent_krisp|Install Krisp LaunchAgent|Auto-download every hour")
+    elif [[ "$STATE_KRISP_LAUNCHAGENT_LOADED" == "true" ]]; then
+        # Cleanup: unload if disabled but currently running
+        ((step_num++))
+        PLAN+=("$step_num|cleanup_krisp_launchagent|Remove Krisp LaunchAgent|Disabled in config")
     fi
 
     # Restart services
@@ -744,6 +750,14 @@ execute_plan() {
                 fi
                 ;;
 
+            cleanup_krisp_launchagent)
+                if exec_quiet "Unload Krisp LaunchAgent" cleanup_krisp_launchagent; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
             restart_aerospace)
                 if exec_quiet "AeroSpace reload" execute_restart_aerospace; then
                     show_result 0
@@ -848,6 +862,33 @@ execute_env_krisp() {
         echo "# Krisp Automation" >> "$DOTFILES_DIR/.env"
         echo "KRISP_LAUNCHAGENT=TRUE" >> "$DOTFILES_DIR/.env"
     fi
+}
+
+cleanup_krisp_launchagent() {
+    local label="com.user.krisp-transcript-download"
+    local plist_path="$HOME/Library/LaunchAgents/$label.plist"
+
+    log "Removing Krisp LaunchAgent (disabled in config)"
+
+    # Unload if currently loaded
+    if launchctl list | grep -q "$label"; then
+        if launchctl unload "$plist_path" 2>/dev/null; then
+            log "✓ Unloaded $label"
+        else
+            warn "Failed to unload $label"
+        fi
+    fi
+
+    # Remove plist file
+    if [[ -f "$plist_path" ]]; then
+        if rm "$plist_path" 2>/dev/null; then
+            log "✓ Removed $plist_path"
+        else
+            warn "Failed to remove $plist_path"
+        fi
+    fi
+
+    return 0
 }
 
 execute_restart_aerospace() {
