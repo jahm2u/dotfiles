@@ -4,8 +4,33 @@
 # Supports 4 modes: desktop, desktop-privacy, laptop, laptop-privacy
 
 SKETCHYBAR_DIR="$HOME/.config/sketchybar"
-CONFIG_STATE_FILE="$SKETCHYBAR_DIR/.config_state"
-DEVICE_TYPE_FILE="$SKETCHYBAR_DIR/.device_type"
+
+# Find .env file
+if [[ -f "$HOME/repos/02_personal/dotfiles/.env" ]]; then
+    ENV_FILE="$HOME/repos/02_personal/dotfiles/.env"
+elif [[ -f "$HOME/dotfiles/.env" ]]; then
+    ENV_FILE="$HOME/dotfiles/.env"
+else
+    ENV_FILE=""
+fi
+
+# Helper: Read value from .env
+read_env_value() {
+    local key="$1"
+    local default="$2"
+
+    if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+        # Extract value, handling quotes and comments
+        local value=$(grep "^${key}=" "$ENV_FILE" | head -1 | cut -d'=' -f2- | sed 's/^["'\'']//' | sed 's/["'\'']$//' | sed 's/#.*//')
+        if [[ -n "$value" ]]; then
+            echo "$value"
+        else
+            echo "$default"
+        fi
+    else
+        echo "$default"
+    fi
+}
 
 # Function to detect device type (can be overridden manually)
 detect_device_type() {
@@ -20,59 +45,41 @@ detect_device_type() {
     fi
 }
 
-# Get current device type (from file or auto-detect)
+# Get device type (from .env or auto-detect)
 get_device_type() {
-    if [[ -f "$DEVICE_TYPE_FILE" ]]; then
-        cat "$DEVICE_TYPE_FILE"
-    else
+    local device_type=$(read_env_value "SKETCHYBAR_DEVICE_TYPE" "")
+    if [[ -z "$device_type" ]]; then
         detect_device_type
+    else
+        echo "$device_type"
+    fi
+}
+
+# Get current config by reading sketchybarrc
+get_current_config() {
+    if [[ -f "$SKETCHYBAR_DIR/sketchybarrc" ]]; then
+        # Extract config name from the source line
+        local config=$(grep "source.*sketchybarrc-" "$SKETCHYBAR_DIR/sketchybarrc" | sed 's/.*sketchybarrc-//' | sed 's/".*//')
+        if [[ -n "$config" ]]; then
+            echo "$config"
+        else
+            get_device_type
+        fi
+    else
+        get_device_type
     fi
 }
 
 # Get current privacy mode status
 get_privacy_status() {
-    if [[ -f "$CONFIG_STATE_FILE" ]]; then
-        local state=$(cat "$CONFIG_STATE_FILE")
-        if [[ "$state" == *"-privacy" ]]; then
-            echo "privacy"
-        else
-            echo "normal"
-        fi
+    local config=$(get_current_config)
+    if [[ "$config" == *"-privacy" ]]; then
+        echo "privacy"
     else
         echo "normal"
     fi
 }
 
-# Get current full config name
-get_current_config() {
-    if [[ -f "$CONFIG_STATE_FILE" ]]; then
-        cat "$CONFIG_STATE_FILE"
-    else
-        local device_type=$(get_device_type)
-        echo "$device_type"
-    fi
-}
-
-# Set device type manually
-set_device_type() {
-    local device_type="$1"
-
-    if [[ "$device_type" != "desktop" && "$device_type" != "laptop" ]]; then
-        echo "Error: Device type must be 'desktop' or 'laptop'"
-        return 1
-    fi
-
-    echo "$device_type" > "$DEVICE_TYPE_FILE"
-    echo "Device type set to: $device_type"
-
-    # Update config to match new device type
-    local privacy_status=$(get_privacy_status)
-    if [[ "$privacy_status" == "privacy" ]]; then
-        switch_to_config "${device_type}-privacy"
-    else
-        switch_to_config "$device_type"
-    fi
-}
 
 # Toggle privacy mode for current device
 toggle_privacy() {
@@ -109,7 +116,6 @@ switch_to_config() {
 
 # Auto-generated configuration switcher
 # Current config: $config_name
-# Generated: $(date)
 
 SKETCHYBAR_CONFIG="$SKETCHYBAR_DIR"
 source "\$SKETCHYBAR_CONFIG/sketchybarrc-$config_name"
@@ -117,9 +123,6 @@ EOF
 
     # Make it executable
     chmod +x "$SKETCHYBAR_DIR/sketchybarrc"
-
-    # Save current state
-    echo "$config_name" > "$CONFIG_STATE_FILE"
 
     # Restart sketchybar
     /opt/homebrew/bin/brew services restart sketchybar
@@ -147,12 +150,6 @@ case "$1" in
     "toggle-privacy"|"privacy")
         toggle_privacy
         ;;
-    "desktop")
-        set_device_type "desktop"
-        ;;
-    "laptop")
-        set_device_type "laptop"
-        ;;
     "config")
         if [[ -n "$2" ]]; then
             switch_to_config "$2"
@@ -173,10 +170,10 @@ case "$1" in
         echo "  $0 status              Show current status"
         echo "  $0 toggle-privacy      Toggle privacy mode (hide/show meetings & Todoist)"
         echo "  $0 privacy             Toggle privacy mode (alias)"
-        echo "  $0 desktop             Set device type to desktop"
-        echo "  $0 laptop              Set device type to laptop"
         echo "  $0 config <name>       Switch to specific configuration"
         echo "  $0 help                Show this help"
+        echo ""
+        echo "Device type is set in .env file (SKETCHYBAR_DEVICE_TYPE=laptop or desktop)"
         echo ""
         echo "Available configurations:"
         ls -1 "$SKETCHYBAR_DIR"/sketchybarrc-* | sed 's/.*sketchybarrc-/  /'
