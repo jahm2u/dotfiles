@@ -76,6 +76,8 @@ The installation script (`scripts/install.sh`) uses a clean **four-phase declara
 - **Graceful degradation**: Non-critical failures don't stop installation
 - **Automatic backups**: Existing configs backed up with timestamps before changes
 - **Clean logs**: Detailed execution log at `~/.config/dotfiles-install.log`
+- **Python venv setup**: Automatically creates venv with dependencies for meeting-prep and Krisp automation
+- **Cache clearing**: Clears stale calendar cache and khal database for fresh sync on new machines
 
 ### Metrics
 
