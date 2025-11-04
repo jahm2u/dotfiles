@@ -235,7 +235,7 @@ NOW GENERATE - REMEMBER: Each item appears ONCE ONLY. Predict specific blockers 
             ],
             response_format={"type": "json_object"},
             temperature=0.5,
-            max_tokens=2500
+            max_completion_tokens=2500
         )
 
         content = json.loads(response.choices[0].message.content)

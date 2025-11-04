@@ -190,7 +190,7 @@ Focus on actionable insights. If no information is available for a section, retu
             ],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=3000
+            max_completion_tokens=3000
         )
 
         analysis = json.loads(response.choices[0].message.content)
