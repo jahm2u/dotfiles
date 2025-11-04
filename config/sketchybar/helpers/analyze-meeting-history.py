@@ -183,17 +183,25 @@ Focus on actionable insights. If no information is available for a section, retu
 
     try:
         response = client.chat.completions.create(
-            model="gpt-5-mini",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a meeting continuity assistant. Analyze meeting notes and extract actionable insights."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_completion_tokens=3000
+            max_completion_tokens=16000
         )
 
-        analysis = json.loads(response.choices[0].message.content)
+        # Check for refusal
+        if hasattr(response.choices[0].message, 'refusal') and response.choices[0].message.refusal:
+            raise ValueError(f"Model refused to respond: {response.choices[0].message.refusal}")
+
+        raw_content = response.choices[0].message.content
+        if not raw_content:
+            raise ValueError("API returned empty response")
+
+        analysis = json.loads(raw_content)
         return analysis
 
     except Exception as e:

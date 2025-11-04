@@ -228,14 +228,14 @@ NOW GENERATE - REMEMBER: Each item appears ONCE ONLY. Predict specific blockers 
 
     try:
         response = client.chat.completions.create(
-            model="gpt-5-mini",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert meeting prep assistant. You prioritize ruthlessly, eliminate repetition, and generate checkbox-ready content."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.5,
-            max_completion_tokens=2500
+            temperature=0.3,
+            max_completion_tokens=16000
         )
 
         content = json.loads(response.choices[0].message.content)
