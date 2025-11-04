@@ -737,6 +737,82 @@ execute_restart_sketchybar() {
     brew services restart sketchybar 2>&1
 }
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PHASE 5: SUMMARY REPORT
+# Display final results and next steps
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+generate_report() {
+    echo ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "INSTALLATION COMPLETE"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Summary counts
+    if [[ $EXEC_ERROR_COUNT -eq 0 ]]; then
+        log "✓ $EXEC_SUCCESS_COUNT step(s) completed successfully"
+    else
+        log "✓ $EXEC_SUCCESS_COUNT successful"
+    fi
+
+    if [[ $EXEC_WARNING_COUNT -gt 0 ]]; then
+        warn "⚠ $EXEC_WARNING_COUNT warning(s)"
+    fi
+
+    if [[ $EXEC_ERROR_COUNT -gt 0 ]]; then
+        error "✗ $EXEC_ERROR_COUNT error(s)"
+    fi
+
+    echo ""
+
+    # Next steps based on what was installed
+    local has_next_steps=false
+
+    if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]] ||
+       [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
+        if [[ $has_next_steps == false ]]; then
+            log "Next steps:"
+            has_next_steps=true
+        fi
+
+        if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
+            log "  • Monitor calendar sync: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
+        fi
+
+        if [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
+            log "  • Check Krisp setup: ~/.config/sketchybar/helpers/KRISP_DAEMON_SETUP.md"
+        fi
+    fi
+
+    if [[ "$STATE_AEROSPACE_INSTALLED" == "true" ]] && pgrep -x "AeroSpace" >/dev/null; then
+        if [[ $has_next_steps == false ]]; then
+            log "Next steps:"
+            has_next_steps=true
+        fi
+        log "  • AeroSpace configuration reloaded automatically"
+    fi
+
+    if [[ $has_next_steps == false ]]; then
+        log "All set! Your dotfiles are configured."
+    fi
+
+    echo ""
+    log "Full installation log: $EXEC_LOG_FILE"
+    echo ""
+
+    # Final status
+    if [[ $EXEC_ERROR_COUNT -eq 0 ]]; then
+        log "🎉 Installation completed successfully!"
+    elif [[ $EXEC_ERROR_COUNT -gt 0 ]] && [[ $EXEC_SUCCESS_COUNT -gt 0 ]]; then
+        warn "⚠️  Installation completed with errors. Check log for details."
+    else
+        error "❌ Installation failed. Check log for details."
+    fi
+
+    echo ""
+}
+
 # Pre-flight checks to show what needs to be done
 preflight_checks() {
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1669,183 +1745,56 @@ install_krisp_transcript_launchagent() {
 }
 
 main() {
-    log "Starting dotfiles installation from: $DOTFILES_DIR"
     echo ""
-
-    # Run pre-flight checks
-    preflight_checks
-
-    # Source .env file if it exists (for optional feature flags like KRISP_LAUNCHAGENT)
-    if [[ -f "$DOTFILES_DIR/.env" ]]; then
-        log "Loading environment configuration from .env"
-        set -a  # Export all variables
-        source "$DOTFILES_DIR/.env"
-        set +a
-    fi
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "DOTFILES INSTALLATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    log "Location: $DOTFILES_DIR"
+    echo ""
 
     # Clean up old aerospace config location (deprecated)
     if [[ -e "$HOME/.aerospace.toml" ]]; then
-        warn "Removing old aerospace config at ~/.aerospace.toml (deprecated location)"
+        warn "Removing deprecated ~/.aerospace.toml"
         backup_existing "$HOME/.aerospace.toml"
     fi
 
-    # Aerospace
-    create_symlink \
-        "$DOTFILES_DIR/config/aerospace" \
-        "$HOME/.config/aerospace" \
-        "Aerospace window manager config"
-    
-    # Sketchybar
-    create_symlink \
-        "$DOTFILES_DIR/config/sketchybar" \
-        "$HOME/.config/sketchybar" \
-        "Sketchybar status bar config"
-    
-    # Karabiner
-    create_symlink \
-        "$DOTFILES_DIR/config/karabiner" \
-        "$HOME/.config/karabiner" \
-        "Karabiner key mapping config"
-    
-    # Hammerspoon
-    create_symlink \
-        "$DOTFILES_DIR/config/hammerspoon" \
-        "$HOME/.hammerspoon" \
-        "Hammerspoon automation config"
-    
-    # Claude
-    create_symlink \
-        "$DOTFILES_DIR/config/claude" \
-        "$HOME/.claude" \
-        "Claude AI assistant config"
-    
-    # Raycast
-    create_symlink \
-        "$DOTFILES_DIR/config/raycast" \
-        "$HOME/.config/raycast" \
-        "Raycast launcher config"
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 1: DETECT SYSTEM STATE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Khal calendar
-    create_symlink \
-        "$DOTFILES_DIR/config/khal" \
-        "$HOME/.config/khal" \
-        "Khal calendar config"
+    log "Scanning system..."
+    detect_system_state
 
-    # Check and install all Brewfile dependencies
-    log ""
-    check_and_install_brewfile_dependencies
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 2: GATHER CONFIGURATION
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Initialize calendar automation infrastructure
-    log ""
-    initialize_calendar_infrastructure
+    gather_configuration
 
-    # Calendar sync LaunchAgent (optional)
-    log ""
-    if ask_user "Install calendar sync LaunchAgent (auto-syncs every 15 minutes)?"; then
-        install_calendar_launchagent
-    else
-        log "Skipping calendar sync LaunchAgent installation"
-        log "You can manually sync with: bash ~/.config/sketchybar/helpers/sync-calendars.sh"
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 3: GENERATE & DISPLAY PLAN
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    generate_plan
+    display_plan
+
+    # Get user approval
+    if ! ask_approval; then
+        exit 0
     fi
 
-    # Core environment variables setup (OpenAI, Obsidian, Calendar)
-    log ""
-    setup_core_env_variables
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 4: EXECUTE PLAN
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Krisp transcript download setup and LaunchAgent (optional)
-    log ""
-    setup_krisp_env_variables
+    execute_plan
 
-    # Install LaunchAgent if enabled
-    if [[ "${KRISP_LAUNCHAGENT:-FALSE}" == "TRUE" ]]; then
-        log ""
-        if ask_user "Install Krisp transcript download LaunchAgent (auto-downloads every hour)?"; then
-            install_krisp_transcript_launchagent
-        else
-            log "Skipping Krisp transcript download LaunchAgent installation"
-            log "You can manually download with: python3 ~/.config/sketchybar/helpers/krisp-download-transcripts.py --download-new --days-back 1 --limit 20 --headless"
-        fi
-    fi
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 5: SUMMARY REPORT
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Load environment configuration for Sketchybar
-    log "Loading environment configuration..."
-    local loader_script="$DOTFILES_DIR/config/sketchybar/helpers/load-env-config.sh"
-
-    # Ensure loader script is executable
-    if [[ -f "$loader_script" ]]; then
-        chmod +x "$loader_script" 2>/dev/null || true
-
-        # Run environment loader
-        if bash "$loader_script"; then
-            log "✓ Environment configuration loaded successfully"
-        else
-            warn "Environment loader failed, using defaults"
-        fi
-    else
-        warn "Environment loader not found at $loader_script"
-        warn "Sketchybar will use default configuration"
-    fi
-
-    # Restart AeroSpace with new configuration
-    log "Reloading AeroSpace configuration..."
-    if command -v aerospace &>/dev/null; then
-        if pgrep -x "AeroSpace" >/dev/null; then
-            # AeroSpace is running, reload config
-            if aerospace reload-config; then
-                log "✓ AeroSpace configuration reloaded"
-            else
-                warn "Failed to reload AeroSpace config"
-                log "You may need to restart AeroSpace manually"
-            fi
-        else
-            # AeroSpace not running, suggest launching
-            log "AeroSpace not currently running"
-            if ask_user "Launch AeroSpace now?"; then
-                if open -a AeroSpace; then
-                    log "✓ AeroSpace launched successfully"
-                else
-                    warn "Failed to launch AeroSpace"
-                    log "You can launch manually: open -a AeroSpace"
-                fi
-            else
-                log "You can launch AeroSpace later: open -a AeroSpace"
-            fi
-        fi
-    else
-        warn "AeroSpace not installed"
-        log "Install with: brew install --cask nikitabobko/tap/aerospace"
-    fi
-
-    # Restart Sketchybar with new configuration
-    log ""
-    log "Restarting Sketchybar with environment configuration..."
-    if command -v brew &> /dev/null; then
-        if brew services restart sketchybar 2>/dev/null; then
-            log "✓ Sketchybar restarted successfully"
-        else
-            warn "Failed to restart Sketchybar service"
-            log "You may need to start it manually: brew services start sketchybar"
-        fi
-    else
-        warn "Homebrew not found, cannot restart Sketchybar automatically"
-        log "Please start Sketchybar manually"
-    fi
-
-    # Run post-installation validation
-    validate_installation
-
-    log ""
-    log "Next steps:"
-    log "1. Reload Hammerspoon config if it's already running"
-    log "2. Check calendar sync logs: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
-    log "3. Monitor LaunchAgent: launchctl list | grep calendar-sync"
-    log "4. Test popup menus by clicking Todoist, Meeting, Week, or CPU/Memory widgets"
-    log ""
-    log "Troubleshooting resources:"
-    log "  - Documentation: cat ~/dotfiles/CLAUDE.md"
-    log "  - Calendar sync status: cat ~/.cache/sketchybar/last_sync_status"
-    log "  - Manual sync test: bash ~/.config/sketchybar/helpers/sync-calendars.sh"
-    log ""
+    generate_report
 }
 
 # Run main function if script is executed directly
