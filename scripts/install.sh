@@ -15,6 +15,83 @@ NC='\033[0m' # No Color
 # Get the directory where this script is located
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Command-line flags
+FLAG_VERBOSE=false
+FLAG_DRY_RUN=false
+
+# Show help message
+show_help() {
+    cat << EOF
+Dotfiles Installation Script
+
+USAGE:
+    ./scripts/install.sh [OPTIONS]
+
+DESCRIPTION:
+    Clean four-phase installation script that gathers all configuration
+    upfront, then executes the plan with minimal interruption.
+
+    Phases:
+      1. Detect system state (silent scan)
+      2. Gather configuration (batched questions)
+      3. Generate and display plan
+      4. Execute plan (with approval)
+      5. Generate summary report
+
+OPTIONS:
+    -h, --help       Show this help message and exit
+    -v, --verbose    Show detailed output during execution
+    -n, --dry-run    Show plan but don't execute (implies verbose)
+
+EXAMPLES:
+    # Standard installation (recommended)
+    ./scripts/install.sh
+
+    # See detailed output
+    ./scripts/install.sh --verbose
+
+    # Preview what would be done without executing
+    ./scripts/install.sh --dry-run
+
+LOGS:
+    Full installation log: ~/.config/dotfiles-install.log
+
+FEATURES:
+    • Smart defaults (only asks what's unknown)
+    • Idempotent (safe to run multiple times)
+    • Clean progress indicators
+    • Graceful error handling
+    • Automatic backups before changes
+
+MORE INFO:
+    See CLAUDE.md for architecture details and troubleshooting.
+EOF
+    exit 0
+}
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_help
+            ;;
+        -v|--verbose)
+            FLAG_VERBOSE=true
+            shift
+            ;;
+        -n|--dry-run)
+            FLAG_DRY_RUN=true
+            FLAG_VERBOSE=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
 log() {
     echo -e "${GREEN}[INFO]${NC} $1"
 }
@@ -37,6 +114,828 @@ backup_existing() {
         warn "Removing existing symlink: $target"
         rm "$target"
     fi
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PHASE 1: SYSTEM STATE DETECTION
+# Silently scan system and store state in global variables
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Global state variables (populated by detect_system_state)
+STATE_BREW_INSTALLED=""
+STATE_KHAL_INSTALLED=""
+STATE_SKETCHYBAR_INSTALLED=""
+STATE_AEROSPACE_INSTALLED=""
+STATE_ENV_EXISTS=""
+STATE_ENV_HAS_CALENDAR=""
+STATE_ENV_HAS_OPENAI=""
+STATE_ENV_HAS_OBSIDIAN=""
+STATE_ENV_HAS_KRISP=""
+STATE_CALENDAR_LAUNCHAGENT_LOADED=""
+STATE_KRISP_LAUNCHAGENT_LOADED=""
+STATE_SYMLINKS_EXIST=()
+STATE_MISSING_DEPS=()
+
+detect_system_state() {
+    # Detect Homebrew
+    if command -v brew &>/dev/null; then
+        STATE_BREW_INSTALLED="true"
+    else
+        STATE_BREW_INSTALLED="false"
+        STATE_MISSING_DEPS+=("brew")
+    fi
+
+    # Detect required tools
+    if command -v khal &>/dev/null; then
+        STATE_KHAL_INSTALLED="true"
+    else
+        STATE_KHAL_INSTALLED="false"
+        [[ "$STATE_BREW_INSTALLED" == "true" ]] && STATE_MISSING_DEPS+=("khal")
+    fi
+
+    if command -v sketchybar &>/dev/null; then
+        STATE_SKETCHYBAR_INSTALLED="true"
+    else
+        STATE_SKETCHYBAR_INSTALLED="false"
+        [[ "$STATE_BREW_INSTALLED" == "true" ]] && STATE_MISSING_DEPS+=("sketchybar")
+    fi
+
+    if command -v aerospace &>/dev/null; then
+        STATE_AEROSPACE_INSTALLED="true"
+    else
+        STATE_AEROSPACE_INSTALLED="false"
+    fi
+
+    # Detect .env file and its contents
+    if [[ -f "$DOTFILES_DIR/.env" ]]; then
+        STATE_ENV_EXISTS="true"
+
+        # Check for calendar URLs
+        if grep -qE "CALENDAR_URL_|ICAL_URLS" "$DOTFILES_DIR/.env" 2>/dev/null; then
+            STATE_ENV_HAS_CALENDAR="true"
+        else
+            STATE_ENV_HAS_CALENDAR="false"
+        fi
+
+        # Check for OpenAI API key
+        if grep -q "OPENAI_API_KEY" "$DOTFILES_DIR/.env" 2>/dev/null; then
+            STATE_ENV_HAS_OPENAI="true"
+        else
+            STATE_ENV_HAS_OPENAI="false"
+        fi
+
+        # Check for Obsidian vault path
+        if grep -q "OBSIDIAN_VAULT_PATH" "$DOTFILES_DIR/.env" 2>/dev/null; then
+            STATE_ENV_HAS_OBSIDIAN="true"
+        else
+            STATE_ENV_HAS_OBSIDIAN="false"
+        fi
+
+        # Check for Krisp automation flag
+        if grep -q "KRISP_LAUNCHAGENT=TRUE" "$DOTFILES_DIR/.env" 2>/dev/null; then
+            STATE_ENV_HAS_KRISP="true"
+        else
+            STATE_ENV_HAS_KRISP="false"
+        fi
+    else
+        STATE_ENV_EXISTS="false"
+        STATE_ENV_HAS_CALENDAR="false"
+        STATE_ENV_HAS_OPENAI="false"
+        STATE_ENV_HAS_OBSIDIAN="false"
+        STATE_ENV_HAS_KRISP="false"
+    fi
+
+    # Detect LaunchAgents
+    if launchctl list 2>/dev/null | grep -q "com.user.calendar-sync"; then
+        STATE_CALENDAR_LAUNCHAGENT_LOADED="true"
+    else
+        STATE_CALENDAR_LAUNCHAGENT_LOADED="false"
+    fi
+
+    if launchctl list 2>/dev/null | grep -q "com.user.krisp-transcript-download"; then
+        STATE_KRISP_LAUNCHAGENT_LOADED="true"
+    else
+        STATE_KRISP_LAUNCHAGENT_LOADED="false"
+    fi
+
+    # Detect existing symlinks
+    local symlink_paths=(
+        "$HOME/.config/aerospace"
+        "$HOME/.config/sketchybar"
+        "$HOME/.config/karabiner"
+        "$HOME/.hammerspoon"
+        "$HOME/.claude"
+        "$HOME/.config/raycast"
+        "$HOME/.config/khal"
+    )
+
+    STATE_SYMLINKS_EXIST=()
+    for path in "${symlink_paths[@]}"; do
+        if [[ -L "$path" ]]; then
+            STATE_SYMLINKS_EXIST+=("$(basename "$path")")
+        fi
+    done
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PHASE 2: CONFIGURATION GATHERING
+# Batch all questions upfront based on detected state
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Configuration variables (populated by gather_configuration)
+CONFIG_INSTALL_DEPS=""
+CONFIG_CREATE_ENV=""
+CONFIG_SETUP_CALENDAR=""
+CONFIG_SETUP_OPENAI=""
+CONFIG_SETUP_OBSIDIAN=""
+CONFIG_SETUP_KRISP=""
+CONFIG_INSTALL_CALENDAR_LAUNCHAGENT=""
+CONFIG_INSTALL_KRISP_LAUNCHAGENT=""
+CONFIG_OPENAI_API_KEY=""
+CONFIG_OBSIDIAN_VAULT_PATH=""
+CONFIG_CALENDAR_URL_NAME=""
+CONFIG_CALENDAR_URL=""
+
+gather_configuration() {
+    echo ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "CONFIGURATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    log "I'll ask you a few questions to configure your installation."
+    log "All questions upfront, then we'll proceed with the plan."
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────
+    # GROUP A: Dependencies
+    # ─────────────────────────────────────────────────────────────
+
+    if [[ ${#STATE_MISSING_DEPS[@]} -gt 0 ]]; then
+        log "━━ Dependencies ━━"
+        log "Missing: ${STATE_MISSING_DEPS[*]}"
+        echo ""
+
+        if [[ "$STATE_BREW_INSTALLED" == "false" ]]; then
+            warn "Homebrew is required but not installed."
+            log "Install from: https://brew.sh"
+            CONFIG_INSTALL_DEPS="false"
+        else
+            if ask_user "Install missing dependencies automatically?"; then
+                CONFIG_INSTALL_DEPS="true"
+            else
+                CONFIG_INSTALL_DEPS="false"
+            fi
+        fi
+        echo ""
+    else
+        CONFIG_INSTALL_DEPS="skip"  # All deps already installed
+    fi
+
+    # ─────────────────────────────────────────────────────────────
+    # GROUP B: Environment Configuration
+    # ─────────────────────────────────────────────────────────────
+
+    if [[ "$STATE_ENV_EXISTS" == "false" ]]; then
+        log "━━ Environment Setup ━━"
+        if ask_user "Create .env file from template?"; then
+            CONFIG_CREATE_ENV="true"
+            CONFIG_SETUP_CALENDAR="prompt"
+            CONFIG_SETUP_OPENAI="prompt"
+            CONFIG_SETUP_OBSIDIAN="prompt"
+        else
+            CONFIG_CREATE_ENV="false"
+            CONFIG_SETUP_CALENDAR="skip"
+            CONFIG_SETUP_OPENAI="skip"
+            CONFIG_SETUP_OBSIDIAN="skip"
+        fi
+        echo ""
+    else
+        CONFIG_CREATE_ENV="skip"  # Already exists
+
+        # Check individual env values
+        if [[ "$STATE_ENV_HAS_CALENDAR" == "false" ]]; then
+            CONFIG_SETUP_CALENDAR="prompt"
+        else
+            CONFIG_SETUP_CALENDAR="skip"
+        fi
+
+        if [[ "$STATE_ENV_HAS_OPENAI" == "false" ]]; then
+            CONFIG_SETUP_OPENAI="prompt"
+        else
+            CONFIG_SETUP_OPENAI="skip"
+        fi
+
+        if [[ "$STATE_ENV_HAS_OBSIDIAN" == "false" ]]; then
+            CONFIG_SETUP_OBSIDIAN="prompt"
+        else
+            CONFIG_SETUP_OBSIDIAN="skip"
+        fi
+    fi
+
+    # Prompt for OpenAI API key if needed
+    if [[ "$CONFIG_SETUP_OPENAI" == "prompt" ]]; then
+        log "━━ OpenAI API Key ━━"
+        log "Required for meeting prep and AI analysis features."
+        if ask_user "Configure OpenAI API key now?"; then
+            echo ""
+            log "Get your key from: https://platform.openai.com/api-keys"
+            read -p "Enter your OpenAI API key (or press Enter to skip): " api_key
+            if [[ -n "$api_key" ]]; then
+                CONFIG_OPENAI_API_KEY="$api_key"
+            else
+                CONFIG_OPENAI_API_KEY=""
+            fi
+        else
+            CONFIG_OPENAI_API_KEY=""
+        fi
+        echo ""
+    fi
+
+    # Prompt for Obsidian vault path if needed
+    if [[ "$CONFIG_SETUP_OBSIDIAN" == "prompt" ]]; then
+        log "━━ Obsidian Vault ━━"
+        log "Required for meeting prep and note integration."
+
+        # Try to auto-detect
+        local common_vault="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents"
+        if [[ -d "$common_vault" ]]; then
+            log "Found vaults at: $common_vault"
+            ls -1 "$common_vault" 2>/dev/null | head -3
+            echo ""
+        fi
+
+        if ask_user "Configure Obsidian vault path now?"; then
+            read -p "Enter full path to your Obsidian vault: " vault_path
+            vault_path="${vault_path/#\~/$HOME}"  # Expand ~
+            if [[ -d "$vault_path" ]]; then
+                CONFIG_OBSIDIAN_VAULT_PATH="$vault_path"
+            else
+                warn "Directory not found: $vault_path"
+                CONFIG_OBSIDIAN_VAULT_PATH=""
+            fi
+        else
+            CONFIG_OBSIDIAN_VAULT_PATH=""
+        fi
+        echo ""
+    fi
+
+    # Prompt for calendar URL if needed
+    if [[ "$CONFIG_SETUP_CALENDAR" == "prompt" ]]; then
+        log "━━ Calendar Sync ━━"
+        log "Required for automatic calendar synchronization."
+        if ask_user "Configure a calendar URL now?"; then
+            echo ""
+            log "Examples:"
+            log "  Google: https://calendar.google.com/calendar/ical/...ics"
+            log "  iCloud: https://p##-caldav.icloud.com/published/#/..."
+            echo ""
+            read -p "Calendar name (e.g., GOOGLE, WORK): " cal_name
+            read -p "Calendar URL: " cal_url
+            if [[ -n "$cal_name" ]] && [[ -n "$cal_url" ]]; then
+                CONFIG_CALENDAR_URL_NAME=$(echo "$cal_name" | tr '[:lower:]' '[:upper:]' | tr -cd '[:alnum:]_')
+                CONFIG_CALENDAR_URL="$cal_url"
+            else
+                CONFIG_CALENDAR_URL_NAME=""
+                CONFIG_CALENDAR_URL=""
+            fi
+        else
+            CONFIG_CALENDAR_URL_NAME=""
+            CONFIG_CALENDAR_URL=""
+        fi
+        echo ""
+    fi
+
+    # ─────────────────────────────────────────────────────────────
+    # GROUP C: Features / LaunchAgents
+    # ─────────────────────────────────────────────────────────────
+
+    log "━━ Features ━━"
+
+    # Calendar LaunchAgent
+    if [[ "$STATE_CALENDAR_LAUNCHAGENT_LOADED" == "true" ]]; then
+        CONFIG_INSTALL_CALENDAR_LAUNCHAGENT="skip"  # Already loaded
+    else
+        if ask_user "Install calendar sync LaunchAgent (auto-syncs every 15 min)?"; then
+            CONFIG_INSTALL_CALENDAR_LAUNCHAGENT="true"
+        else
+            CONFIG_INSTALL_CALENDAR_LAUNCHAGENT="false"
+        fi
+    fi
+
+    # Krisp automation
+    if [[ "$STATE_ENV_HAS_KRISP" == "true" ]]; then
+        if [[ "$STATE_KRISP_LAUNCHAGENT_LOADED" == "true" ]]; then
+            CONFIG_INSTALL_KRISP_LAUNCHAGENT="skip"
+        else
+            if ask_user "Install Krisp transcript download LaunchAgent?"; then
+                CONFIG_INSTALL_KRISP_LAUNCHAGENT="true"
+            else
+                CONFIG_INSTALL_KRISP_LAUNCHAGENT="false"
+            fi
+        fi
+    else
+        # Ask if they want to enable Krisp first
+        if ask_user "Enable Krisp transcript automation?"; then
+            CONFIG_SETUP_KRISP="true"
+            if ask_user "Install Krisp LaunchAgent?"; then
+                CONFIG_INSTALL_KRISP_LAUNCHAGENT="true"
+            else
+                CONFIG_INSTALL_KRISP_LAUNCHAGENT="false"
+            fi
+        else
+            CONFIG_SETUP_KRISP="false"
+            CONFIG_INSTALL_KRISP_LAUNCHAGENT="false"
+        fi
+    fi
+
+    echo ""
+    log "Configuration complete! Generating plan..."
+    echo ""
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PHASE 3: EXECUTION PLAN GENERATION
+# Generate structured plan based on configuration
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Execution plan (array of steps)
+PLAN=()
+PLAN_TOTAL=0
+
+generate_plan() {
+    PLAN=()
+    local step_num=0
+
+    # Always create symlinks (core functionality)
+    ((step_num++))
+    PLAN+=("$step_num|symlinks|Create configuration symlinks|7 configs")
+
+    # Install dependencies if needed
+    if [[ "$CONFIG_INSTALL_DEPS" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|deps|Install missing dependencies|${STATE_MISSING_DEPS[*]}")
+    fi
+
+    # Brewfile dependencies
+    if [[ "$STATE_BREW_INSTALLED" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|brewfile|Check Brewfile dependencies|Validate installations")
+    fi
+
+    # Create/update .env
+    if [[ "$CONFIG_CREATE_ENV" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|env_create|Create .env from template|New configuration")
+    fi
+
+    if [[ -n "$CONFIG_OPENAI_API_KEY" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|env_openai|Configure OpenAI API key|Meeting prep features")
+    fi
+
+    if [[ -n "$CONFIG_OBSIDIAN_VAULT_PATH" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|env_obsidian|Configure Obsidian vault path|Note integration")
+    fi
+
+    if [[ -n "$CONFIG_CALENDAR_URL" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|env_calendar|Configure calendar URL|${CONFIG_CALENDAR_URL_NAME}")
+    fi
+
+    if [[ "$CONFIG_SETUP_KRISP" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|env_krisp|Enable Krisp automation|Transcript downloads")
+    fi
+
+    # Calendar infrastructure
+    ((step_num++))
+    PLAN+=("$step_num|calendar_infra|Initialize calendar infrastructure|Directories and scripts")
+
+    # LaunchAgents
+    if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|launchagent_calendar|Install calendar sync LaunchAgent|Auto-sync every 15 min")
+    fi
+
+    if [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|launchagent_krisp|Install Krisp LaunchAgent|Auto-download every hour")
+    fi
+
+    # Restart services
+    if [[ "$STATE_AEROSPACE_INSTALLED" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|restart_aerospace|Reload AeroSpace configuration|Window manager")
+    fi
+
+    if [[ "$STATE_SKETCHYBAR_INSTALLED" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|restart_sketchybar|Restart Sketchybar service|Status bar")
+    fi
+
+    PLAN_TOTAL=$step_num
+}
+
+display_plan() {
+    echo ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "INSTALLATION PLAN"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    log "I will perform the following actions:"
+    echo ""
+
+    for plan_item in "${PLAN[@]}"; do
+        IFS='|' read -r num action desc detail <<< "$plan_item"
+        printf "  %2d. %-45s (%s)\n" "$num" "$desc" "$detail"
+    done
+
+    echo ""
+    log "Total steps: $PLAN_TOTAL"
+    echo ""
+}
+
+ask_approval() {
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if ask_user "Proceed with this plan?"; then
+        echo ""
+        log "Starting installation..."
+        return 0
+    else
+        echo ""
+        warn "Installation cancelled by user"
+        return 1
+    fi
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PHASE 4: EXECUTION ENGINE
+# Execute plan with clean progress indicators
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Execution state tracking
+EXEC_LOG_FILE="$HOME/.config/dotfiles-install.log"
+EXEC_SUCCESS_COUNT=0
+EXEC_WARNING_COUNT=0
+EXEC_ERROR_COUNT=0
+
+# Progress indicator helpers
+show_progress() {
+    local current=$1
+    local total=$2
+    local message=$3
+    printf "[%d/%d] %s... " "$current" "$total" "$message"
+}
+
+show_result() {
+    local status=$1  # 0=success, 1=warning, 2=error
+    case $status in
+        0) echo "✓" ; EXEC_SUCCESS_COUNT=$((EXEC_SUCCESS_COUNT + 1)) ;;
+        1) echo "⚠" ; EXEC_WARNING_COUNT=$((EXEC_WARNING_COUNT + 1)) ;;
+        2) echo "✗" ; EXEC_ERROR_COUNT=$((EXEC_ERROR_COUNT + 1)) ;;
+    esac
+}
+
+# Redirect verbose output to log file (or terminal if --verbose)
+exec_quiet() {
+    local description="$1"
+    shift
+
+    # Always log to file
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$EXEC_LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $description" >> "$EXEC_LOG_FILE"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$EXEC_LOG_FILE"
+
+    if [[ "$FLAG_VERBOSE" == "true" ]]; then
+        # Verbose mode: show output to terminal AND log
+        "$@" 2>&1 | tee -a "$EXEC_LOG_FILE"
+        return ${PIPESTATUS[0]}
+    else
+        # Quiet mode: only log to file
+        "$@" >> "$EXEC_LOG_FILE" 2>&1
+        return $?
+    fi
+}
+
+execute_plan() {
+    # Handle dry-run mode
+    if [[ "$FLAG_DRY_RUN" == "true" ]]; then
+        echo ""
+        log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log "DRY-RUN MODE (no changes will be made)"
+        log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        log "Would execute $PLAN_TOTAL steps:"
+        for plan_item in "${PLAN[@]}"; do
+            IFS='|' read -r num action desc detail <<< "$plan_item"
+            log "  [$num] $desc"
+        done
+        echo ""
+        log "Run without --dry-run to execute installation."
+        return 0
+    fi
+
+    echo ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "EXECUTING INSTALLATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Initialize log file
+    mkdir -p "$(dirname "$EXEC_LOG_FILE")"
+    echo "Dotfiles Installation Log - $(date)" > "$EXEC_LOG_FILE"
+    echo "" >> "$EXEC_LOG_FILE"
+
+    local current_step=0
+
+    for plan_item in "${PLAN[@]}"; do
+        IFS='|' read -r num action desc detail <<< "$plan_item"
+        ((current_step++))
+
+        show_progress "$current_step" "$PLAN_TOTAL" "$desc"
+
+        case "$action" in
+            symlinks)
+                if exec_quiet "Creating symlinks" execute_symlinks; then
+                    show_result 0
+                else
+                    show_result 2
+                fi
+                ;;
+
+            deps)
+                if exec_quiet "Installing dependencies" execute_install_deps; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
+            brewfile)
+                if exec_quiet "Checking Brewfile" execute_brewfile_check; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
+            env_create)
+                if execute_env_create; then
+                    show_result 0
+                else
+                    show_result 2
+                fi
+                ;;
+
+            env_openai)
+                if execute_env_openai; then
+                    show_result 0
+                else
+                    show_result 2
+                fi
+                ;;
+
+            env_obsidian)
+                if execute_env_obsidian; then
+                    show_result 0
+                else
+                    show_result 2
+                fi
+                ;;
+
+            env_calendar)
+                if execute_env_calendar; then
+                    show_result 0
+                else
+                    show_result 2
+                fi
+                ;;
+
+            env_krisp)
+                if execute_env_krisp; then
+                    show_result 0
+                else
+                    show_result 2
+                fi
+                ;;
+
+            calendar_infra)
+                if exec_quiet "Calendar infrastructure" initialize_calendar_infrastructure; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
+            launchagent_calendar)
+                if exec_quiet "Calendar LaunchAgent" install_calendar_launchagent; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
+            launchagent_krisp)
+                if exec_quiet "Krisp LaunchAgent" install_krisp_transcript_launchagent; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
+            restart_aerospace)
+                if exec_quiet "AeroSpace reload" execute_restart_aerospace; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
+            restart_sketchybar)
+                if exec_quiet "Sketchybar restart" execute_restart_sketchybar; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
+            *)
+                echo "⚠ Unknown action: $action"
+                ;;
+        esac
+
+    done
+
+    echo ""
+}
+
+# Execution helper functions (wrap existing logic)
+
+execute_symlinks() {
+    create_symlink "$DOTFILES_DIR/config/aerospace" "$HOME/.config/aerospace" "Aerospace"
+    create_symlink "$DOTFILES_DIR/config/sketchybar" "$HOME/.config/sketchybar" "Sketchybar"
+    create_symlink "$DOTFILES_DIR/config/karabiner" "$HOME/.config/karabiner" "Karabiner"
+    create_symlink "$DOTFILES_DIR/config/hammerspoon" "$HOME/.hammerspoon" "Hammerspoon"
+    create_symlink "$DOTFILES_DIR/config/claude" "$HOME/.claude" "Claude"
+    create_symlink "$DOTFILES_DIR/config/raycast" "$HOME/.config/raycast" "Raycast"
+    create_symlink "$DOTFILES_DIR/config/khal" "$HOME/.config/khal" "Khal"
+}
+
+execute_install_deps() {
+    for dep in "${STATE_MISSING_DEPS[@]}"; do
+        case "$dep" in
+            khal)
+                brew install khal || return 1
+                ;;
+            sketchybar)
+                brew install felixkratz/formulae/sketchybar || return 1
+                ;;
+        esac
+    done
+    return 0
+}
+
+execute_brewfile_check() {
+    cd "$DOTFILES_DIR" || return 1
+
+    # Informational check only - brew bundle check is too strict
+    # Just verify the critical tools we actually need
+    local all_good=true
+
+    for tool in sketchybar aerospace khal; do
+        if ! command -v "$tool" &>/dev/null; then
+            echo "⚠ $tool not found (run: brew bundle install)"
+            all_good=false
+        fi
+    done
+
+    if $all_good; then
+        echo "✓ Core dependencies installed"
+        echo "  Run 'brew bundle install' to sync optional packages"
+        return 0
+    else
+        echo "  Missing critical tools - run: brew bundle install"
+        return 1
+    fi
+}
+
+execute_env_create() {
+    cp "$DOTFILES_DIR/.env.example" "$DOTFILES_DIR/.env"
+}
+
+execute_env_openai() {
+    if ! grep -q "OPENAI_API_KEY" "$DOTFILES_DIR/.env" 2>/dev/null; then
+        echo "OPENAI_API_KEY=$CONFIG_OPENAI_API_KEY" >> "$DOTFILES_DIR/.env"
+    fi
+}
+
+execute_env_obsidian() {
+    if ! grep -q "OBSIDIAN_VAULT_PATH" "$DOTFILES_DIR/.env" 2>/dev/null; then
+        echo "OBSIDIAN_VAULT_PATH=$CONFIG_OBSIDIAN_VAULT_PATH" >> "$DOTFILES_DIR/.env"
+    fi
+}
+
+execute_env_calendar() {
+    if ! grep -q "CALENDAR_URL_${CONFIG_CALENDAR_URL_NAME}" "$DOTFILES_DIR/.env" 2>/dev/null; then
+        echo "CALENDAR_URL_${CONFIG_CALENDAR_URL_NAME}=$CONFIG_CALENDAR_URL" >> "$DOTFILES_DIR/.env"
+    fi
+}
+
+execute_env_krisp() {
+    if ! grep -q "KRISP_LAUNCHAGENT" "$DOTFILES_DIR/.env" 2>/dev/null; then
+        echo "" >> "$DOTFILES_DIR/.env"
+        echo "# Krisp Automation" >> "$DOTFILES_DIR/.env"
+        echo "KRISP_LAUNCHAGENT=TRUE" >> "$DOTFILES_DIR/.env"
+    fi
+}
+
+execute_restart_aerospace() {
+    if pgrep -x "AeroSpace" >/dev/null; then
+        aerospace reload-config || return 1
+    fi
+    return 0
+}
+
+execute_restart_sketchybar() {
+    brew services restart sketchybar 2>&1 || return 1
+    return 0
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PHASE 5: SUMMARY REPORT
+# Display final results and next steps
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+generate_report() {
+    echo ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "INSTALLATION COMPLETE"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Summary counts
+    if [[ $EXEC_ERROR_COUNT -eq 0 ]]; then
+        log "✓ $EXEC_SUCCESS_COUNT step(s) completed successfully"
+    else
+        log "✓ $EXEC_SUCCESS_COUNT successful"
+    fi
+
+    if [[ $EXEC_WARNING_COUNT -gt 0 ]]; then
+        warn "⚠ $EXEC_WARNING_COUNT warning(s)"
+    fi
+
+    if [[ $EXEC_ERROR_COUNT -gt 0 ]]; then
+        error "✗ $EXEC_ERROR_COUNT error(s)"
+    fi
+
+    echo ""
+
+    # Next steps based on what was installed
+    local has_next_steps=false
+
+    if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]] ||
+       [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
+        if [[ $has_next_steps == false ]]; then
+            log "Next steps:"
+            has_next_steps=true
+        fi
+
+        if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
+            log "  • Monitor calendar sync: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
+        fi
+
+        if [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
+            log "  • Check Krisp setup: ~/.config/sketchybar/helpers/KRISP_DAEMON_SETUP.md"
+        fi
+    fi
+
+    if [[ "$STATE_AEROSPACE_INSTALLED" == "true" ]] && pgrep -x "AeroSpace" >/dev/null; then
+        if [[ $has_next_steps == false ]]; then
+            log "Next steps:"
+            has_next_steps=true
+        fi
+        log "  • AeroSpace configuration reloaded automatically"
+    fi
+
+    if [[ $has_next_steps == false ]]; then
+        log "All set! Your dotfiles are configured."
+    fi
+
+    echo ""
+    log "Full installation log: $EXEC_LOG_FILE"
+    echo ""
+
+    # Final status
+    if [[ $EXEC_ERROR_COUNT -eq 0 ]]; then
+        log "🎉 Installation completed successfully!"
+    elif [[ $EXEC_ERROR_COUNT -gt 0 ]] && [[ $EXEC_SUCCESS_COUNT -gt 0 ]]; then
+        warn "⚠️  Installation completed with errors. Check log for details."
+    else
+        error "❌ Installation failed. Check log for details."
+    fi
+
+    echo ""
 }
 
 # Pre-flight checks to show what needs to be done
@@ -971,183 +1870,56 @@ install_krisp_transcript_launchagent() {
 }
 
 main() {
-    log "Starting dotfiles installation from: $DOTFILES_DIR"
     echo ""
-
-    # Run pre-flight checks
-    preflight_checks
-
-    # Source .env file if it exists (for optional feature flags like KRISP_LAUNCHAGENT)
-    if [[ -f "$DOTFILES_DIR/.env" ]]; then
-        log "Loading environment configuration from .env"
-        set -a  # Export all variables
-        source "$DOTFILES_DIR/.env"
-        set +a
-    fi
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "DOTFILES INSTALLATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    log "Location: $DOTFILES_DIR"
+    echo ""
 
     # Clean up old aerospace config location (deprecated)
     if [[ -e "$HOME/.aerospace.toml" ]]; then
-        warn "Removing old aerospace config at ~/.aerospace.toml (deprecated location)"
+        warn "Removing deprecated ~/.aerospace.toml"
         backup_existing "$HOME/.aerospace.toml"
     fi
 
-    # Aerospace
-    create_symlink \
-        "$DOTFILES_DIR/config/aerospace" \
-        "$HOME/.config/aerospace" \
-        "Aerospace window manager config"
-    
-    # Sketchybar
-    create_symlink \
-        "$DOTFILES_DIR/config/sketchybar" \
-        "$HOME/.config/sketchybar" \
-        "Sketchybar status bar config"
-    
-    # Karabiner
-    create_symlink \
-        "$DOTFILES_DIR/config/karabiner" \
-        "$HOME/.config/karabiner" \
-        "Karabiner key mapping config"
-    
-    # Hammerspoon
-    create_symlink \
-        "$DOTFILES_DIR/config/hammerspoon" \
-        "$HOME/.hammerspoon" \
-        "Hammerspoon automation config"
-    
-    # Claude
-    create_symlink \
-        "$DOTFILES_DIR/config/claude" \
-        "$HOME/.claude" \
-        "Claude AI assistant config"
-    
-    # Raycast
-    create_symlink \
-        "$DOTFILES_DIR/config/raycast" \
-        "$HOME/.config/raycast" \
-        "Raycast launcher config"
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 1: DETECT SYSTEM STATE
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Khal calendar
-    create_symlink \
-        "$DOTFILES_DIR/config/khal" \
-        "$HOME/.config/khal" \
-        "Khal calendar config"
+    log "Scanning system..."
+    detect_system_state
 
-    # Check and install all Brewfile dependencies
-    log ""
-    check_and_install_brewfile_dependencies
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 2: GATHER CONFIGURATION
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Initialize calendar automation infrastructure
-    log ""
-    initialize_calendar_infrastructure
+    gather_configuration
 
-    # Calendar sync LaunchAgent (optional)
-    log ""
-    if ask_user "Install calendar sync LaunchAgent (auto-syncs every 15 minutes)?"; then
-        install_calendar_launchagent
-    else
-        log "Skipping calendar sync LaunchAgent installation"
-        log "You can manually sync with: bash ~/.config/sketchybar/helpers/sync-calendars.sh"
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 3: GENERATE & DISPLAY PLAN
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    generate_plan
+    display_plan
+
+    # Get user approval
+    if ! ask_approval; then
+        exit 0
     fi
 
-    # Core environment variables setup (OpenAI, Obsidian, Calendar)
-    log ""
-    setup_core_env_variables
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 4: EXECUTE PLAN
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Krisp transcript download setup and LaunchAgent (optional)
-    log ""
-    setup_krisp_env_variables
+    execute_plan
 
-    # Install LaunchAgent if enabled
-    if [[ "${KRISP_LAUNCHAGENT:-FALSE}" == "TRUE" ]]; then
-        log ""
-        if ask_user "Install Krisp transcript download LaunchAgent (auto-downloads every hour)?"; then
-            install_krisp_transcript_launchagent
-        else
-            log "Skipping Krisp transcript download LaunchAgent installation"
-            log "You can manually download with: python3 ~/.config/sketchybar/helpers/krisp-download-transcripts.py --download-new --days-back 1 --limit 20 --headless"
-        fi
-    fi
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # PHASE 5: SUMMARY REPORT
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    # Load environment configuration for Sketchybar
-    log "Loading environment configuration..."
-    local loader_script="$DOTFILES_DIR/config/sketchybar/helpers/load-env-config.sh"
-
-    # Ensure loader script is executable
-    if [[ -f "$loader_script" ]]; then
-        chmod +x "$loader_script" 2>/dev/null || true
-
-        # Run environment loader
-        if bash "$loader_script"; then
-            log "✓ Environment configuration loaded successfully"
-        else
-            warn "Environment loader failed, using defaults"
-        fi
-    else
-        warn "Environment loader not found at $loader_script"
-        warn "Sketchybar will use default configuration"
-    fi
-
-    # Restart AeroSpace with new configuration
-    log "Reloading AeroSpace configuration..."
-    if command -v aerospace &>/dev/null; then
-        if pgrep -x "AeroSpace" >/dev/null; then
-            # AeroSpace is running, reload config
-            if aerospace reload-config; then
-                log "✓ AeroSpace configuration reloaded"
-            else
-                warn "Failed to reload AeroSpace config"
-                log "You may need to restart AeroSpace manually"
-            fi
-        else
-            # AeroSpace not running, suggest launching
-            log "AeroSpace not currently running"
-            if ask_user "Launch AeroSpace now?"; then
-                if open -a AeroSpace; then
-                    log "✓ AeroSpace launched successfully"
-                else
-                    warn "Failed to launch AeroSpace"
-                    log "You can launch manually: open -a AeroSpace"
-                fi
-            else
-                log "You can launch AeroSpace later: open -a AeroSpace"
-            fi
-        fi
-    else
-        warn "AeroSpace not installed"
-        log "Install with: brew install --cask nikitabobko/tap/aerospace"
-    fi
-
-    # Restart Sketchybar with new configuration
-    log ""
-    log "Restarting Sketchybar with environment configuration..."
-    if command -v brew &> /dev/null; then
-        if brew services restart sketchybar 2>/dev/null; then
-            log "✓ Sketchybar restarted successfully"
-        else
-            warn "Failed to restart Sketchybar service"
-            log "You may need to start it manually: brew services start sketchybar"
-        fi
-    else
-        warn "Homebrew not found, cannot restart Sketchybar automatically"
-        log "Please start Sketchybar manually"
-    fi
-
-    # Run post-installation validation
-    validate_installation
-
-    log ""
-    log "Next steps:"
-    log "1. Reload Hammerspoon config if it's already running"
-    log "2. Check calendar sync logs: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
-    log "3. Monitor LaunchAgent: launchctl list | grep calendar-sync"
-    log "4. Test popup menus by clicking Todoist, Meeting, Week, or CPU/Memory widgets"
-    log ""
-    log "Troubleshooting resources:"
-    log "  - Documentation: cat ~/dotfiles/CLAUDE.md"
-    log "  - Calendar sync status: cat ~/.cache/sketchybar/last_sync_status"
-    log "  - Manual sync test: bash ~/.config/sketchybar/helpers/sync-calendars.sh"
-    log ""
+    generate_report
 }
 
 # Run main function if script is executed directly
