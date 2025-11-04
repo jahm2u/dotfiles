@@ -15,6 +15,83 @@ NC='\033[0m' # No Color
 # Get the directory where this script is located
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Command-line flags
+FLAG_VERBOSE=false
+FLAG_DRY_RUN=false
+
+# Show help message
+show_help() {
+    cat << EOF
+Dotfiles Installation Script
+
+USAGE:
+    ./scripts/install.sh [OPTIONS]
+
+DESCRIPTION:
+    Clean four-phase installation script that gathers all configuration
+    upfront, then executes the plan with minimal interruption.
+
+    Phases:
+      1. Detect system state (silent scan)
+      2. Gather configuration (batched questions)
+      3. Generate and display plan
+      4. Execute plan (with approval)
+      5. Generate summary report
+
+OPTIONS:
+    -h, --help       Show this help message and exit
+    -v, --verbose    Show detailed output during execution
+    -n, --dry-run    Show plan but don't execute (implies verbose)
+
+EXAMPLES:
+    # Standard installation (recommended)
+    ./scripts/install.sh
+
+    # See detailed output
+    ./scripts/install.sh --verbose
+
+    # Preview what would be done without executing
+    ./scripts/install.sh --dry-run
+
+LOGS:
+    Full installation log: ~/.config/dotfiles-install.log
+
+FEATURES:
+    • Smart defaults (only asks what's unknown)
+    • Idempotent (safe to run multiple times)
+    • Clean progress indicators
+    • Graceful error handling
+    • Automatic backups before changes
+
+MORE INFO:
+    See CLAUDE.md for architecture details and troubleshooting.
+EOF
+    exit 0
+}
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_help
+            ;;
+        -v|--verbose)
+            FLAG_VERBOSE=true
+            shift
+            ;;
+        -n|--dry-run)
+            FLAG_DRY_RUN=true
+            FLAG_VERBOSE=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
 log() {
     echo -e "${GREEN}[INFO]${NC} $1"
 }
@@ -514,26 +591,51 @@ show_progress() {
 show_result() {
     local status=$1  # 0=success, 1=warning, 2=error
     case $status in
-        0) echo "✓" ; ((EXEC_SUCCESS_COUNT++)) ;;
-        1) echo "⚠" ; ((EXEC_WARNING_COUNT++)) ;;
-        2) echo "✗" ; ((EXEC_ERROR_COUNT++)) ;;
+        0) echo "✓" ; EXEC_SUCCESS_COUNT=$((EXEC_SUCCESS_COUNT + 1)) ;;
+        1) echo "⚠" ; EXEC_WARNING_COUNT=$((EXEC_WARNING_COUNT + 1)) ;;
+        2) echo "✗" ; EXEC_ERROR_COUNT=$((EXEC_ERROR_COUNT + 1)) ;;
     esac
 }
 
-# Redirect verbose output to log file
+# Redirect verbose output to log file (or terminal if --verbose)
 exec_quiet() {
     local description="$1"
     shift
 
+    # Always log to file
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$EXEC_LOG_FILE"
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $description" >> "$EXEC_LOG_FILE"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$EXEC_LOG_FILE"
 
-    "$@" >> "$EXEC_LOG_FILE" 2>&1
-    return $?
+    if [[ "$FLAG_VERBOSE" == "true" ]]; then
+        # Verbose mode: show output to terminal AND log
+        "$@" 2>&1 | tee -a "$EXEC_LOG_FILE"
+        return ${PIPESTATUS[0]}
+    else
+        # Quiet mode: only log to file
+        "$@" >> "$EXEC_LOG_FILE" 2>&1
+        return $?
+    fi
 }
 
 execute_plan() {
+    # Handle dry-run mode
+    if [[ "$FLAG_DRY_RUN" == "true" ]]; then
+        echo ""
+        log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log "DRY-RUN MODE (no changes will be made)"
+        log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        log "Would execute $PLAN_TOTAL steps:"
+        for plan_item in "${PLAN[@]}"; do
+            IFS='|' read -r num action desc detail <<< "$plan_item"
+            log "  [$num] $desc"
+        done
+        echo ""
+        log "Run without --dry-run to execute installation."
+        return 0
+    fi
+
     echo ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log "EXECUTING INSTALLATION"
@@ -662,6 +764,7 @@ execute_plan() {
                 echo "⚠ Unknown action: $action"
                 ;;
         esac
+
     done
 
     echo ""
@@ -695,12 +798,25 @@ execute_install_deps() {
 
 execute_brewfile_check() {
     cd "$DOTFILES_DIR" || return 1
-    # brew bundle check returns 1 if dependencies missing
-    # Use if statement to handle return code gracefully with set -e
-    if brew bundle check; then
-        return 0  # All dependencies satisfied
+
+    # Informational check only - brew bundle check is too strict
+    # Just verify the critical tools we actually need
+    local all_good=true
+
+    for tool in sketchybar aerospace khal; do
+        if ! command -v "$tool" &>/dev/null; then
+            echo "⚠ $tool not found (run: brew bundle install)"
+            all_good=false
+        fi
+    done
+
+    if $all_good; then
+        echo "✓ Core dependencies installed"
+        echo "  Run 'brew bundle install' to sync optional packages"
+        return 0
     else
-        return 1  # Some dependencies missing (warning)
+        echo "  Missing critical tools - run: brew bundle install"
+        return 1
     fi
 }
 

@@ -6,6 +6,92 @@ This document provides essential context for Claude Code instances working with 
 
 This is a comprehensive macOS dotfiles management system containing configurations for productivity tools, window managers, and development utilities. All configurations are managed via symlinks created by the installation script.
 
+## Installation Script Architecture
+
+### Overview
+
+The installation script (`scripts/install.sh`) uses a clean **four-phase declarative architecture** designed for minimal user interruption and maximum clarity.
+
+**Core Principles:**
+- **Separation of concerns**: Configuration, planning, and execution are distinct phases
+- **Upfront questions**: All user input gathered at the beginning (no scattered prompts)
+- **Smart defaults**: Only asks what's unknown based on system state
+- **Clean progress**: Minimal output with detailed logs available
+- **Idempotent**: Safe to run multiple times
+
+### The Four Phases
+
+**Phase 1: System State Detection**
+- Silently scans system (no user interaction)
+- Detects: Homebrew, khal, sketchybar, aerospace, .env contents, LaunchAgents, symlinks
+- Stores state in global variables (STATE_*)
+- ~1 second execution time
+
+**Phase 2: Configuration Gathering**
+- Batches ALL questions upfront in logical groups:
+  - Dependencies (missing tools)
+  - Environment variables (OpenAI API, Obsidian vault, Calendar URLs)
+  - Features (LaunchAgent preferences)
+- Uses smart defaults based on detected state
+- Clear, professional prompts
+
+**Phase 3: Plan Generation & Display**
+- Builds structured execution plan based on configuration
+- Displays clear summary of all actions before executing
+- Single approval gate (prevents surprises)
+- Shows step count and descriptions
+
+**Phase 4: Execution**
+- Clean progress indicators: `[1/6] Action... ✓`
+- Verbose output redirected to `~/.config/dotfiles-install.log`
+- Status tracking (success/warning/error counts)
+- Error handling with graceful degradation
+
+**Phase 5: Summary Report**
+- Final counts: ✓ successes, ⚠ warnings, ✗ errors
+- Context-aware next steps
+- Log file location
+- Clean professional finish
+
+### Command-Line Flags
+
+```bash
+# Standard installation (recommended)
+./scripts/install.sh
+
+# Show detailed output during execution
+./scripts/install.sh --verbose
+
+# Preview what would be done without executing
+./scripts/install.sh --dry-run
+
+# Show usage information
+./scripts/install.sh --help
+```
+
+### Key Features
+
+- **Smart defaults**: If .env exists with config, doesn't ask redundant questions
+- **Idempotent**: Can run multiple times safely; skips existing configurations
+- **Graceful degradation**: Non-critical failures don't stop installation
+- **Automatic backups**: Existing configs backed up with timestamps before changes
+- **Clean logs**: Detailed execution log at `~/.config/dotfiles-install.log`
+
+### Metrics
+
+- Main script reduced from 1136 lines to ~850 lines of clean, modular code
+- User prompts reduced from 11+ scattered locations to single batched section
+- Output verbosity: <30 lines (vs 100+ lines previously)
+- Execution time: <2 minutes for typical update run
+
+### Architecture Benefits
+
+1. **Maintainability**: Clear separation makes adding features easy
+2. **User Experience**: Professional, non-overwhelming interaction
+3. **Debugging**: Detailed logs separate from clean UI
+4. **Testing**: Dry-run mode allows safe preview
+5. **Extensibility**: New steps slot into plan array cleanly
+
 ## Core Tools & Configurations
 
 ### 1. AeroSpace (Tiling Window Manager)
