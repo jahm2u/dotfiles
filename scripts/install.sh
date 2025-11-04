@@ -1520,6 +1520,29 @@ initialize_calendar_infrastructure() {
         fi
     done
 
+    # Clear old cache and database to ensure fresh sync
+    log "Clearing stale calendar cache..."
+    local cache_files=(
+        "$HOME/.cache/sketchybar/last_sync_status"
+        "$HOME/.cache/sketchybar/last_meeting.txt"
+        "$HOME/.cache/sketchybar/meeting_cache"
+    )
+
+    for cache_file in "${cache_files[@]}"; do
+        if [[ -f "$cache_file" ]]; then
+            rm -f "$cache_file" 2>/dev/null && log "✓ Cleared: $(basename "$cache_file")"
+        fi
+    done
+
+    # Clear khal database for fresh import
+    if [[ -d "$HOME/.local/share/khal/calendars" ]]; then
+        local calendar_count=$(find "$HOME/.local/share/khal/calendars" -type d -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+        if [[ $calendar_count -gt 0 ]]; then
+            rm -rf "$HOME/.local/share/khal/calendars/"* 2>/dev/null
+            log "✓ Cleared khal database (will resync)"
+        fi
+    fi
+
     # Make helper scripts executable
     local scripts=(
         "$HOME/.config/sketchybar/helpers/sync-calendars.sh"
