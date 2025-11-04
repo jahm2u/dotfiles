@@ -76,7 +76,7 @@ main() {
     if DISCOVERY_OUTPUT=$("$VENV_PYTHON" "$SCRIPT_DIR/krisp-discover-meetings.py" --max-pages 5 2>&1 | sed -n '/^{$/,$p'); then
         DISCOVERED=$(echo "$DISCOVERY_OUTPUT" | jq -r '.discovered // 0' 2>/dev/null || echo 0)
         PENDING=$(echo "$DISCOVERY_OUTPUT" | jq -r '.pending // 0' 2>/dev/null || echo 0)
-        log "INFO" "Discovery complete: $DISCOVERED meetings found, $PENDING pending download"
+        log "INFO" "Discovery complete: $DISCOVERED total meetings scanned, $PENDING new pending download"
     else
         log "ERROR" "Discovery failed: $DISCOVERY_OUTPUT"
         send_telegram "❌ <b>Krisp Discovery Failed</b>
@@ -139,6 +139,12 @@ main() {
     REMAINING_PENDING=$((PENDING - DOWNLOADED))
     if [ $REMAINING_PENDING -lt 0 ]; then
         REMAINING_PENDING=0
+    fi
+
+    # Check for person_not_found errors
+    PERSON_NOT_FOUND_ERRORS=""
+    if [ "$BATCH_DETAILS" != "[]" ]; then
+        PERSON_NOT_FOUND_ERRORS=$(echo "$BATCH_DETAILS" | jq -r '.[] | select(.status == "failed" and (.reason // "" | contains("person_not_found"))) | "\(.details.person // "Unknown") (\(.details.company // "Unknown Company"))"' | sort -u)
     fi
 
     # Calculate duration
@@ -253,6 +259,18 @@ ${LINE}"
             MESSAGE+="
 
 <b>Download Failed:</b> ${FAILED}"
+        fi
+
+        # Show person_not_found warnings with actionable instructions
+        if [ -n "$PERSON_NOT_FOUND_ERRORS" ]; then
+            MESSAGE+="
+
+⚠️ <b>Missing Person Folders:</b>
+The following participants need folders created:
+$PERSON_NOT_FOUND_ERRORS
+
+<i>Create folders at:
+\$VAULT/Business/People/{Company}/{Person}/Meetings/</i>"
         fi
 
         # Add summary footer
