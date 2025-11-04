@@ -694,7 +694,14 @@ execute_install_deps() {
 }
 
 execute_brewfile_check() {
-    cd "$DOTFILES_DIR" && brew bundle check
+    cd "$DOTFILES_DIR" || return 1
+    # brew bundle check returns 1 if dependencies missing
+    # Use if statement to handle return code gracefully with set -e
+    if brew bundle check; then
+        return 0  # All dependencies satisfied
+    else
+        return 1  # Some dependencies missing (warning)
+    fi
 }
 
 execute_env_create() {
@@ -729,12 +736,14 @@ execute_env_krisp() {
 
 execute_restart_aerospace() {
     if pgrep -x "AeroSpace" >/dev/null; then
-        aerospace reload-config
+        aerospace reload-config || return 1
     fi
+    return 0
 }
 
 execute_restart_sketchybar() {
-    brew services restart sketchybar 2>&1
+    brew services restart sketchybar 2>&1 || return 1
+    return 0
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
