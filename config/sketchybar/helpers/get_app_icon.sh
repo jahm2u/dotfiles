@@ -20,7 +20,6 @@ case "$SLUG" in
     "microsoftpowerpoint") SLUG="powerpoint" ;;
     "microsoftoutlook") SLUG="outlook" ;;
     "googlechrome") SLUG="googlechrome" ;;
-    "jumpdesktop") SLUG="github" ;;  # Fallback example
 esac
 
 # Icon codepoints (generated from SimpleIcons.json)
