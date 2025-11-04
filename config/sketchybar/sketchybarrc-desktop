@@ -226,6 +226,7 @@ sketchybar --add item meeting e \
     update_freq=1 \
     script="$PLUGIN_SHARED_DIR/meeting.sh" \
     click_script="$PLUGIN_SHARED_DIR/meeting_popup.sh" \
+    icon.click_script="$PLUGIN_SHARED_DIR/meeting-prep.sh" \
     popup.align=left \
     popup.height=32 \
     popup.topmost=on \

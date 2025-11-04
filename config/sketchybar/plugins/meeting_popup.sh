@@ -57,14 +57,13 @@ fi
 
 EVENTS=$(sed '1,/^EVENTS_START$/d' "$EVENTS_LIST_CACHE")
 
-# Separate into past and future meetings (TODAY ONLY - never show tomorrow/yesterday)
-PAST_MEETINGS=()
-FUTURE_MEETINGS=()
+# Get ALL meetings for today (chronologically ordered)
+ALL_MEETINGS=()
 
 while IFS= read -r event; do
     [[ -z "$event" ]] && continue
 
-    # Parse format: "Meeting Title|09:00 AM|2025-10-29"
+    # Parse format: "Meeting Title|09:00 AM|2025-10-29|Attendees"
     EVENT_TIME=$(echo "$event" | cut -d'|' -f2)
     EVENT_DATE=$(echo "$event" | cut -d'|' -f3)
 
@@ -73,102 +72,76 @@ while IFS= read -r event; do
         continue
     fi
 
-    # Calculate event timestamp
-    EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)
-    if [[ -z "$EVENT_TIMESTAMP" ]]; then
-        EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %H:%M" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)
-    fi
-
-    if [[ -n "$EVENT_TIMESTAMP" ]]; then
-        if [[ $EVENT_TIMESTAMP -lt $CURRENT_TIMESTAMP ]]; then
-            PAST_MEETINGS+=("$event")
-        else
-            FUTURE_MEETINGS+=("$event")
-        fi
-    fi
+    # Add to all meetings array (already in chronological order from khal)
+    ALL_MEETINGS+=("$event")
 done <<< "$EVENTS"
 
-# Get last 5 past meetings (reversed order, most recent first)
-PAST_COUNT=${#PAST_MEETINGS[@]}
-DISPLAY_PAST=()
-for ((i=PAST_COUNT-1; i>=PAST_COUNT-5 && i>=0; i--)); do
-    DISPLAY_PAST+=("${PAST_MEETINGS[$i]}")
+TOTAL_MEETINGS=${#ALL_MEETINGS[@]}
+
+# Remove old hardcoded items if they exist
+for i in {1..5}; do
+    sketchybar --remove meeting.popup.prev_$i 2>/dev/null
+    sketchybar --remove meeting.popup.next_$i 2>/dev/null
 done
+sketchybar --remove meeting.popup.divider 2>/dev/null
 
-# Get next 5 future meetings
-DISPLAY_FUTURE=("${FUTURE_MEETINGS[@]:0:5}")
+# Create items dynamically for ALL meetings
+FIRST_FUTURE_INDEX=-1
+for i in "${!ALL_MEETINGS[@]}"; do
+    MEETING="${ALL_MEETINGS[$i]}"
+    TITLE=$(echo "$MEETING" | cut -d'|' -f1)
+    TIME=$(echo "$MEETING" | cut -d'|' -f2)
+    DATE=$(echo "$MEETING" | cut -d'|' -f3)
 
-# Populate popup items
-# Previous meetings (grayed out)
-for i in {0..4}; do
-    item_name="meeting.popup.prev_$((5-i))"
-    note_name="meeting.popup.prev_$((5-i))_note"
-
-    if [[ $i -lt ${#DISPLAY_PAST[@]} ]]; then
-        MEETING="${DISPLAY_PAST[$i]}"
-        TITLE=$(echo "$MEETING" | cut -d'|' -f1)
-        TIME=$(echo "$MEETING" | cut -d'|' -f2)
-        DATE=$(echo "$MEETING" | cut -d'|' -f3)
-
-        LABEL=$(format_meeting_display "$TITLE" "$TIME" "$DATE" "true")
-
-        sketchybar --set "$item_name" \
-            label="$LABEL" \
-            label.color="$OVERLAY1" \
-            icon="󰠮 󰄲" \
-            icon.color="$OVERLAY1" \
-            icon.padding_right=8 \
-            drawing=on \
-            --set "$note_name" \
-            drawing=off
-    else
-        sketchybar --set "$item_name" drawing=off \
-                   --set "$note_name" drawing=off
+    # Calculate if meeting is past or future
+    EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$DATE $TIME" "+%s" 2>/dev/null)
+    if [[ -z "$EVENT_TIMESTAMP" ]]; then
+        EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %H:%M" "$DATE $TIME" "+%s" 2>/dev/null)
     fi
-done
 
-# Divider
-sketchybar --set meeting.popup.divider \
-    label="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" \
-    label.color="$BACKGROUND_LESS_TRANSPARENT" \
-    icon.drawing=off \
-    drawing=on
+    IS_PAST=false
+    if [[ -n "$EVENT_TIMESTAMP" ]] && [[ $EVENT_TIMESTAMP -lt $CURRENT_TIMESTAMP ]]; then
+        IS_PAST=true
+    else
+        if [[ $FIRST_FUTURE_INDEX -eq -1 ]]; then
+            FIRST_FUTURE_INDEX=$i
+        fi
+    fi
 
-# Next meetings (highlighted)
-for i in {0..4}; do
-    item_name="meeting.popup.next_$((i+1))"
-    note_name="meeting.popup.next_$((i+1))_note"
+    LABEL=$(format_meeting_display "$TITLE" "$TIME" "$DATE" "$IS_PAST")
 
-    if [[ $i -lt ${#DISPLAY_FUTURE[@]} ]]; then
-        MEETING="${DISPLAY_FUTURE[$i]}"
-        TITLE=$(echo "$MEETING" | cut -d'|' -f1)
-        TIME=$(echo "$MEETING" | cut -d'|' -f2)
-        DATE=$(echo "$MEETING" | cut -d'|' -f3)
-
-        LABEL=$(format_meeting_display "$TITLE" "$TIME" "$DATE" "false")
-
+    # Determine colors based on past/future
+    if [[ "$IS_PAST" == "true" ]]; then
+        ICON_COLOR="$OVERLAY1"
+        LABEL_COLOR_USE="$OVERLAY1"
+        ICON="󰠮 󰄲"
+    else
         # Highlight first upcoming meeting
-        if [[ $i -eq 0 ]]; then
+        if [[ $i -eq $FIRST_FUTURE_INDEX ]]; then
             ICON_COLOR="$YELLOW"
             LABEL_COLOR_USE="$LABEL_COLOR"
         else
             ICON_COLOR="$BLUE"
             LABEL_COLOR_USE="$LABEL_COLOR"
         fi
-
-        sketchybar --set "$item_name" \
-            label="$LABEL" \
-            label.color="$LABEL_COLOR_USE" \
-            icon="󰠮 󰃭" \
-            icon.color="$ICON_COLOR" \
-            icon.padding_right=8 \
-            drawing=on \
-            --set "$note_name" \
-            drawing=off
-    else
-        sketchybar --set "$item_name" drawing=off \
-                   --set "$note_name" drawing=off
+        ICON="󰠮 󰃭"
     fi
+
+    # Cache meeting info for click handler
+    MEETING_CACHE="$CACHE_DIR/meeting_click_$i"
+    echo "$MEETING" > "$MEETING_CACHE"
+
+    # Create popup item
+    item_name="meeting.popup.item_$i"
+    sketchybar --add item "$item_name" popup.meeting \
+               --set "$item_name" \
+               label="$LABEL" \
+               label.color="$LABEL_COLOR_USE" \
+               icon="$ICON" \
+               icon.color="$ICON_COLOR" \
+               icon.padding_right=8 \
+               click_script="$HOME/.config/sketchybar/plugins/meeting-prep-item.sh $i '$item_name'" \
+               drawing=on
 done
 
 # Popup already shown at the start - no need to toggle again

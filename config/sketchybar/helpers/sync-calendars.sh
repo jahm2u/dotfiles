@@ -265,106 +265,15 @@ done
 
 IMPORT_END=$(date +%s)
 IMPORT_DURATION=$((IMPORT_END - SYNC_START))
-log "INFO" "Import phase complete (${IMPORT_DURATION}s), starting stale event cleanup"
+log "INFO" "Import phase complete (${IMPORT_DURATION}s)"
+log "INFO" "Skipping cleanup phase (disabled due to large file count)"
 
-# Calculate cutoff date for stale event detection
-CUTOFF_DATE=$(date -v-"${CALENDAR_HISTORY_DAYS}"d +%Y-%m-%d 2>/dev/null) || {
-    log "ERROR" "Failed to calculate cutoff date, skipping cleanup"
-    log "INFO" "Calendar sync complete"
-    exit 0
-}
-log "INFO" "Cutoff date: ${CUTOFF_DATE} (events before this will be removed)"
-
-# Verify khal is accessible before proceeding
-if ! command -v khal &>/dev/null; then
-    log "ERROR" "khal command not found, skipping cleanup"
-    log "INFO" "Calendar sync complete"
-    exit 0
-fi
-
-# Query khal for stale events (events before cutoff date)
-STALE_EVENTS=()
-while IFS= read -r line; do
-    if [[ -n "$line" ]]; then
-        STALE_EVENTS+=("$line")
-    fi
-done < <(khal list --format '{uid}|{title}|{start-date}|{calendar}' --day-format '' "1900-01-01" "${CUTOFF_DATE}" 2>/dev/null || true)
-
-# Log count of stale events detected
-STALE_COUNT=${#STALE_EVENTS[@]}
-if [[ $STALE_COUNT -eq 0 ]]; then
-    log "INFO" "No stale events detected, skipping cleanup"
-else
-    log "INFO" "Detected ${STALE_COUNT} stale events"
-
-    # Safe cleanup approach: Remove individual .ics files for one-time past events
-    # Preserve all recurring events (RRULE) to maintain future occurrences
-    DELETED_COUNT=0
-    FAILED_COUNT=0
-
-    # Process stale events for each discovered calendar
-    for calendar in "${CALENDAR_NAMES[@]}"; do
-        CAL_DIR="$HOME/.local/share/khal/calendars/$calendar"
-
-        if [[ ! -d "$CAL_DIR" ]]; then
-            log "WARN" "Calendar directory not found: $calendar, skipping"
-            continue
-        fi
-
-        log "INFO" "Processing stale events in $calendar..."
-
-        # Iterate through .ics files and check each for:
-        # 1. Is it a one-time event (no RRULE)?
-        # 2. Did it end before the cutoff date?
-        for ics_file in "$CAL_DIR"/*.ics; do
-            [[ -f "$ics_file" ]] || continue
-
-            # Skip if file has random suffix (temp files from khal)
-            [[ "$ics_file" =~ \.ics[a-z0-9_]+$ ]] && continue
-
-            # Check if event is recurring (has RRULE)
-            if grep -q "^RRULE:" "$ics_file" 2>/dev/null; then
-                # Preserve recurring events - they may have future occurrences
-                continue
-            fi
-
-            # Extract DTEND or DTSTART to determine if event is past
-            EVENT_END=$(grep -E "^DTEND" "$ics_file" 2>/dev/null | head -1 | cut -d: -f2 | cut -dT -f1)
-            if [[ -z "$EVENT_END" ]]; then
-                # No DTEND, use DTSTART
-                EVENT_END=$(grep -E "^DTSTART" "$ics_file" 2>/dev/null | head -1 | cut -d: -f2 | cut -dT -f1)
-            fi
-
-            if [[ -n "$EVENT_END" ]]; then
-                # Convert dates to comparable format (remove hyphens)
-                EVENT_END_CMP=$(echo "$EVENT_END" | tr -d '-')
-                CUTOFF_CMP=$(echo "$CUTOFF_DATE" | tr -d '-')
-
-                # If event ended before cutoff, delete it
-                # Note: Lexicographic comparison (< operator) is correct for YYYYMMDD format
-                # since date strings sort chronologically when formatted this way
-                if [[ "$EVENT_END_CMP" < "$CUTOFF_CMP" ]]; then
-                    if rm -f "$ics_file" 2>/dev/null; then
-                        ((DELETED_COUNT++))
-                    else
-                        ((FAILED_COUNT++))
-                    fi
-                fi
-            fi
-        done
-
-        log "INFO" "Processed $calendar calendar"
-    done
-
-    CLEANUP_END=$(date +%s)
-    CLEANUP_DURATION=$((CLEANUP_END - IMPORT_END))
-
-    # Log cleanup summary
-    log "INFO" "Cleanup complete: removed $DELETED_COUNT stale event files (${CLEANUP_DURATION}s)"
-    if [[ $FAILED_COUNT -gt 0 ]]; then
-        log "WARN" "Failed to delete $FAILED_COUNT files"
-    fi
-fi
+# Set cleanup stats to 0 since we're skipping
+STALE_COUNT=0
+DELETED_COUNT=0
+FAILED_COUNT=0
+# Cleanup phase disabled - too many files cause hang
+log "INFO" "Cleanup phase skipped (disabled)"
 
 # Final summary
 SYNC_END=$(date +%s)

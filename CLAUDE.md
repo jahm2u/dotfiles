@@ -206,6 +206,135 @@ todoist.sh widget (immediate update)
 - Focus task update: Instant (event-triggered, no polling)
 - API rate usage: ~120 requests/hour (well under 450/15min limit)
 
+#### Obsidian Meeting Prep Automation Architecture
+
+The Obsidian meeting prep system provides AI-powered meeting note generation with one-click preparation. When you click a meeting icon, it automatically analyzes previous meetings, generates pre-filled notes, and opens them in Obsidian.
+
+**Complete Data Flow:**
+```
+Icon Click → meeting-prep.sh → classify-meeting.py → find-person-folder.sh →
+analyze-meeting-history.py (OpenAI) → generate-meeting-note.py (OpenAI) →
+save to vault → open in Obsidian
+```
+
+**Component Details:**
+
+1. **meeting-prep.sh** (`config/sketchybar/helpers/meeting-prep.sh`)
+   - Main orchestration script with loading animation
+   - Sources `.env` for `OBSIDIAN_VAULT_PATH` and `OPENAI_API_KEY`
+   - Fetches next meeting from khal calendar database
+   - Orchestrates 5-step workflow with comprehensive error handling
+   - Opens generated note in Obsidian via URL scheme
+   - Comprehensive logging to `logs/meeting-prep.log`
+   - **Total execution**: 15-45 seconds typical
+
+2. **classify-meeting.py** (`config/sketchybar/helpers/classify-meeting.py`)
+   - Python script for meeting type classification
+   - Regex pattern matching for 1-on-1s, company meetings, team meetings
+   - Extracts participant names (excluding "Jeff Hamersly")
+   - Determines company context (IPMedia, TP, MT, DT, PD, etc.)
+   - Returns JSON with meeting_type, company, participant, confidence
+   - **Performance**: <100ms
+
+3. **find-person-folder.sh** (`config/sketchybar/helpers/find-person-folder.sh`)
+   - Bash script for locating person folders in vault
+   - Priority search order:
+     1. `Business/People/IPMedia/{PersonName}/`
+     2. `Business/People/CO/{Company}/{PersonName}/`
+     3. `Business/People/Cross-Company/{PersonName}/`
+     4. `Business/People/Archive/{PersonName}/`
+   - Verifies folder structure (Meetings/ directory exists)
+   - Returns absolute path to person folder
+   - **Performance**: <200ms
+
+4. **analyze-meeting-history.py** (`config/sketchybar/helpers/analyze-meeting-history.py`)
+   - Python script using OpenAI GPT-4o-mini for AI analysis
+   - Finds last 5 meeting files (YYYY-MM-DD*.md pattern)
+   - Extracts via AI:
+     * Open Action Items (with owner, days open, priority)
+     * Recurring Topics (patterns and trends)
+     * Active Blockers (impediments and resolutions)
+     * Unresolved Threads (questions without answers)
+     * Suggested Agenda (must/should/could discuss)
+     * Meeting Patterns (frequency, last meeting date)
+   - Graceful handling of first meetings (no previous history)
+   - **Performance**: 8-15 seconds (AI processing)
+   - **Cost**: ~$0.005 per analysis
+
+5. **generate-meeting-note.py** (`config/sketchybar/helpers/generate-meeting-note.py`)
+   - Python script using OpenAI GPT-4o-mini for note generation
+   - Loads appropriate template (1on1, company, team)
+   - Generates pre-filled Meeting Prep sections:
+     * Critical/Urgent Items (overdue actions)
+     * Prepared Questions (3-5 specific questions)
+     * Key Topics to Cover (prioritized agenda)
+     * Follow-ups from Last Meeting (action tracking)
+     * Context from Last Meeting (summary)
+   - Leaves Capture sections empty for live notes
+   - Creates Obsidian wikilinks for people/companies
+   - Determines save path based on meeting type
+   - **Performance**: 5-10 seconds (AI generation)
+   - **Cost**: ~$0.005 per generation
+
+6. **Sketchybar Integration** (icon click handler)
+   - Icon click triggers workflow (NOT label click - that shows popup)
+   - Loading animation displays during execution (... → :.. → .:. → ..:)
+   - Configured via `icon.click_script` in sketchybarrc
+   - Widget resets to normal state on completion
+   - Triggers `calendar_synced` event for refresh
+
+**Configuration:**
+- Environment variables: `.env` file in project root (git-ignored)
+- Required: `OBSIDIAN_VAULT_PATH` (absolute path to vault root)
+- Required: `OPENAI_API_KEY` (from https://platform.openai.com/api-keys)
+- Python venv: `~/.config/sketchybar/venv` (isolated dependencies)
+- Dependencies: `openai==1.12.0`, `python-dotenv==1.0.0`, `pyyaml==6.0.1`
+
+**Manual Trigger:**
+```bash
+bash ~/.config/sketchybar/helpers/meeting-prep.sh
+```
+
+**Error Handling & Logging:**
+- **Log Location**: `~/.config/sketchybar/logs/meeting-prep.log`
+- **Log Format**: `YYYY-MM-DD HH:MM:SS [LEVEL] message`
+- **Cache Location**: `~/.cache/sketchybar/last_meeting_prep_result.json`
+- **Exit Codes**: 0=success, 1=failure with helpful error messages
+- **Graceful Degradation**:
+  * Person not found → Error message with onboarding suggestion
+  * No previous meetings → First-meeting template with welcome content
+  * OpenAI API failure → Error logged with clear troubleshooting steps
+  * Template not found → Falls back to default 1on1 template
+  * Vault not accessible → Error with OBSIDIAN_VAULT_PATH guidance
+
+**Troubleshooting:**
+- If workflow doesn't trigger: Check `icon.click_script` in sketchybarrc files
+- If person not found: Verify vault structure matches expected paths
+- If AI fails: Check `OPENAI_API_KEY` is valid and has credits
+- If no note opens: Verify `OBSIDIAN_VAULT_PATH` points to correct vault
+- Check logs: `tail -f ~/.config/sketchybar/logs/meeting-prep.log`
+- Check last result: `cat ~/.cache/sketchybar/last_meeting_prep_result.json | jq`
+- Test classification: `~/.config/sketchybar/helpers/classify-meeting.py --title "1on1 with Marcus" --date "2024-11-02" --participants "Marcus Smith"`
+- **OpenAI errors**: Check API key, check usage limits, check network connectivity
+- **Template errors**: Verify templates exist at `{vault}/bmad/vault-ops/templates/*.md`
+- **Python errors**: Verify venv exists and dependencies installed: `~/.config/sketchybar/venv/bin/pip list`
+
+**Performance Metrics:**
+- Classification: <100ms
+- Person folder search: <200ms
+- Meeting history analysis: 8-15 seconds (AI processing)
+- Note generation: 5-10 seconds (AI generation)
+- Total end-to-end: 15-45 seconds typical
+- Cost per meeting prep: ~$0.005 (extremely cheap with GPT-4o-mini)
+- Daily cost (5 meetings): ~$0.025
+
+**Integration Notes:**
+- Preserves existing meeting.sh functionality (display, popup)
+- Separate click handlers: label = popup, icon = prep workflow
+- No breaking changes to calendar sync workflow
+- Symlink-based deployment (changes immediately reflected)
+- Python scripts use venv for dependency isolation
+
 #### macOS LaunchAgent Best Practices
 
 **Critical PATH Configuration:**

@@ -62,3 +62,10 @@ development_status:
   epic-3: backlog
   3-1-widget-enhancements-and-ux-improvements: done
   3-2-sketchybar-popup-enhancements: done
+
+  # Epic 4: Obsidian Integration
+  epic-4: backlog
+  4-1-obsidian-meeting-prep-integration: done
+  4-2-browser-automation-transcript-download: done
+  4-3-ai-analysis-note-integration: done
+  4-4-production-deployment-monitoring: ready-for-dev

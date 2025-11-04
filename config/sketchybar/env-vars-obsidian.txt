@@ -1,0 +1,20 @@
+# =============================================================================
+# Environment Variables for Obsidian Meeting Prep Integration
+# Copy these lines into your .env file (~/dotfiles/.env or ~/.env)
+# =============================================================================
+
+# Path to your Obsidian vault root directory
+# This should be the top-level directory of your vault
+OBSIDIAN_VAULT_PATH="/Users/v/Library/Mobile Documents/iCloud~md~obsidian/Documents/U"
+
+# OpenAI API Key for meeting history analysis and note generation
+# Get your API key from: https://platform.openai.com/api-keys
+# Cost: ~$0.005 per meeting prep (very cheap with GPT-4o-mini)
+OPENAI_API_KEY="your-api-key-here"
+
+# =============================================================================
+# Notes:
+# - The vault path should point to where your Business/People folders are
+# - The API key is kept secret and never logged
+# - Make sure .env is in .gitignore (it should already be)
+# =============================================================================

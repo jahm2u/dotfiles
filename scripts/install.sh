@@ -692,12 +692,278 @@ install_calendar_launchagent() {
     fi
 }
 
+setup_core_env_variables() {
+    log "Core automation setup"
+    echo ""
+
+    # Check for OPENAI_API_KEY (required for meeting-prep and transcript analysis)
+    if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+        log "OpenAI API key is required for meeting prep and AI analysis features."
+        if ask_user "Would you like to configure your OpenAI API key now?"; then
+            log ""
+            log "To get your OpenAI API key:"
+            log "  1. Visit: https://platform.openai.com/api-keys"
+            log "  2. Sign in or create an account"
+            log "  3. Click 'Create new secret key'"
+            log "  4. Copy the key (starts with 'sk-')"
+            echo ""
+            read -p "Enter your OpenAI API key (or press Enter to skip): " api_key
+
+            if [[ -n "$api_key" ]]; then
+                if ! grep -q "OPENAI_API_KEY" "$DOTFILES_DIR/.env"; then
+                    echo "OPENAI_API_KEY=$api_key" >> "$DOTFILES_DIR/.env"
+                    log "✓ Added OPENAI_API_KEY to .env"
+                    export OPENAI_API_KEY="$api_key"
+                fi
+            else
+                warn "Skipping OpenAI API key - meeting prep features will not work"
+            fi
+        fi
+    fi
+
+    # Check for OBSIDIAN_VAULT_PATH (required for meeting-prep)
+    if [[ -z "${OBSIDIAN_VAULT_PATH:-}" ]]; then
+        log ""
+        log "Obsidian vault path is required for meeting prep and note integration."
+
+        # Try to auto-detect common Obsidian vault location
+        local common_vault="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents"
+        if [[ -d "$common_vault" ]]; then
+            log "Found Obsidian vaults directory at: $common_vault"
+            log "Available vaults:"
+            ls -1 "$common_vault" 2>/dev/null | head -5
+        fi
+
+        if ask_user "Would you like to configure your Obsidian vault path now?"; then
+            echo ""
+            read -p "Enter full path to your Obsidian vault (or press Enter to skip): " vault_path
+
+            if [[ -n "$vault_path" ]]; then
+                # Expand ~ to home directory
+                vault_path="${vault_path/#\~/$HOME}"
+
+                if [[ -d "$vault_path" ]]; then
+                    if ! grep -q "OBSIDIAN_VAULT_PATH" "$DOTFILES_DIR/.env"; then
+                        echo "OBSIDIAN_VAULT_PATH=$vault_path" >> "$DOTFILES_DIR/.env"
+                        log "✓ Added OBSIDIAN_VAULT_PATH to .env"
+                        export OBSIDIAN_VAULT_PATH="$vault_path"
+                    fi
+                else
+                    warn "Directory does not exist: $vault_path"
+                    warn "You can add OBSIDIAN_VAULT_PATH to .env manually later"
+                fi
+            else
+                warn "Skipping Obsidian vault path - meeting prep features will not work"
+            fi
+        fi
+    fi
+
+    # Check for calendar URLs (required for calendar sync)
+    local has_calendar_url=false
+    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+        # Bash 4+: Check for any CALENDAR_URL_* variables
+        for var_name in ${!CALENDAR_URL_@}; do
+            has_calendar_url=true
+            break
+        done
+    else
+        # Bash 3.2 fallback
+        if compgen -v | grep -q '^CALENDAR_URL_'; then
+            has_calendar_url=true
+        fi
+    fi
+
+    if ! $has_calendar_url && [[ -z "${ICAL_URLS:-}" ]]; then
+        log ""
+        log "Calendar URLs are required for automatic calendar sync."
+        if ask_user "Would you like to configure a calendar URL now?"; then
+            log ""
+            log "Calendar URL format examples:"
+            log "  - Google: https://calendar.google.com/calendar/ical/...ics"
+            log "  - iCloud: https://p##-caldav.icloud.com/published/#/..."
+            log "  - Outlook: https://outlook.office365.com/owa/calendar/..."
+            echo ""
+            read -p "Enter a name for this calendar (e.g., GOOGLE, WORK, PERSONAL): " cal_name
+            read -p "Enter calendar URL (or press Enter to skip): " cal_url
+
+            if [[ -n "$cal_name" ]] && [[ -n "$cal_url" ]]; then
+                # Sanitize calendar name (uppercase, alphanumeric + underscore only)
+                cal_name=$(echo "$cal_name" | tr '[:lower:]' '[:upper:]' | tr -cd '[:alnum:]_')
+
+                if ! grep -q "CALENDAR_URL_${cal_name}" "$DOTFILES_DIR/.env"; then
+                    echo "CALENDAR_URL_${cal_name}=$cal_url" >> "$DOTFILES_DIR/.env"
+                    log "✓ Added CALENDAR_URL_${cal_name} to .env"
+                    export "CALENDAR_URL_${cal_name}=$cal_url"
+                fi
+            else
+                warn "Skipping calendar URL - calendar sync will not work"
+            fi
+        fi
+    fi
+
+    return 0
+}
+
+setup_krisp_env_variables() {
+    log ""
+    log "Krisp automation setup"
+    echo ""
+
+    # Check if user wants to enable Krisp automation
+    if [[ "${KRISP_LAUNCHAGENT:-}" != "TRUE" ]]; then
+        log "Krisp automation is currently disabled."
+        if ask_user "Would you like to enable Krisp transcript downloads?"; then
+            # Add KRISP_LAUNCHAGENT=TRUE to .env
+            if [[ -f "$DOTFILES_DIR/.env" ]]; then
+                if ! grep -q "KRISP_LAUNCHAGENT" "$DOTFILES_DIR/.env"; then
+                    echo "" >> "$DOTFILES_DIR/.env"
+                    echo "# Krisp Automation (Story 4-2)" >> "$DOTFILES_DIR/.env"
+                    echo "KRISP_LAUNCHAGENT=TRUE" >> "$DOTFILES_DIR/.env"
+                    log "✓ Added KRISP_LAUNCHAGENT=TRUE to .env"
+                    export KRISP_LAUNCHAGENT=TRUE
+                else
+                    # Variable exists but is not TRUE - update it
+                    sed -i '' 's/^KRISP_LAUNCHAGENT=.*/KRISP_LAUNCHAGENT=TRUE/' "$DOTFILES_DIR/.env"
+                    log "✓ Updated KRISP_LAUNCHAGENT=TRUE in .env"
+                    export KRISP_LAUNCHAGENT=TRUE
+                fi
+            else
+                error ".env file not found - cannot enable Krisp automation"
+                return 1
+            fi
+        else
+            log "Skipping Krisp automation setup"
+            return 0
+        fi
+    fi
+
+    # Check for optional Telegram notification variables
+    if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]] || [[ -z "${TELEGRAM_CHAT_ID:-}" ]]; then
+        log ""
+        log "Telegram notifications are optional but recommended for monitoring."
+        if ask_user "Would you like to configure Telegram notifications?"; then
+
+            # Get bot token
+            if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+                log ""
+                log "To create a Telegram bot:"
+                log "  1. Message @BotFather on Telegram"
+                log "  2. Send /newbot and follow instructions"
+                log "  3. Copy the bot token provided"
+                echo ""
+                read -p "Enter your Telegram bot token (or press Enter to skip): " bot_token
+
+                if [[ -n "$bot_token" ]]; then
+                    if ! grep -q "TELEGRAM_BOT_TOKEN" "$DOTFILES_DIR/.env"; then
+                        echo "TELEGRAM_BOT_TOKEN=$bot_token" >> "$DOTFILES_DIR/.env"
+                        log "✓ Added TELEGRAM_BOT_TOKEN to .env"
+                        export TELEGRAM_BOT_TOKEN="$bot_token"
+                    fi
+                fi
+            fi
+
+            # Get chat ID
+            if [[ -z "${TELEGRAM_CHAT_ID:-}" ]] && [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+                log ""
+                log "To get your chat ID:"
+                log "  1. Message your bot on Telegram"
+                log "  2. Visit: https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates"
+                log "  3. Find 'chat' -> 'id' in the JSON response"
+                echo ""
+                read -p "Enter your Telegram chat ID (or press Enter to skip): " chat_id
+
+                if [[ -n "$chat_id" ]]; then
+                    if ! grep -q "TELEGRAM_CHAT_ID" "$DOTFILES_DIR/.env"; then
+                        echo "TELEGRAM_CHAT_ID=$chat_id" >> "$DOTFILES_DIR/.env"
+                        log "✓ Added TELEGRAM_CHAT_ID to .env"
+                        export TELEGRAM_CHAT_ID="$chat_id"
+                    fi
+                fi
+            fi
+        fi
+    fi
+
+    # Remind about Krisp auth file
+    log ""
+    log "NOTE: Krisp authentication file required at:"
+    log "  ~/.config/sketchybar/krisp-auth.json"
+    log ""
+    log "To create this file, run:"
+    log "  bash ~/.config/sketchybar/helpers/krisp-refresh-auth.sh"
+    log "  (See config/sketchybar/helpers/KRISP_AUTH_SETUP.md for details)"
+
+    return 0
+}
+
+install_krisp_transcript_launchagent() {
+    local label="com.user.krisp-transcript-download"
+    local plist_source="$DOTFILES_DIR/config/sketchybar/launchagents/$label.plist"
+    local plist_target="$HOME/Library/LaunchAgents/$label.plist"
+    local logs_dir="$HOME/.config/sketchybar/logs"
+
+    log "Installing Krisp transcript download LaunchAgent"
+
+    # Ensure logs directory exists
+    if [[ ! -d "$logs_dir" ]]; then
+        mkdir -p "$logs_dir"
+        log "Created logs directory: $logs_dir"
+    fi
+
+    # Check if plist source exists
+    if [[ ! -f "$plist_source" ]]; then
+        error "LaunchAgent plist not found at: $plist_source"
+        return 1
+    fi
+
+    # Unload existing LaunchAgent if loaded
+    if launchctl list | grep -q "$label"; then
+        warn "Unloading existing LaunchAgent: $label"
+        launchctl unload "$plist_target" 2>/dev/null || true
+    fi
+
+    # Backup existing plist if it exists
+    if [[ -f "$plist_target" ]]; then
+        backup_existing "$plist_target"
+    fi
+
+    # Copy plist and replace HOME_DIR placeholder
+    sed "s|HOME_DIR|$HOME|g" "$plist_source" > "$plist_target"
+
+    # Validate plist syntax
+    if ! plutil -lint "$plist_target" &>/dev/null; then
+        error "LaunchAgent plist validation failed"
+        rm "$plist_target"
+        return 1
+    fi
+
+    log "✓ LaunchAgent plist installed and validated"
+
+    # Load LaunchAgent
+    if launchctl load -w "$plist_target" 2>/dev/null; then
+        log "✓ LaunchAgent loaded successfully"
+        log "Krisp transcript download will run every hour"
+        log "Manual trigger: launchctl start $label"
+    else
+        warn "Failed to load LaunchAgent (non-blocking)"
+        warn "You can manually load it with: launchctl load -w $plist_target"
+        return 0  # Non-blocking failure per graceful degradation pattern
+    fi
+}
+
 main() {
     log "Starting dotfiles installation from: $DOTFILES_DIR"
     echo ""
 
     # Run pre-flight checks
     preflight_checks
+
+    # Source .env file if it exists (for optional feature flags like KRISP_LAUNCHAGENT)
+    if [[ -f "$DOTFILES_DIR/.env" ]]; then
+        log "Loading environment configuration from .env"
+        set -a  # Export all variables
+        source "$DOTFILES_DIR/.env"
+        set +a
+    fi
 
     # Clean up old aerospace config location (deprecated)
     if [[ -e "$HOME/.aerospace.toml" ]]; then
@@ -762,6 +1028,25 @@ main() {
     else
         log "Skipping calendar sync LaunchAgent installation"
         log "You can manually sync with: bash ~/.config/sketchybar/helpers/sync-calendars.sh"
+    fi
+
+    # Core environment variables setup (OpenAI, Obsidian, Calendar)
+    log ""
+    setup_core_env_variables
+
+    # Krisp transcript download setup and LaunchAgent (optional)
+    log ""
+    setup_krisp_env_variables
+
+    # Install LaunchAgent if enabled
+    if [[ "${KRISP_LAUNCHAGENT:-FALSE}" == "TRUE" ]]; then
+        log ""
+        if ask_user "Install Krisp transcript download LaunchAgent (auto-downloads every hour)?"; then
+            install_krisp_transcript_launchagent
+        else
+            log "Skipping Krisp transcript download LaunchAgent installation"
+            log "You can manually download with: python3 ~/.config/sketchybar/helpers/krisp-download-transcripts.py --download-new --days-back 1 --limit 20 --headless"
+        fi
     fi
 
     # Load environment configuration for Sketchybar

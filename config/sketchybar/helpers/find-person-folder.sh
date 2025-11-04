@@ -59,6 +59,10 @@ if [[ ! -d "$VAULT_PATH" ]]; then
     exit 1
 fi
 
+# Normalize Unicode to NFD (macOS filesystem uses NFD normalization)
+# This handles accented characters like "Otávio" correctly
+PERSON=$(python3 -c "import unicodedata, sys; print(unicodedata.normalize('NFD', sys.argv[1]))" "$PERSON")
+
 # Name aliases mapping (handle common variations using case statement)
 case "$PERSON" in
     "DBoy")

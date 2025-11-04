@@ -257,7 +257,7 @@ get_icon_blink_state() {
 update_display_from_cache() {
     # Check if we have cached event list
     if [[ ! -f "$EVENTS_LIST_CACHE" ]]; then
-        sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="Loading..."
+        sketchybar --set "$NAME" icon="󰃭" label="Loading..."
         return 1
     fi
 
@@ -270,20 +270,20 @@ update_display_from_cache() {
     # Handle sync failures
     if [[ "$SYNC_STATUS" == "failed" ]] || [[ "$SYNC_STATUS" == "partial" ]]; then
         SYNC_TIME=$(get_sync_timestamp)
-        sketchybar --set "$NAME" icon="󰁡" --set "${NAME}.name" label="Sync Failed ($SYNC_TIME)"
+        sketchybar --set "$NAME" icon="󰁡" label="Sync Failed ($SYNC_TIME)"
         return 0
     fi
 
     # Handle no calendar access
     if [[ "$EVENTS" =~ "No calendars" ]]; then
-        sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="No calendar access"
+        sketchybar --set "$NAME" icon="󰃭" label="No calendar access"
         return 0
     fi
 
     # Handle empty event list
     if [[ -z "$EVENTS" ]] || [[ "$EVENTS" =~ "No events" ]]; then
         LABEL=$(get_random_message FREE_DAY_MESSAGES)
-        sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
+        sketchybar --set "$NAME" icon="󰃭" label="$LABEL"
         return 0
     fi
 
@@ -326,7 +326,7 @@ update_display_from_cache() {
                 LABEL=$(get_random_message FREE_DAY_MESSAGES)
             fi
 
-            sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
+            sketchybar --set "$NAME" icon="󰃭" label="$LABEL"
             return
         fi
     fi
@@ -372,11 +372,11 @@ update_display_from_cache() {
                 icon="󰃭" \
                 icon.color="$MEETING_ICON_COLOR" \
                 background.color="$MEETING_BG_COLOR" \
-                --set "${NAME}.name" label="$TITLE in $TIME_STR"
+                label="$TITLE in $TIME_STR"
         elif [[ -n "$MEETING_TIMESTAMP" ]]; then
             # Meeting started recently
             STARTED_AGO=$(((CURRENT_TIMESTAMP - MEETING_TIMESTAMP) / 60))
-            sketchybar --set "$NAME" icon="󰁅" --set "${NAME}.name" label="$TITLE (started ${STARTED_AGO}m ago)"
+            sketchybar --set "$NAME" icon="󰁅" label="$TITLE (started ${STARTED_AGO}m ago)"
         fi
     else
         # No upcoming meetings - check if we had meetings today
@@ -390,7 +390,7 @@ update_display_from_cache() {
             LABEL=$(get_random_message FREE_DAY_MESSAGES)
         fi
 
-        sketchybar --set "$NAME" icon="󰃭" --set "${NAME}.name" label="$LABEL"
+        sketchybar --set "$NAME" icon="󰃭" label="$LABEL"
     fi
 }
 
@@ -459,10 +459,10 @@ fetch_and_cache_meeting_data() {
     # Check sync status before fetching events
     SYNC_STATUS=$(check_sync_status)
 
-    # Get next meeting within 7 days (using new format: title|time|date)
+    # Get next meeting within 7 days (using new format: title|time|date|attendees)
     # Note: tail -n +2 skips the first line which is khal's date header (e.g., "Today, 2025-10-29")
     # Failsafe: Use timeout wrapper to prevent hanging
-    EVENTS_RAW=$(run_khal_with_timeout 'khal list now 7d --format "{title}|{start-time}|{start-date}" 2>/dev/null | tail -n +2' || echo "")
+    EVENTS_RAW=$(run_khal_with_timeout 'khal list now 7d --format "{title}|{start-time}|{start-date}|{attendees}" 2>/dev/null | tail -n +2' || echo "")
 
     # Check if we have calendar data, if not, try to sync
     if [[ "$EVENTS_RAW" =~ "No calendars" ]] || [[ -z "$EVENTS_RAW" ]]; then
@@ -473,7 +473,7 @@ fetch_and_cache_meeting_data() {
             force_calendar_sync
             # Retry getting events after sync (tail -n +2 skips khal's date header line)
             # Failsafe: Use timeout wrapper
-            EVENTS_RAW=$(run_khal_with_timeout 'khal list now 7d --format "{title}|{start-time}|{start-date}" 2>/dev/null | tail -n +2' || echo "")
+            EVENTS_RAW=$(run_khal_with_timeout 'khal list now 7d --format "{title}|{start-time}|{start-date}|{attendees}" 2>/dev/null | tail -n +2' || echo "")
             # Update sync status after forced sync
             SYNC_STATUS=$(check_sync_status)
         fi
@@ -482,6 +482,10 @@ fetch_and_cache_meeting_data() {
     # Filter out spam events
     SPAM_PATTERNS=".*(Million-Dollar|Webinar|Free Training|Limited Time|Act Now|Special Offer|How to Avoid|Mistakes When|Don't Miss|Last Chance|Exclusive|Register Now|Save Your Spot)"
     EVENTS=$(echo "$EVENTS_RAW" | grep -v -E "$SPAM_PATTERNS")
+
+    # Filter out khal's date header lines (they don't have pipe delimiters)
+    # Headers look like: "Today, 2025-11-04" or "Tomorrow, 2025-11-05"
+    EVENTS=$(echo "$EVENTS" | grep '|')
 
     # Cache the complete event list for display function to process
     # Store sync status at top of file, then event list

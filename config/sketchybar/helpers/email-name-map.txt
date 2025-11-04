@@ -1,0 +1,77 @@
+# Email to Obsidian Name Mapping
+# Format: email=FolderName
+# Manually corrected by Jeff
+# Last updated: 2025-11-02
+
+# Skip self
+jeff@ipmedia.com.br=SKIP
+jeff.hamersly@gmail.com=SKIP
+jeff@meupatrocinio.com=SKIP
+
+# Auto-mapped from calendar + vault
+Marcio.moreno@ipmedia.com.br=Marcio
+andre.castro@ipmedia.com.br=Castro
+andre.castro@meupatrocinio.com=Castro
+andre.pereira@ipmedia.com.br=Andre
+andre.reis@ipmedia.com.br=Reis
+andre.vissoto@ipmedia.com.br=Vissoto
+arion.dutra@ipmedia.com.br=Arion
+caio.adelio@gmail.com=Caio
+carlos.lage@ipmedia.com.br=Carlos
+caroline.franca@ipmedia.com.br=Carol
+caroline.franca@meupatrocinio.com=Carol
+daniel.rangel@ipmedia.com.br=Rangel
+daniel.souza@unicornofdata.com=DBoy
+daniel@ipmedia.com.br=Daniel
+daniel@meupatrocinio.com=Daniel
+eduardo.augusto@ipmedia.com.br=Eduardo
+eduardo.victor@ipmedia.com.br=Eduardo
+eric.kiqumoto@ipmedia.com.br=Eric
+felipe.mauez@gmail.com=Felipe
+felipe.norato@ipmedia.com.br=Norato
+ferrari.caroline@ipmedia.com.br=Ferrari
+giovanna.araujo@ipmedia.com.br=Giovanna
+henrique.meira@ipmedia.com.br=Henrique
+juliana.weinem@ipmedia.com.br=Juliana
+kelvin.soares@ipmedia.com.br=Kelvin
+leonardo.araujo@ipmedia.com.br=Leonardo
+lucas.barbosa@ipmedia.com.br=Lucas
+luis.estrella@ipmedia.com.br=Estrella
+marcelo.lima@ipmedia.com.br=Marcelo
+marcio.moreno@ipmedia.com.br=Marcio
+marcio.neves@ipmedia.com.br=Neves
+marcus.pereira@ipmedia.com.br=Marcus
+matheus.lapa@ipmedia.com.br=Matheus
+matheus.lapa@meupatrocinio.com=Matheus
+oliveirahenrique70@gmail.com=Henrique
+otavio.petry@ipmedia.com.br=Otávio
+paulo.lefol@ipmedia.com.br=Paulo
+priscila.novaes@ipmedia.com.br=Priscila
+queila.farias@ipmedia.com.br=Queila
+rafael.leivas@ipmedia.com.br=Leivas
+rafael.nascimento@ipmedia.com.br=RafaelN
+rafael@ipmedia.com.br=RafaelB
+raphael.pequeno@ipmedia.com.br=Pequeno
+ricardo.souza@ipmedia.com.br=Ricardo
+robson.araujo@ipmedia.com.br=Robson
+thais.guapyassu@ipmedia.com.br=Thais
+vinicius.bruno@ipmedia.com.br=Vinicius
+wellington.marques@ipmedia.com.br=Wellington
+weuler.gomes@ipmedia.com.br=Weuler
+
+# Unmapped emails - add manually
+F0rl00p@protonmail.com=Paul
+alison.silva@ipmedia.com.br=Alison
+auriana.lima@ipmedia.com.br=Auriana
+barbara.souza@ipmedia.com.br=Barbara
+brenda.silva@ipmedia.com.br=Brenda
+carobbinschris@gmail.com=Chris
+edson.marega@ipmedia.com.br=Edson
+gabriel.cardoso@chili.pa=Gabriel
+gustavo.perez@ipmedia.com.br=Gustavo
+mikaelle.freitas@ipmedia.com.br=Mikaelle
+nicole@meupatrocinio.com=Nicole
+pedro.silva@ipmedia.com.br=Pedro
+pedro.silva@meupatrocinio.com=Pedro
+rg@ipmedia.com.br=Ron
+wrs.pro@gmail.com=Will

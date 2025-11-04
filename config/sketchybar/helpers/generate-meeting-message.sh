@@ -144,7 +144,7 @@ Generate ONE message only, no explanation:"
     # Build JSON request body (following Hammerspoon pattern)
     local json_body=$(cat <<EOF
 {
-  "model": "gpt-4o-mini",
+  "model": "gpt-5-mini",
   "messages": [
     {
       "role": "system",
