@@ -1562,6 +1562,47 @@ initialize_calendar_infrastructure() {
         fi
     done
 
+    # Setup Python virtual environment for meeting-prep and Krisp automation
+    local venv_path="$HOME/.config/sketchybar/venv"
+    local requirements_file="$HOME/.config/sketchybar/requirements.txt"
+
+    if [[ ! -d "$venv_path" ]]; then
+        log "Creating Python virtual environment..."
+        if python3 -m venv "$venv_path" 2>/dev/null; then
+            log "✓ Created Python venv at $venv_path"
+        else
+            warn "Failed to create Python venv"
+            warn "Meeting-prep and Krisp automation may not work"
+            return 1
+        fi
+    else
+        log "✓ Python venv exists"
+    fi
+
+    # Install Python dependencies
+    if [[ -f "$requirements_file" ]]; then
+        log "Installing Python dependencies..."
+        if "$venv_path/bin/pip" install --quiet --upgrade pip setuptools 2>&1 | tee -a "$EXEC_LOG_FILE" > /dev/null; then
+            if "$venv_path/bin/pip" install --quiet -r "$requirements_file" 2>&1 | tee -a "$EXEC_LOG_FILE" > /dev/null; then
+                log "✓ Installed Python dependencies"
+
+                # Install Playwright browsers for Krisp automation
+                if "$venv_path/bin/playwright" install chromium 2>&1 | tee -a "$EXEC_LOG_FILE" > /dev/null; then
+                    log "✓ Installed Playwright browsers"
+                else
+                    warn "Playwright browser installation failed (non-critical)"
+                fi
+            else
+                warn "Failed to install Python dependencies"
+                warn "Check log: $EXEC_LOG_FILE"
+            fi
+        else
+            warn "Failed to upgrade pip/setuptools"
+        fi
+    else
+        warn "requirements.txt not found at $requirements_file"
+    fi
+
     # Verify khal can initialize its database
     if command -v khal &>/dev/null; then
         log "Testing khal database initialization..."
