@@ -338,11 +338,28 @@ def main():
         meeting_date = args.date or datetime.now().strftime("%Y-%m-%d")
         participant = classification.get("participant", "Unknown")
 
+        # Check if meeting note already exists BEFORE making expensive API calls
+        save_path = determine_save_path(classification, args.person_folder, meeting_date, vault_path)
+
+        if os.path.exists(save_path):
+            # File exists - skip AI generation, just open existing file
+            result = {
+                "file_path": os.path.relpath(save_path, vault_path),
+                "full_path": save_path,
+                "date": meeting_date,
+                "success": True,
+                "already_exists": True,
+                "message": "Meeting note already exists - opening existing file"
+            }
+            print(json.dumps(result, indent=2))
+            sys.exit(0)
+
         # Load template
         template_path = get_template_path(classification["meeting_type"], vault_path)
         template_content = load_template(template_path)
 
         # Generate prep content with AI (two-stage refinement)
+        # Only runs if file doesn't exist - saves API credits!
         prep_content = generate_meeting_prep_content(continuity, classification, template_content)
 
         # Calculate next meeting date
@@ -371,10 +388,7 @@ def main():
         note_content = note_content.replace("{{questions}}", ensure_string(prep_content.get("questions", "")))
         note_content = note_content.replace("{{context}}", ensure_string(prep_content.get("context", "")))
 
-        # Determine save path
-        save_path = determine_save_path(classification, args.person_folder, meeting_date, vault_path)
-
-        # Write file
+        # Write file (save_path already determined earlier)
         with open(save_path, 'w', encoding='utf-8') as f:
             f.write(note_content)
 
@@ -383,7 +397,8 @@ def main():
             "file_path": os.path.relpath(save_path, vault_path),
             "full_path": save_path,
             "date": meeting_date,
-            "success": True
+            "success": True,
+            "message": "Meeting note created successfully"
         }
 
         print(json.dumps(result, indent=2))
