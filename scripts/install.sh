@@ -370,7 +370,7 @@ validate_installation() {
     log ""
     log "Validating critical dependencies:"
 
-    # Check font (use macOS-native font check)
+    # Check JetBrainsMono Nerd Font (use macOS-native font check)
     ((validations_total++))
     if ls ~/Library/Fonts/JetBrainsMono*NerdFont*.ttf &>/dev/null 2>&1 || \
        ls /Library/Fonts/JetBrainsMono*NerdFont*.ttf &>/dev/null 2>&1; then
@@ -383,6 +383,26 @@ validate_installation() {
             ((validations_passed++))
         else
             warn "  ✗ Could not auto-install font (try: brew install --cask font-jetbrains-mono-nerd-font)"
+        fi
+    fi
+
+    # Check SimpleIcons font (required for app icons in Sketchybar)
+    ((validations_total++))
+    if ls ~/Library/Fonts/SimpleIcons.ttf &>/dev/null 2>&1; then
+        log "  ✓ SimpleIcons font installed"
+        ((validations_passed++))
+    else
+        log "  → SimpleIcons font not found, installing..."
+        local simpleicons_font="$DOTFILES_DIR/config/sketchybar/simple-icons/font/SimpleIcons.ttf"
+        if [[ -f "$simpleicons_font" ]]; then
+            if cp "$simpleicons_font" "$HOME/Library/Fonts/"; then
+                log "  ✓ SimpleIcons font installed successfully"
+                ((validations_passed++))
+            else
+                warn "  ✗ Failed to install SimpleIcons font"
+            fi
+        else
+            warn "  ✗ SimpleIcons font not found in repo at: $simpleicons_font"
         fi
     fi
 
