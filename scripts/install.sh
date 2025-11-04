@@ -512,6 +512,10 @@ generate_plan() {
     ((step_num++))
     PLAN+=("$step_num|calendar_infra|Initialize calendar infrastructure|Directories and scripts")
 
+    # Install custom fonts for Sketchybar app icons
+    ((step_num++))
+    PLAN+=("$step_num|install_fonts|Install custom app icon fonts|SimpleIcons for Warp, VSCode, etc.")
+
     # LaunchAgents
     # Calendar LaunchAgent - always offer to install if not running
     if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
@@ -734,6 +738,14 @@ execute_plan() {
                 fi
                 ;;
 
+            install_fonts)
+                if exec_quiet "Install custom fonts" install_custom_fonts; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
             launchagent_calendar)
                 if exec_quiet "Calendar LaunchAgent" install_calendar_launchagent; then
                     show_result 0
@@ -889,6 +901,52 @@ cleanup_krisp_launchagent() {
     fi
 
     return 0
+}
+
+install_custom_fonts() {
+    log "Installing custom app icon fonts for Sketchybar"
+
+    local fonts_dir="$HOME/Library/Fonts"
+    local source_font="$HOME/.config/sketchybar/simple-icons/font/SimpleIcons.ttf"
+    local dest_font="$fonts_dir/SimpleIcons.ttf"
+
+    # Check if source font exists
+    if [[ ! -f "$source_font" ]]; then
+        warn "SimpleIcons.ttf not found in repo"
+        warn "Sketchybar app icons may not display correctly"
+        return 1
+    fi
+
+    # Create fonts directory if needed
+    mkdir -p "$fonts_dir"
+
+    # Check if font is already installed and up-to-date
+    if [[ -f "$dest_font" ]]; then
+        # Compare modification times or checksums
+        if cmp -s "$source_font" "$dest_font"; then
+            log "✓ SimpleIcons.ttf already installed and up-to-date"
+            return 0
+        else
+            log "Updating existing SimpleIcons.ttf"
+        fi
+    fi
+
+    # Copy font file
+    if cp "$source_font" "$dest_font" 2>/dev/null; then
+        log "✓ Installed SimpleIcons.ttf to $fonts_dir"
+        log "  Provides icons for: Warp, VSCode, Discord, Slack, Obsidian, etc."
+
+        # Clear font cache to make it available immediately
+        if command -v fc-cache &>/dev/null; then
+            fc-cache -f "$fonts_dir" 2>/dev/null
+            log "✓ Font cache refreshed"
+        fi
+
+        return 0
+    else
+        warn "Failed to copy font file"
+        return 1
+    fi
 }
 
 execute_restart_aerospace() {
