@@ -105,7 +105,7 @@ def process_transcript(transcript_path, meeting_id):
     """
     Process a single transcript using krisp-process-transcript.py
 
-    Returns: True on success, False on failure
+    Returns: Dict with status, reason, and details
     """
     cmd = [
         str(VENV_PYTHON),
@@ -127,24 +127,46 @@ def process_transcript(transcript_path, meeting_id):
             # Parse result
             output = json.loads(result.stdout)
             if output.get('success'):
-                return True
+                return {
+                    'status': 'success',
+                    'action': 'Note updated',
+                    'details': output
+                }
             elif output.get('skipped'):
                 log(f"  Skipped (already processed or failed previously)", "INFO")
-                return True  # Count as success to continue
+                return {
+                    'status': 'skipped',
+                    'reason': 'Already processed',
+                    'details': output
+                }
             else:
                 errors = ', '.join(output.get('errors', ['unknown']))
                 log(f"  Failed: {errors}", "ERROR")
-                return False
+                return {
+                    'status': 'failed',
+                    'reason': errors,
+                    'details': output
+                }
         else:
             log(f"  Process failed: {result.stderr}", "ERROR")
-            return False
+            return {
+                'status': 'failed',
+                'reason': 'Process error',
+                'error': result.stderr
+            }
 
     except subprocess.TimeoutExpired:
         log(f"  Timeout processing transcript", "ERROR")
-        return False
+        return {
+            'status': 'failed',
+            'reason': 'Timeout'
+        }
     except Exception as e:
         log(f"  Error: {str(e)}", "ERROR")
-        return False
+        return {
+            'status': 'failed',
+            'reason': str(e)
+        }
 
 
 def main():
@@ -195,19 +217,36 @@ def main():
         sys.exit(0)
 
     # Process transcripts
-    stats = {'success': 0, 'failed': 0, 'skipped': 0}
+    stats = {'success': 0, 'failed': 0, 'skipped': 0, 'details': []}
 
     for i, item in enumerate(processing_queue, 1):
         log(f"\n[{i}/{total}] Processing: [{item['date']}] {item['title']}")
 
-        success = process_transcript(item['transcript_path'], item['meeting_id'])
+        result = process_transcript(item['transcript_path'], item['meeting_id'])
 
-        if success:
+        # Collect detailed result
+        detail = {
+            'title': item['title'],
+            'date': item['date'],
+            'date_text': item.get('date_text', item['date']),
+            'status': result['status'],
+            'meeting_id': item['meeting_id']
+        }
+
+        if result['status'] == 'success':
             stats['success'] += 1
+            detail['action'] = result.get('action', 'Note updated')
             log(f"  ✓ Success ({stats['success']}/{total})")
-        else:
+        elif result['status'] == 'skipped':
+            stats['skipped'] += 1
+            detail['reason'] = result.get('reason', 'Already processed')
+            log(f"  ⊘ Skipped ({stats['skipped']}/{total})")
+        else:  # failed
             stats['failed'] += 1
+            detail['reason'] = result.get('reason', 'Unknown error')
             log(f"  ✗ Failed ({stats['failed']}/{total})")
+
+        stats['details'].append(detail)
 
     log(f"\n=== BATCH PROCESSING COMPLETE ===")
     log(f"Success: {stats['success']}")

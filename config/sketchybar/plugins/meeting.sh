@@ -257,7 +257,8 @@ get_icon_blink_state() {
 update_display_from_cache() {
     # Check if we have cached event list
     if [[ ! -f "$EVENTS_LIST_CACHE" ]]; then
-        sketchybar --set "$NAME" icon="󰃭" label="Loading..."
+        sketchybar --set "$NAME" icon="󰃭" label="Loading..." \
+        --set meeting.name label="Loading..."
         return 1
     fi
 
@@ -270,20 +271,23 @@ update_display_from_cache() {
     # Handle sync failures
     if [[ "$SYNC_STATUS" == "failed" ]] || [[ "$SYNC_STATUS" == "partial" ]]; then
         SYNC_TIME=$(get_sync_timestamp)
-        sketchybar --set "$NAME" icon="󰁡" label="Sync Failed ($SYNC_TIME)"
+        sketchybar --set "$NAME" icon="󰁡" label="Sync Failed ($SYNC_TIME)" \
+        --set meeting.name label="Sync Failed ($SYNC_TIME)"
         return 0
     fi
 
     # Handle no calendar access
     if [[ "$EVENTS" =~ "No calendars" ]]; then
-        sketchybar --set "$NAME" icon="󰃭" label="No calendar access"
+        sketchybar --set "$NAME" icon="󰃭" label="No calendar access" \
+        --set meeting.name label="No calendar access"
         return 0
     fi
 
     # Handle empty event list
     if [[ -z "$EVENTS" ]] || [[ "$EVENTS" =~ "No events" ]]; then
         LABEL=$(get_random_message FREE_DAY_MESSAGES)
-        sketchybar --set "$NAME" icon="󰃭" label="$LABEL"
+        sketchybar --set "$NAME" icon="󰃭" label="$LABEL" \
+        --set meeting.name label="$LABEL"
         return 0
     fi
 
@@ -326,7 +330,8 @@ update_display_from_cache() {
                 LABEL=$(get_random_message FREE_DAY_MESSAGES)
             fi
 
-            sketchybar --set "$NAME" icon="󰃭" label="$LABEL"
+            sketchybar --set "$NAME" icon="󰃭" label="$LABEL" \
+            --set meeting.name label="$LABEL"
             return
         fi
     fi
@@ -372,11 +377,13 @@ update_display_from_cache() {
                 icon="󰃭" \
                 icon.color="$MEETING_ICON_COLOR" \
                 background.color="$MEETING_BG_COLOR" \
-                label="$TITLE in $TIME_STR"
+                label="$TITLE in $TIME_STR" \
+            --set meeting.name label="$TITLE in $TIME_STR"
         elif [[ -n "$MEETING_TIMESTAMP" ]]; then
             # Meeting started recently
             STARTED_AGO=$(((CURRENT_TIMESTAMP - MEETING_TIMESTAMP) / 60))
-            sketchybar --set "$NAME" icon="󰁅" label="$TITLE (started ${STARTED_AGO}m ago)"
+            sketchybar --set "$NAME" icon="󰁅" label="$TITLE (started ${STARTED_AGO}m ago)" \
+            --set meeting.name label="$TITLE (started ${STARTED_AGO}m ago)"
         fi
     else
         # No upcoming meetings - check if we had meetings today
@@ -390,7 +397,8 @@ update_display_from_cache() {
             LABEL=$(get_random_message FREE_DAY_MESSAGES)
         fi
 
-        sketchybar --set "$NAME" icon="󰃭" label="$LABEL"
+        sketchybar --set "$NAME" icon="󰃭" label="$LABEL" \
+        --set meeting.name label="$LABEL"
     fi
 }
 
