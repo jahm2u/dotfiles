@@ -78,12 +78,9 @@ done <<< "$EVENTS"
 
 TOTAL_MEETINGS=${#ALL_MEETINGS[@]}
 
-# Remove old hardcoded items if they exist
-for i in {1..5}; do
-    sketchybar --remove meeting.popup.prev_$i 2>/dev/null
-    sketchybar --remove meeting.popup.next_$i 2>/dev/null
-done
-sketchybar --remove meeting.popup.divider 2>/dev/null
+# Note: Stale popup item cleanup is handled automatically by meeting.sh
+# which runs on calendar_synced events (every 15 min via LaunchAgent)
+# No cleanup needed here - just create fresh items for today
 
 # Create items dynamically for ALL meetings
 FIRST_FUTURE_INDEX=-1

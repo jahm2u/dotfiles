@@ -440,6 +440,32 @@ force_calendar_sync() {
     touch "$CALENDAR_HASH_FILE"
 }
 
+# Function to clean up stale popup items at day boundary
+# Runs automatically during calendar sync, only does work when day changes
+cleanup_stale_popup_items() {
+    local last_popup_date_file="$CACHE_DIR/last_popup_date"
+    local current_date=$(date "+%Y-%m-%d")
+
+    if [[ ! -f "$last_popup_date_file" ]] || [[ "$(cat "$last_popup_date_file" 2>/dev/null)" != "$current_date" ]]; then
+        # Day changed - clean up all old popup items to prevent stale data
+        for i in {1..5}; do
+            sketchybar --remove meeting.popup.prev_$i 2>/dev/null
+            sketchybar --remove meeting.popup.next_$i 2>/dev/null
+            sketchybar --remove meeting.popup.prev_${i}_note 2>/dev/null
+            sketchybar --remove meeting.popup.next_${i}_note 2>/dev/null
+        done
+        sketchybar --remove meeting.popup.divider 2>/dev/null
+
+        # Remove potentially stale item_* entries from previous days (0-50 covers realistic day)
+        for i in {0..50}; do
+            sketchybar --remove meeting.popup.item_$i 2>/dev/null
+        done
+
+        # Update the date cache
+        echo "$current_date" > "$last_popup_date_file"
+    fi
+}
+
 # DATA FETCH FUNCTION - Queries khal and caches results
 # Only called when should_fetch_data() returns true
 fetch_and_cache_meeting_data() {
@@ -463,6 +489,10 @@ fetch_and_cache_meeting_data() {
         release_lock
         return 1
     fi
+
+    # Clean up stale popup items if day has changed
+    # Runs in background to not slow down data fetch
+    cleanup_stale_popup_items &
 
     # Check sync status before fetching events
     SYNC_STATUS=$(check_sync_status)
