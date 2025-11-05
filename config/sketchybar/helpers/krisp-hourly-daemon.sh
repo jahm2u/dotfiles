@@ -68,42 +68,26 @@ main() {
     START_TIME=$(date +%s)
     DISCOVERED=0
     DOWNLOADED=0
+    NOT_READY=0
     PENDING=0
     FAILED=0
 
-    # Phase 1: Discovery
-    log "INFO" "Phase 1: Discovering new meetings..."
-    if DISCOVERY_OUTPUT=$("$VENV_PYTHON" "$SCRIPT_DIR/krisp-discover-meetings.py" --max-pages 5 2>&1 | sed -n '/^{$/,$p'); then
-        DISCOVERED=$(echo "$DISCOVERY_OUTPUT" | jq -r '.discovered // 0' 2>/dev/null || echo 0)
-        PENDING=$(echo "$DISCOVERY_OUTPUT" | jq -r '.pending // 0' 2>/dev/null || echo 0)
-        log "INFO" "Discovery complete: $DISCOVERED total meetings scanned, $PENDING new pending download"
+    # Phase 1: Discovery & Download (simplified script - first 20 meetings)
+    log "INFO" "Phase 1: Discovering and downloading transcripts..."
+    if "$VENV_PYTHON" "$SCRIPT_DIR/krisp-download-transcripts-simple.py" --limit 20 2>&1 | tee -a "$LOG_FILE"; then
+        # Extract stats from simplified script output (BSD grep compatible)
+        DISCOVERED=$(grep 'Found' "$LOG_FILE" | tail -1 | grep -Eo '[0-9]+' | head -1 || echo 0)
+        DOWNLOADED=$(grep 'Successfully downloaded:' "$LOG_FILE" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
+        NOT_READY=$(grep 'Not ready:' "$LOG_FILE" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
+        FAILED=$(grep 'Errors:' "$LOG_FILE" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
+        log "INFO" "Discovery & download complete: $DISCOVERED discovered, $DOWNLOADED downloaded, $NOT_READY not ready, $FAILED failed"
     else
-        log "ERROR" "Discovery failed: $DISCOVERY_OUTPUT"
-        send_telegram "❌ <b>Krisp Discovery Failed</b>
+        log "ERROR" "Discovery & download failed"
+        send_telegram "❌ <b>Krisp Discovery & Download Failed</b>
 
-<b>Error:</b> Discovery phase encountered errors
+<b>Error:</b> Phase encountered errors
 <b>Check logs:</b> <code>~/.config/sketchybar/logs/krisp-daemon.log</code>"
         exit 1
-    fi
-
-    # Phase 2: Downloading (limit to 10 per hour to avoid overwhelming)
-    if [ "$PENDING" -gt 0 ]; then
-        log "INFO" "Phase 2: Downloading transcripts (max 10)..."
-        if PROCESS_OUTPUT=$("$VENV_PYTHON" "$SCRIPT_DIR/krisp-process-queue.py" --limit 10 2>&1 | sed -n '/^{$/,$p'); then
-            DOWNLOADED=$(echo "$PROCESS_OUTPUT" | jq -r '.processed // 0' 2>/dev/null || echo 0)
-            FAILED=$(echo "$PROCESS_OUTPUT" | jq -r '.failed // 0' 2>/dev/null || echo 0)
-            log "INFO" "Download complete: $DOWNLOADED downloaded, $FAILED failed"
-        else
-            log "ERROR" "Download failed: $PROCESS_OUTPUT"
-            send_telegram "⚠️ <b>Krisp Download Failed</b>
-
-<b>Discovery:</b> $DISCOVERED meetings found
-<b>Error:</b> Download phase encountered errors
-<b>Check logs:</b> <code>~/.config/sketchybar/logs/krisp-daemon.log</code>"
-            exit 1
-        fi
-    else
-        log "INFO" "No pending transcripts to download"
     fi
 
     # Phase 3: Batch processing downloaded transcripts
@@ -245,6 +229,26 @@ ${LINE}"
             MESSAGE+="
 
 <b>Failed:</b> ${PROCESSING_FAILED}"
+
+            # Add detailed failure breakdown if available
+            if [ "$BATCH_DETAILS" != "[]" ]; then
+                FAILED_DETAILS=$(echo "$BATCH_DETAILS" | jq -r '.[] | select(.status == "failed") | "  ✗ \"\(.title // "Unknown")\" → \(.reason // "Unknown error")"' 2>/dev/null | head -5)
+
+                if [ -n "$FAILED_DETAILS" ]; then
+                    MESSAGE+="
+
+<b>Failure Details:</b>
+$FAILED_DETAILS"
+
+                    # Show "and N more" if we truncated
+                    TOTAL_FAILED=$(echo "$BATCH_DETAILS" | jq '[.[] | select(.status == "failed")] | length' 2>/dev/null)
+                    if [ "$TOTAL_FAILED" -gt 5 ]; then
+                        REMAINING_FAILED=$((TOTAL_FAILED - 5))
+                        MESSAGE+="
+  ...and ${REMAINING_FAILED} more"
+                    fi
+                fi
+            fi
         fi
 
         # Show skipped if any
