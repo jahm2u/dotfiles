@@ -59,11 +59,7 @@ main() {
     log "INFO" "Krisp Daemon Starting (Hourly Run)"
     log "INFO" "========================================="
 
-    # Health beat: Start
-    send_telegram "🤖 <b>Krisp Daemon Started</b>
-
-<b>Time:</b> $(date '+%I:%M %p')
-<b>Status:</b> Checking for new transcripts..."
+    # Removed "Started" telegram message per user request
 
     START_TIME=$(date +%s)
     DISCOVERED=0
@@ -150,16 +146,16 @@ main() {
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
 
-    # Health beat: Build enhanced Telegram message with per-file details
-    if [ "$DOWNLOADED" -gt 0 ] || [ "$DISCOVERED" -gt 0 ] || [ "$PROCESSED" -gt 0 ]; then
-        MESSAGE="✅ <b>Krisp Daemon Complete</b>
-
-<b>Discovered:</b> $DISCOVERED new meetings"
+    # Health beat: Only send notification if actual new work was done (not re-downloads)
+    # Send telegram if: new downloads + successfully processed, OR processing failures
+    if [ "$PROCESSED" -gt 0 ] || [ "$PROCESSING_FAILED" -gt 0 ]; then
+        MESSAGE="✅ <b>Krisp Processing Complete</b>"
 
         # Show download summary if any downloads occurred
         if [ "$DOWNLOADED" -gt 0 ]; then
             MESSAGE+="
-<b>Downloaded:</b> $DOWNLOADED transcripts"
+
+<b>Downloaded:</b> $DOWNLOADED new transcripts"
         fi
 
         # Add per-file breakdown if we have details

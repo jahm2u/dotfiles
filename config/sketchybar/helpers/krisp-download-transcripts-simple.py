@@ -16,6 +16,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from playwright_stealth import stealth_sync
 from dotenv import load_dotenv
 import argparse
+import importlib.util
 
 # Configuration
 CACHE_DIR = Path.home() / ".cache/sketchybar"
@@ -24,6 +25,7 @@ PROGRESS_FILE = CACHE_DIR / "krisp-progress.json"
 LOG_FILE = Path.home() / ".config/sketchybar/logs/krisp-download.log"
 TRANSCRIPTS_DIR = Path.home() / ".config/sketchybar/krisp-transcripts"
 AUTH_FILE = Path.home() / ".config/sketchybar/krisp-auth.json"
+HELPERS_DIR = Path.home() / ".config/sketchybar/helpers"
 
 # Retry configuration
 MAX_RETRIES = 3
@@ -41,6 +43,17 @@ def log(message, level="INFO"):
     print(log_line)
     with open(LOG_FILE, "a") as f:
         f.write(log_line + "\n")
+
+def load_cache_module():
+    """Load cache module for tracking processed meetings"""
+    try:
+        spec = importlib.util.spec_from_file_location("krisp_cache", HELPERS_DIR / "krisp-cache.py")
+        cache = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cache)
+        return cache
+    except Exception as e:
+        log(f"Failed to load cache module: {str(e)}", "ERROR")
+        return None
 
 def load_env():
     """Load environment variables from dotfiles .env"""
@@ -214,6 +227,11 @@ def main():
 
     log(f"Starting simplified Krisp downloader (limit: {args.limit})...")
 
+    # Load cache module for tracking processed meetings
+    cache = load_cache_module()
+    if not cache:
+        log("WARNING: Cache module not available - downloads may be duplicated", "WARN")
+
     # Load auth
     cookies, localstorage = load_krisp_auth()
 
@@ -329,6 +347,16 @@ def main():
             # Try to download transcript
             status, transcript_text, meeting_id = download_transcript_from_current_page(page)
 
+            # Skip if already processed
+            if cache and meeting_id and cache.is_processed(meeting_id):
+                log(f"⊘ Already processed, skipping...", "INFO")
+                # Navigate back to list
+                log("Navigating back to list...")
+                page.goto("https://app.krisp.ai/meeting-notes?page=1&limit=20", wait_until="load", timeout=30000)
+                page.wait_for_selector('a.meeting-item', state='visible', timeout=10000)
+                page.wait_for_timeout(2000)
+                continue
+
             if status == 'success' and transcript_text:
                 # Save transcript
                 if meeting_id:
@@ -350,6 +378,18 @@ def main():
                 log(f"✓ Saved transcript to: {transcript_path}")
                 log(f"✓ Transcript length: {len(transcript_text)} characters")
                 success_count += 1
+
+                # Mark as processed in cache to prevent re-downloading
+                if cache and meeting_id:
+                    metadata = {
+                        "title": title,
+                        "downloaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "transcript_path": str(transcript_path)
+                    }
+                    if cache.add_processed_meeting(meeting_id, metadata):
+                        log(f"✓ Marked meeting as processed in cache")
+                    else:
+                        log(f"⚠ Failed to update cache for meeting {meeting_id}", "WARN")
             elif status == 'not_ready':
                 log(f"⏳ Transcript not ready yet, skipping...", "WARN")
                 not_ready_count += 1
