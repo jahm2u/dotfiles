@@ -146,6 +146,7 @@ def process_transcript(transcript_path, meeting_id):
     """
     result = {
         "success": False,
+        "status": "failed",  # Default status (success/skipped/failed)
         "meeting_id": meeting_id,
         "transcript_path": str(transcript_path),
         "errors": [],
@@ -158,13 +159,15 @@ def process_transcript(transcript_path, meeting_id):
     if cache.is_processed(meeting_id):
         log(f"Meeting {meeting_id} already processed, skipping", "INFO")
         result["success"] = True
-        result["skipped"] = True
+        result["status"] = "skipped"
+        result["reason"] = "Already processed"
         return result
 
     # Check if in failed matches
     if cache.is_failed(meeting_id):
         log(f"Meeting {meeting_id} previously failed, skipping", "WARN")
-        result["skipped"] = True
+        result["status"] = "skipped"
+        result["reason"] = "Previously failed"
         return result
 
     try:
@@ -177,6 +180,8 @@ def process_transcript(transcript_path, meeting_id):
             log("Pending downloads file not found", "ERROR")
             cache.add_failed_match(meeting_id, "metadata_not_found", {"transcript_path": str(transcript_path)})
             result["errors"].append("metadata_not_found")
+            result["status"] = "failed"
+            result["reason"] = "metadata_not_found"
             return result
 
         with open(pending_file, 'r') as f:
@@ -188,6 +193,8 @@ def process_transcript(transcript_path, meeting_id):
             log(f"Meeting metadata not found for ID: {meeting_id}", "ERROR")
             cache.add_failed_match(meeting_id, "metadata_not_found", {"transcript_path": str(transcript_path)})
             result["errors"].append("metadata_not_found")
+            result["status"] = "failed"
+            result["reason"] = "metadata_not_found"
             return result
 
         log(f"Found metadata: {meeting_meta['title']}", "INFO")
@@ -274,6 +281,8 @@ def process_transcript(transcript_path, meeting_id):
                 {"transcript_path": str(transcript_path), "date": calendar_match.get("krisp_date"), "speakers": speakers}
             )
             result["errors"].append("no_calendar_match")
+            result["status"] = "failed"
+            result["reason"] = "no_calendar_match"
             return result
 
         result["stages_completed"].append("calendar_match")
@@ -330,6 +339,8 @@ def process_transcript(transcript_path, meeting_id):
             log("OBSIDIAN_VAULT_PATH not set or invalid", "ERROR")
             cache.add_failed_match(meeting_id, "vault_not_found", {"transcript_path": str(transcript_path)})
             result["errors"].append("vault_not_found")
+            result["status"] = "failed"
+            result["reason"] = "vault_not_found"
             return result
 
         # Handle different meeting types
@@ -352,6 +363,8 @@ def process_transcript(transcript_path, meeting_id):
                         {"transcript_path": str(transcript_path), "person": classification.get("participant")}
                     )
                     result["errors"].append("person_not_found")
+                    result["status"] = "failed"
+                    result["reason"] = "person_not_found"
                     return result
 
                 person_folder = Path(find_result.stdout.strip())
@@ -366,6 +379,8 @@ def process_transcript(transcript_path, meeting_id):
                 log("Person folder search timed out", "ERROR")
                 cache.add_failed_match(meeting_id, "person_search_timeout", {"transcript_path": str(transcript_path)})
                 result["errors"].append("person_search_timeout")
+                result["status"] = "failed"
+                result["reason"] = "person_search_timeout"
                 return result
 
         elif meeting_type.startswith("ipmedia_team_"):
@@ -415,6 +430,8 @@ def process_transcript(transcript_path, meeting_id):
             log(f"Unknown meeting type: {meeting_type}", "ERROR")
             cache.add_failed_match(meeting_id, "unknown_meeting_type", {"transcript_path": str(transcript_path), "meeting_type": meeting_type})
             result["errors"].append(f"unknown_meeting_type: {meeting_type}")
+            result["status"] = "failed"
+            result["reason"] = "Unknown error"
             return result
 
         result["stages_completed"].append("folder_determined")
@@ -558,6 +575,8 @@ def process_transcript(transcript_path, meeting_id):
                 log(f"Failed to create note: {str(e)}", "ERROR")
                 cache.add_failed_match(meeting_id, "note_creation_failed", {"transcript_path": str(transcript_path), "error": str(e)})
                 result["errors"].append("note_creation_failed")
+                result["status"] = "failed"
+                result["reason"] = "note_creation_failed"
                 return result
 
         result["stages_completed"].append("note_found")
@@ -593,6 +612,8 @@ def process_transcript(transcript_path, meeting_id):
                     {"transcript_path": str(transcript_path), "error": analyze_result.stderr}
                 )
                 result["errors"].append("ai_analysis_failed")
+                result["status"] = "failed"
+                result["reason"] = "ai_analysis_failed"
                 return result
 
             analysis = json.loads(analyze_result.stdout)
@@ -603,12 +624,16 @@ def process_transcript(transcript_path, meeting_id):
             log("AI analysis timed out", "ERROR")
             cache.add_failed_match(meeting_id, "ai_timeout", {"transcript_path": str(transcript_path)})
             result["errors"].append("ai_timeout")
+            result["status"] = "failed"
+            result["reason"] = "ai_timeout"
             return result
         except json.JSONDecodeError as e:
             # AC #8: Invalid JSON from AI → skip
             log(f"Invalid JSON from AI: {str(e)}", "ERROR")
             cache.add_failed_match(meeting_id, "invalid_json", {"transcript_path": str(transcript_path)})
             result["errors"].append("invalid_json")
+            result["status"] = "failed"
+            result["reason"] = "invalid_json"
             return result
 
         # Stage 7: Update note (AC #5)
@@ -641,6 +666,8 @@ def process_transcript(transcript_path, meeting_id):
                     {"transcript_path": str(transcript_path), "note_path": str(note_path), "error": update_result.stderr}
                 )
                 result["errors"].append("file_io_error")
+                result["status"] = "failed"
+                result["reason"] = "file_io_error"
                 return result
 
             result["stages_completed"].append("note_updated")
@@ -688,6 +715,7 @@ def process_transcript(transcript_path, meeting_id):
         )
 
         result["success"] = True
+        result["status"] = "success"
 
         # Add action details for Telegram notification
         note_filename = note_path.name
@@ -706,6 +734,8 @@ def process_transcript(transcript_path, meeting_id):
             {"transcript_path": str(transcript_path), "error": str(e)}
         )
         result["errors"].append(f"unexpected_error: {str(e)}")
+        result["status"] = "failed"
+        result["reason"] = result["errors"][0] if result["errors"] else "Unknown error"
         return result
 
 

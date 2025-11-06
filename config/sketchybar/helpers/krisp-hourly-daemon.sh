@@ -167,7 +167,6 @@ main() {
             # Build detail lines
             DETAIL_LINES=""
             DETAIL_COUNT=0
-            MAX_DETAILS=10
             MAX_MESSAGE_LENGTH=3500
 
             # Parse details and format each entry
@@ -211,17 +210,17 @@ main() {
                         ;;
                 esac
 
-                # Check message length before adding
+                # Check message length before adding (only length limit, no item count limit)
                 TEMP_MESSAGE="${MESSAGE}${DETAIL_LINES}
 ${LINE}"
 
-                if [ ${#TEMP_MESSAGE} -gt $MAX_MESSAGE_LENGTH ] || [ $DETAIL_COUNT -ge $MAX_DETAILS ]; then
-                    # Calculate remaining items
+                if [ ${#TEMP_MESSAGE} -gt $MAX_MESSAGE_LENGTH ]; then
+                    # Hit message length limit (Telegram limit is 4096 chars)
                     TOTAL_DETAILS=$(echo "$BATCH_DETAILS" | jq 'length')
                     REMAINING=$((TOTAL_DETAILS - DETAIL_COUNT))
                     if [ $REMAINING -gt 0 ]; then
                         DETAIL_LINES+="
-  ...and ${REMAINING} more"
+  ...and ${REMAINING} more (message too long)"
                     fi
                     break
                 fi
