@@ -563,8 +563,8 @@ def scrape_krisp_meetings(limit=5, headless=True, days_back=1):
                 log(f"  Waiting 10 seconds for you to inspect the page...")
                 page.wait_for_timeout(10000)
 
-            # Query selector: a.meeting-item[href^="/t/"]
-            meeting_links = page.query_selector_all('a.meeting-item[href^="/t/"]')
+            # Query selector: a.meeting-item - match both /t/ and /n/ URL formats
+            meeting_links = page.query_selector_all('a.meeting-item[data-test-id="ListItem"]')
             log(f"  Found {len(meeting_links)} meeting links on page {current_page}")
 
             # Debug: Log page HTML if no links found
@@ -596,6 +596,9 @@ def scrape_krisp_meetings(limit=5, headless=True, days_back=1):
                     title_el = link.query_selector('p.label-v2-lg')
                     title = title_el.inner_text().strip() if title_el else f"Meeting {meeting_id[:8]}"
 
+                    # Note: We check transcript readiness at download time via button state
+                    # This is more reliable than trying to detect icons on the list page
+
                     # Extract timestamp from title
                     meeting_timestamp = parse_title_timestamp(title)
 
@@ -621,7 +624,7 @@ def scrape_krisp_meetings(limit=5, headless=True, days_back=1):
                         'timestamp': meeting_timestamp.isoformat() if meeting_timestamp else None
                     })
 
-                    log(f"  Found: {title} (ID: {meeting_id[:8]}..., Time: {meeting_timestamp})")
+                    log(f"  Found: {title} (ID: {meeting_id[:8]}..., URL: {meeting_url}, Time: {meeting_timestamp})")
 
                     # Stop if we've hit the limit
                     if len(meetings) >= limit:
@@ -645,6 +648,11 @@ def scrape_krisp_meetings(limit=5, headless=True, days_back=1):
                 log(f"  All meetings on page {current_page} are older than cutoff, stopping pagination")
                 break
 
+            # Only scan page 1 (20 meetings is sufficient for hourly runs)
+            if current_page >= 1:
+                log(f"  Processed page 1, stopping pagination (20 meetings is sufficient)")
+                break
+
             # Move to next page
             current_page += 1
 
@@ -656,20 +664,22 @@ def scrape_krisp_meetings(limit=5, headless=True, days_back=1):
 
 def download_transcript(page, meeting_id, meeting_url, download_dir=None):
     """
-    Navigate to meeting detail page and download transcript using exact UI flow.
-    Reuses existing browser page to avoid closing/reopening windows.
+    Download transcript by clicking row on list page, then checking for transcript button.
+    Uses browser back navigation to return to list for next meeting.
 
     Steps:
-    1. Navigate to meeting detail URL
-    2. Click 3-dot menu: button[data-test-id="Dropdown"]
-    3. Wait for menu to appear
-    4. Click "Copy transcript" button
-    5. Read from clipboard and save
+    1. Find row on list page by meeting ID
+    2. Click row to open meeting detail
+    3. Click 3-dot menu: button[data-test-id="Dropdown"]
+    4. Look for "Copy transcript" button
+    5. If not found: mark as not ready
+    6. If found: click, read clipboard, save
+    7. Press browser back to return to list
 
     Args:
-        page: Playwright page object (reused across downloads)
+        page: Playwright page object (should be on list page)
         meeting_id: Krisp meeting ID
-        meeting_url: Meeting detail URL path
+        meeting_url: Not used (kept for compatibility)
         download_dir: Directory to save transcript (default: TRANSCRIPTS_DIR)
 
     Returns:
@@ -683,68 +693,202 @@ def download_transcript(page, meeting_id, meeting_url, download_dir=None):
 
     log(f"Downloading transcript for meeting: {meeting_id}")
 
-    try:
-        # Navigate to meeting detail page (reusing same window)
-        full_url = f"https://app.krisp.ai{meeting_url}"
-        log(f"Navigating to meeting: {full_url}")
-        page.goto(full_url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(3000)
+    # Exponential backoff retry logic (up to 3 attempts)
+    max_retries = 3
+    for attempt in range(max_retries):
+        if attempt > 0:
+            backoff_delay = 2 ** (attempt - 1)  # 0s, 2s, 4s
+            log(f"Retry attempt {attempt + 1}/{max_retries} after {backoff_delay}s delay...")
+            time.sleep(backoff_delay)
 
-        # Step 1: Click 3-dot menu button
-        log("Looking for 3-dot menu button...")
-        menu_button = page.locator('button[data-test-id="Dropdown"]').first
+        try:
+            # Ensure we're on the list page (in case previous download took us to detail page)
+            current_url = page.url
+            if '/meeting-notes' not in current_url:
+                log("Navigating back to meeting list page...")
+                page.goto("https://app.krisp.ai/meeting-notes?page=1&limit=20", wait_until="load", timeout=30000)
+                page.wait_for_selector('a.meeting-item', state='visible', timeout=10000)
+                log("Back on list page")
 
-        if not menu_button.is_visible(timeout=5000):
-            log("3-dot menu button not visible - transcript may not be ready", "WARN")
-            return ("not_ready", None)
+            # Step 1: Find and click the meeting link on the list page
+            log(f"Looking for meeting link with ID: {meeting_id}")
 
-        log("Clicking 3-dot menu...")
-        menu_button.click()
-        page.wait_for_timeout(2000)  # Wait for menu to appear
+            # Debug: Check what's on the page
+            all_meeting_links = page.locator('a.meeting-item').all()
+            log(f"DEBUG: Found {len(all_meeting_links)} meeting-item links on list page")
+            if len(all_meeting_links) > 0:
+                first_href = all_meeting_links[0].get_attribute('href')
+                log(f"DEBUG: First meeting-item href: {first_href}")
 
-        # Step 2: Click "Copy transcript" button (more reliable than download)
-        log("Looking for Copy transcript button...")
-        copy_button = page.locator('button:has-text("Copy transcript")').first
+            # Find the meeting link by ID in href
+            meeting_link = page.locator(f'a.meeting-item[href*="{meeting_id}"]').first
 
-        if not copy_button.is_visible(timeout=5000):
-            log("Copy transcript button not visible - transcript not ready yet", "WARN")
-            return ("not_ready", None)
+            try:
+                meeting_link.wait_for(state="visible", timeout=10000)
+                log("Found meeting link, clicking to open...")
+                meeting_link.click()
+                # Wait for navigation to complete
+                page.wait_for_load_state("load", timeout=15000)
+                log("Meeting detail page loaded")
+            except PlaywrightTimeout:
+                if attempt < max_retries - 1:
+                    log(f"Meeting link not found on attempt {attempt + 1} - will retry", "WARN")
+                    continue
+                else:
+                    log("Meeting row not found on list page after all retries", "WARN")
+                    return ("not_ready", None)
 
-        log("Clicking Copy transcript button...")
-        copy_button.click()
-        page.wait_for_timeout(1000)  # Wait for clipboard to be populated
+            # Step 2: Look for 3-dot menu button
+            log("Looking for 3-dot menu button...")
+            menu_button = page.locator('button[data-test-id="Dropdown"]').first
 
-        # Read from clipboard using JavaScript
-        log("Reading transcript from clipboard...")
-        transcript_text = page.evaluate("""
-            async () => {
-                try {
-                    return await navigator.clipboard.readText();
-                } catch (err) {
-                    return null;
+            # Strategy 1: Wait for button to be attached to DOM (more reliable than visible)
+            try:
+                menu_button.wait_for(state="attached", timeout=5000)
+                log("Menu button found in DOM")
+            except PlaywrightTimeout:
+                if attempt < max_retries - 1:
+                    log(f"Menu button not attached to DOM on attempt {attempt + 1} - will retry", "WARN")
+                    continue
+                else:
+                    log("Menu button not found in DOM after all retries", "WARN")
+                    return ("not_ready", None)
+
+            # Strategy 2: Scroll to button to ensure it's in viewport
+            try:
+                menu_button.scroll_into_view_if_needed(timeout=3000)
+                log("Scrolled menu button into view")
+            except Exception as e:
+                log(f"Scroll to button failed (may not be needed): {str(e)}", "DEBUG")
+
+            # Strategy 3: Wait for button to be visible and enabled
+            try:
+                menu_button.wait_for(state="visible", timeout=8000)
+                log("Menu button is visible")
+
+                # Ensure button is not disabled before clicking
+                is_disabled = menu_button.is_disabled()
+                if is_disabled:
+                    if attempt < max_retries - 1:
+                        log(f"Menu button is disabled on attempt {attempt + 1} - will retry", "WARN")
+                        continue
+                    else:
+                        log("Menu button is disabled after all retries", "WARN")
+                        return ("not_ready", None)
+
+                log("Clicking 3-dot menu...")
+                menu_button.click()
+                page.wait_for_timeout(2000)  # Wait for menu to appear
+
+            except PlaywrightTimeout:
+                if attempt < max_retries - 1:
+                    log(f"Menu button not visible/clickable on attempt {attempt + 1} - will retry", "WARN")
+                    continue
+                else:
+                    log("Menu button not visible after all retries", "WARN")
+                    return ("not_ready", None)
+
+            # Step 2: Check if "Copy transcript" button exists in the menu
+            log("Looking for Copy transcript button...")
+            copy_button = page.locator('button[data-test-id="CopyTranscriptBtn"]').first
+
+            try:
+                copy_button.wait_for(state="visible", timeout=3000)
+            except PlaywrightTimeout:
+                if attempt < max_retries - 1:
+                    log(f"Copy transcript button not found on attempt {attempt + 1} - will retry", "WARN")
+                    continue
+                else:
+                    log("Copy transcript button not in menu - transcript not available", "WARN")
+                    # Go back to list page before returning
+                    page.go_back()
+                    page.wait_for_timeout(1000)
+                    return ("not_ready", None)
+
+            # Check if button is enabled (not disabled)
+            is_disabled = page.locator('button[data-test-id="CopyTranscriptBtn"][disabled]').count() > 0
+            if is_disabled:
+                if attempt < max_retries - 1:
+                    log(f"Copy transcript button is disabled on attempt {attempt + 1} - will retry", "WARN")
+                    continue
+                else:
+                    log("Copy transcript button is disabled - transcript still processing", "WARN")
+                    # Go back to list page before returning
+                    page.go_back()
+                    page.wait_for_timeout(1000)
+                    return ("not_ready", None)
+
+            log("Clicking Copy transcript button...")
+            copy_button.click()
+            page.wait_for_timeout(1000)  # Wait for clipboard to be populated
+
+            # Read from clipboard using JavaScript
+            log("Reading transcript from clipboard...")
+            transcript_text = page.evaluate("""
+                async () => {
+                    try {
+                        return await navigator.clipboard.readText();
+                    } catch (err) {
+                        return null;
+                    }
                 }
-            }
-        """)
+            """)
 
-        if not transcript_text:
-            log("Failed to read clipboard", "ERROR")
+            if not transcript_text:
+                if attempt < max_retries - 1:
+                    log(f"Failed to read clipboard on attempt {attempt + 1} - will retry", "ERROR")
+                    continue
+                else:
+                    log("Failed to read clipboard after all retries", "ERROR")
+                    return ("error", None)
+
+            # Count speakers for logging (but don't skip - we'll filter during processing)
+            speaker_pattern = r'^([^|]+) \| \d+:\d+$'
+            all_speakers = set()
+            generic_speakers = set()  # "Speaker 1", "Speaker 2", etc
+
+            for line in transcript_text.split('\n'):
+                match = re.match(speaker_pattern, line.strip())
+                if match:
+                    speaker_name = match.group(1).strip()
+                    all_speakers.add(speaker_name)
+                    # Track generic speaker labels (these indicate multiple people)
+                    if re.match(r'^(Speaker \d+|Unknown)$', speaker_name, re.IGNORECASE):
+                        generic_speakers.add(speaker_name)
+
+            speaker_summary = f"{len(all_speakers)} speakers"
+            if generic_speakers:
+                speaker_summary += f" ({len(generic_speakers)} unidentified)"
+            log(f"✓ Transcript has {speaker_summary}: {', '.join(list(all_speakers)[:4])}{'...' if len(all_speakers) > 4 else ''}")
+
+            # Save transcript to configured directory
+            transcript_path = Path(download_dir) / f"krisp-transcript-{meeting_id}.txt"
+            transcript_path.write_text(transcript_text)
+
+            log(f"✓ Saved transcript to: {transcript_path}")
+            log(f"✓ Transcript length: {len(transcript_text)} characters")
+
+            # Success! Go back to list page for next meeting
+            log("Going back to list page...")
+            page.go_back()
+            page.wait_for_timeout(2000)  # Wait for list page to load
+
+            return ("success", str(transcript_path))
+
+        except PlaywrightTimeout as e:
+            if attempt < max_retries - 1:
+                log(f"Timeout on attempt {attempt + 1} - will retry: {str(e)}", "WARN")
+                continue
+            else:
+                log(f"Timeout after all retries: {str(e)}", "ERROR")
+                return ("error", None)
+        except Exception as e:
+            log(f"Unexpected error downloading transcript: {str(e)}", "ERROR")
             return ("error", None)
 
-        # Save transcript to configured directory
-        transcript_path = Path(download_dir) / f"krisp-transcript-{meeting_id}.txt"
-        transcript_path.write_text(transcript_text)
-
-        log(f"✓ Saved transcript to: {transcript_path}")
-        log(f"✓ Transcript length: {len(transcript_text)} characters")
-
-        return ("success", str(transcript_path))
-
-    except PlaywrightTimeout as e:
-        log(f"Timeout while downloading transcript: {str(e)}", "ERROR")
-        return ("error", None)
-    except Exception as e:
-        log(f"Error downloading transcript: {str(e)}", "ERROR")
-        return ("error", None)
+    # Should never reach here (all paths return in the loop)
+    log("Unexpected: exited retry loop without returning", "ERROR")
+    return ("error", None)
 
 
 def load_cache():
@@ -963,6 +1107,20 @@ def main():
                 page.goto("https://app.krisp.ai/", wait_until="domcontentloaded")
                 for key, value in localstorage.items():
                     page.evaluate(f'localStorage.setItem("{key}", "{value}")')
+
+                # Navigate to meeting list page for click-based downloads
+                log("Navigating to meeting list page for downloads...")
+                page.goto("https://app.krisp.ai/meeting-notes?page=1&limit=20", wait_until="load", timeout=30000)
+
+                # Wait for meeting links to appear (React rendering)
+                try:
+                    page.wait_for_selector('a.meeting-item', state='visible', timeout=15000)
+                    log("Meeting list page loaded with meeting links visible")
+                except Exception as e:
+                    log(f"Warning: Meeting links not visible: {str(e)}", "WARN")
+
+                page.wait_for_timeout(2000)  # Extra buffer for React
+                log("Starting downloads...")
 
                 results = []
                 pending_count = 0

@@ -72,7 +72,7 @@ def load_template(template_path: str) -> str:
             return f.read()
     except FileNotFoundError:
         # Return basic default template (Employee-First format)
-        return """# {{date}} 1-on-1 with {{participant}}
+        return """# {{date}} 1on1 with {{participant}}
 
 ## {{participant}}'s Agenda (Start here)
 
@@ -289,10 +289,10 @@ def determine_save_path(classification: dict, person_folder: str, date: str, vau
     participant = classification.get("participant", "unknown")
 
     if "1on1" in meeting_type:
-        # 1-on-1: {person_folder}/Meetings/{date} 1on1.md
+        # 1-on-1: {person_folder}/Meetings/{date} 1on1 with {Person}.md
         meetings_dir = os.path.join(person_folder, "Meetings")
         os.makedirs(meetings_dir, exist_ok=True)
-        return os.path.join(meetings_dir, f"{date} 1on1.md")
+        return os.path.join(meetings_dir, f"{date} 1on1 with {participant}.md")
 
     elif "co_" in meeting_type and "_meeting" in meeting_type:
         # Company: Business/CO/{Company}/Meetings/{date} {Company} Weekly.md
@@ -301,11 +301,11 @@ def determine_save_path(classification: dict, person_folder: str, date: str, vau
         return os.path.join(meetings_dir, f"{date} {company} Weekly.md")
 
     elif "team_" in meeting_type:
-        # Team: Business/People/IPMedia/Teams/{Team}/{date} {Team} Meeting.md
-        team_name = meeting_type.replace("ipmedia_team_", "").replace("_", " ").title()
-        meetings_dir = os.path.join(vault_path, "Business", "People", "IPMedia", "Teams", team_name)
+        # Team: Business/Teams/{Team}/Meetings/{date} {Team} Team Meeting.md
+        team_name = meeting_type.replace("ipmedia_team_", "").title()
+        meetings_dir = os.path.join(vault_path, "Business", "Teams", team_name, "Meetings")
         os.makedirs(meetings_dir, exist_ok=True)
-        return os.path.join(meetings_dir, f"{date} {team_name} Meeting.md")
+        return os.path.join(meetings_dir, f"{date} {team_name} Team Meeting.md")
 
     else:
         # Default to person folder

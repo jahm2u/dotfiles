@@ -186,8 +186,8 @@ def main():
     )
     parser.add_argument(
         '--analysis',
-        required=True,
-        help='Path to analysis JSON file or JSON string'
+        required=False,
+        help='Path to analysis JSON file (use "-" to read from stdin)'
     )
     parser.add_argument(
         '--transcript-path',
@@ -201,11 +201,16 @@ def main():
 
     args = parser.parse_args()
 
-    # Load analysis (either from file or JSON string)
+    # Load analysis from stdin, file, or direct JSON string
     try:
-        if Path(args.analysis).exists():
+        if args.analysis is None or args.analysis == '-':
+            # Read from stdin
+            analysis = json.load(sys.stdin)
+        elif Path(args.analysis).is_file():
+            # Read from file
             analysis = json.loads(Path(args.analysis).read_text())
         else:
+            # Try parsing as direct JSON string (for small payloads)
             analysis = json.loads(args.analysis)
     except Exception as e:
         log(f"Failed to load analysis: {str(e)}", "ERROR")

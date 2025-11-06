@@ -85,9 +85,13 @@ def extract_meeting_id(url):
 
 
 def parse_meeting_date(date_text):
-    """Parse meeting date from text like 'Aug 20' or 'Oct 31'"""
+    """Parse meeting date from text like 'Aug 20', 'Oct 31', or '04:30 PM' (today)"""
     try:
-        # Assume current year if just "Month Day"
+        # If it's just a time (contains 'AM' or 'PM'), it's today
+        if 'AM' in date_text or 'PM' in date_text:
+            return datetime.now().strftime("%Y-%m-%d")
+
+        # Otherwise parse "Month Day" format
         current_year = datetime.now().year
         date_with_year = f"{date_text} {current_year}"
         parsed = datetime.strptime(date_with_year, "%b %d %Y")

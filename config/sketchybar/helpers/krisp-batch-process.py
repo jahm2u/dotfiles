@@ -90,7 +90,7 @@ def build_processing_queue(transcripts, queue_metadata):
         processing_queue.append({
             'transcript_path': str(transcript_path),
             'meeting_id': meeting_id,
-            'date': metadata.get('date', '9999-12-31'),  # Sort unknowns last
+            'date': metadata.get('date') or '9999-12-31',  # Sort unknowns last
             'title': metadata.get('title', 'Unknown'),
             'date_text': metadata.get('date_text', 'Unknown')
         })

@@ -26,13 +26,9 @@ for env_path in env_paths:
         load_dotenv(env_path)
         break
 
-# Get vault path and construct cache path
-OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH")
-if OBSIDIAN_VAULT_PATH:
-    CACHE_FILE = Path(OBSIDIAN_VAULT_PATH) / "claude-obsidian/cache/processed-meetings.json"
-else:
-    # Fallback to default location
-    CACHE_FILE = Path.home() / "Library/Mobile Documents/iCloud~md~obsidian/Documents/U/claude-obsidian/cache/processed-meetings.json"
+# Cache directory - use standard cache location, not Obsidian vault
+CACHE_DIR = Path.home() / ".cache/sketchybar"
+CACHE_FILE = CACHE_DIR / "krisp-processed-meetings-cache.json"
 
 LOG_FILE = Path.home() / ".config/sketchybar/logs/krisp-automation.log"
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)

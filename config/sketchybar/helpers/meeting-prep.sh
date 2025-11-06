@@ -159,20 +159,21 @@ determine_note_path() {
 
     local MEETING_TYPE=$(echo "$CLASSIFICATION_JSON" | jq -r '.meeting_type')
     local COMPANY=$(echo "$CLASSIFICATION_JSON" | jq -r '.company')
+    local PARTICIPANT=$(echo "$CLASSIFICATION_JSON" | jq -r '.participant')
 
     # Mirror the logic from generate-meeting-note.py determine_save_path()
     if [[ "$MEETING_TYPE" == *"1on1"* ]]; then
-        # 1-on-1: {person_folder}/Meetings/{date} 1on1.md
-        echo "${PERSON_FOLDER}/Meetings/${DATE} 1on1.md"
+        # 1-on-1: {person_folder}/Meetings/{date} 1on1 with {Person}.md
+        echo "${PERSON_FOLDER}/Meetings/${DATE} 1on1 with ${PARTICIPANT}.md"
 
     elif [[ "$MEETING_TYPE" == co_*_meeting ]]; then
         # Company: Business/CO/{Company}/Meetings/{date} {Company} Weekly.md
         echo "${OBSIDIAN_VAULT_PATH}/Business/CO/${COMPANY}/Meetings/${DATE} ${COMPANY} Weekly.md"
 
     elif [[ "$MEETING_TYPE" == *"team_"* ]]; then
-        # Team: Business/People/IPMedia/Teams/{Team}/{date} {Team} Meeting.md
-        local TEAM_NAME=$(echo "$MEETING_TYPE" | sed 's/ipmedia_team_//g' | sed 's/_/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')
-        echo "${OBSIDIAN_VAULT_PATH}/Business/People/IPMedia/Teams/${TEAM_NAME}/Meetings/${DATE} ${TEAM_NAME} Meeting.md"
+        # Team: Business/Teams/{Team}/Meetings/{date} {Team} Team Meeting.md
+        local TEAM_NAME=$(echo "$MEETING_TYPE" | sed 's/ipmedia_team_//g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')
+        echo "${OBSIDIAN_VAULT_PATH}/Business/Teams/${TEAM_NAME}/Meetings/${DATE} ${TEAM_NAME} Team Meeting.md"
 
     else
         # Default: {person_folder}/Meetings/{date} Meeting.md

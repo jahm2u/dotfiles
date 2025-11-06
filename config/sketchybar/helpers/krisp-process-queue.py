@@ -258,11 +258,12 @@ def process_queue(limit=None, start_from=0):
         context.add_cookies(playwright_cookies)
 
         page = context.new_page()
+        page.set_default_timeout(30000)  # 30 second timeout
 
-        # Set localStorage
-        page.goto("https://app.krisp.ai/", wait_until="domcontentloaded")
-        for key, value in localstorage.items():
-            page.evaluate(f'localStorage.setItem("{key}", "{value}")')
+        # Quick session establishment - navigate to meeting-notes page once
+        log("Establishing session...")
+        page.goto("https://app.krisp.ai/meeting-notes", wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(2000)  # Wait for session to establish
 
         # Process each meeting
         for idx, meeting in enumerate(to_process, 1):

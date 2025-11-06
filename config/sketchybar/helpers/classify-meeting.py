@@ -90,28 +90,37 @@ def classify_meeting(title: str, date: str, participants: str) -> dict:
     if participants:
         result["participant"] = extract_participant_from_emails(participants, email_map)
 
-    # If no participant from emails, try to extract from title
-    if result["participant"] == "unknown":
-        # Try to extract name from title patterns like "1on1 Marcus Jeff" or "Marcus 1on1"
-        title_words = title.split()
-        for i, word in enumerate(title_words):
-            # Skip common meeting keywords
-            if word.lower() in ['1on1', '1-on-1', '1:1', 'with', 'and', 'jeff', 'hamersly', 'meeting', 'sync', 'weekly', 'standup']:
-                continue
-            # Found a potential name - take it
-            if len(word) > 1 and word[0].isupper():
-                result["participant"] = word
-                break
+    # Executive meeting with Ron (special case - highest priority)
+    if re.search(r'\bjeff\s*/\s*ron\b', title_lower) or re.search(r'\bron\s*/\s*jeff\b', title_lower):
+        result["meeting_type"] = "ipmedia_executive"
+        result["company"] = "IPMedia"
+        result["participant"] = "Ron"
+        result["confidence"] = 95
+        return result
 
-    # 1-on-1 patterns (highest priority)
+    # 1-on-1 patterns (including "Vlad & Jeff" format)
     oneon1_patterns = [
         r'\b1\s*on\s*1\b',
         r'\b1-on-1\b',
         r'\b1:1\b',
-        r'\bone\s*on\s*one\b'
+        r'\bone\s*on\s*one\b',
+        r'\bvlad\s+(and|&)\s+jeff\b',  # "Vlad & Jeff moving forward"
+        r'\bjeff\s+(and|&)\s+vlad\b'
     ]
     for pattern in oneon1_patterns:
         if re.search(pattern, title_lower):
+            # Extract participant from title if not already found from emails
+            if result["participant"] == "unknown":
+                title_words = title.split()
+                for word in title_words:
+                    # Skip common meeting keywords
+                    if word.lower() in ['1on1', '1-on-1', '1:1', 'with', 'and', '&', 'jeff', 'hamersly', 'meeting', 'sync', 'weekly', 'standup', 'moving', 'forward', 'on', 'projects']:
+                        continue
+                    # Found a potential name - take it
+                    if len(word) > 1 and word[0].isupper():
+                        result["participant"] = word
+                        break
+
             result["meeting_type"] = "ipmedia_1on1"
             result["company"] = "IPMedia"
             result["confidence"] = 90
@@ -119,11 +128,11 @@ def classify_meeting(title: str, date: str, participants: str) -> dict:
 
     # Company meeting patterns
     company_patterns = {
-        "TP": [r'\btp\s+weekly\b', r'\bweekly\s+tp\b', r'\btraffic\s+partners?\b'],
+        "TP": [r'\btp\s+weekly\b', r'\bweekly\s+.*\s+tp\b', r'\bweekly\s+meeting\s+tp\b', r'\btraffic\s+partners?\b'],
         "MT": [r'\bmt\s+weekly\b', r'\bmasstraffic\s+weekly\b', r'\bmass\s*traffic\b'],
-        "EX": [r'\bex\s+weekly\b', r'\bexaccess\b'],
-        "DT": [r'\bdt\s+weekly\b', r'\bdata\s*tech\b'],
-        "PD": [r'\bpd\s+weekly\b', r'\bproduct\s+dev\b']
+        "EX": [r'\bex\s+weekly\b', r'\bexcelsior\b', r'\bweekly\s+meeting\s+excelsior\b'],
+        "DT": [r'\bdt\s+weekly\b', r'\bdata\s*tech\b', r'\bjeff\s+and\s+dboy\b', r'\bdboy\b'],
+        "PD": [r'\bpd\s+weekly\b', r'\bpd\s+-\s+', r'\bproduct\s+dev\b']
     }
 
     for company, patterns in company_patterns.items():
@@ -202,6 +211,19 @@ def classify_meeting(title: str, date: str, participants: str) -> dict:
         "product": [
             r'\bproduct\s+team\s+meeting\b',
             r'\bproduct\s+discussion\b'
+        ],
+        "gone": [
+            r'\bgone\s+-?\s+weekly\s+sync\b',
+            r'\bgone\s+weekly\b',
+            r'\bgone\s+sync\b'
+        ],
+        "slackbot": [
+            r'\bslackbot\s+weekly\b',
+            r'\bslackbot\s+team\b'
+        ],
+        "seo": [
+            r'\bseo\b',
+            r'\[\s*seo\s*\]'
         ]
     }
 
