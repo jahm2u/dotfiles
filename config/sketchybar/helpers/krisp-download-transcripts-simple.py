@@ -333,6 +333,14 @@ def main():
                 # Save transcript
                 if meeting_id:
                     transcript_path = TRANSCRIPTS_DIR / f"krisp-transcript-{meeting_id}.txt"
+                    # Also save metadata with meeting title
+                    metadata = {
+                        "meeting_id": meeting_id,
+                        "title": title,
+                        "downloaded_at": datetime.now().isoformat()
+                    }
+                    metadata_path = TRANSCRIPTS_DIR / f"krisp-transcript-{meeting_id}.json"
+                    metadata_path.write_text(json.dumps(metadata, indent=2))
                 else:
                     # No meeting ID but we have transcript - use timestamp
                     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

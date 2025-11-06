@@ -74,20 +74,35 @@ main() {
 
     # Phase 1: Discovery & Download (simplified script - first 20 meetings)
     log "INFO" "Phase 1: Discovering and downloading transcripts..."
-    if "$VENV_PYTHON" "$SCRIPT_DIR/krisp-download-transcripts-simple.py" --limit 20 2>&1 | tee -a "$LOG_FILE"; then
-        # Extract stats from simplified script output (BSD grep compatible)
-        DISCOVERED=$(grep 'Found' "$LOG_FILE" | tail -1 | grep -Eo '[0-9]+' | head -1 || echo 0)
-        DOWNLOADED=$(grep 'Successfully downloaded:' "$LOG_FILE" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
-        NOT_READY=$(grep 'Not ready:' "$LOG_FILE" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
-        FAILED=$(grep 'Errors:' "$LOG_FILE" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
+
+    # Capture output to temp file and display simultaneously
+    TEMP_OUTPUT=$(mktemp)
+    if "$VENV_PYTHON" "$SCRIPT_DIR/krisp-download-transcripts-simple.py" --limit 20 2>&1 | tee "$TEMP_OUTPUT" | tee -a "$LOG_FILE"; then
+        # Extract stats from captured output (BSD grep compatible)
+        DISCOVERED=$(grep 'Found' "$TEMP_OUTPUT" | tail -1 | grep -Eo '[0-9]+' | head -1 || echo 0)
+        DOWNLOADED=$(grep 'Successfully downloaded:' "$TEMP_OUTPUT" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
+        NOT_READY=$(grep 'Not ready:' "$TEMP_OUTPUT" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
+        FAILED=$(grep 'Errors:' "$TEMP_OUTPUT" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
+        rm -f "$TEMP_OUTPUT"
         log "INFO" "Discovery & download complete: $DISCOVERED discovered, $DOWNLOADED downloaded, $NOT_READY not ready, $FAILED failed"
     else
+        rm -f "$TEMP_OUTPUT"
         log "ERROR" "Discovery & download failed"
         send_telegram "❌ <b>Krisp Discovery & Download Failed</b>
 
 <b>Error:</b> Phase encountered errors
 <b>Check logs:</b> <code>~/.config/sketchybar/logs/krisp-daemon.log</code>"
         exit 1
+    fi
+
+    # Phase 2: Create processing queue from downloaded transcripts
+    if [ "$DOWNLOADED" -gt 0 ]; then
+        log "INFO" "Phase 2: Creating processing queue from transcripts..."
+        if "$VENV_PYTHON" "$SCRIPT_DIR/krisp-create-queue-from-transcripts.py" 2>&1 | tee -a "$LOG_FILE"; then
+            log "INFO" "Queue file created successfully"
+        else
+            log "WARN" "Failed to create queue file, batch processing may fail"
+        fi
     fi
 
     # Phase 3: Batch processing downloaded transcripts
