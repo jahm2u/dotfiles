@@ -75,7 +75,8 @@ main() {
     TEMP_OUTPUT=$(mktemp)
     if "$VENV_PYTHON" "$SCRIPT_DIR/krisp-download-transcripts-simple.py" --limit 20 2>&1 | tee "$TEMP_OUTPUT" | tee -a "$LOG_FILE"; then
         # Extract stats from captured output (BSD grep compatible)
-        DISCOVERED=$(grep 'Found' "$TEMP_OUTPUT" | tail -1 | grep -Eo '[0-9]+' | head -1 || echo 0)
+        # Extract only the number after "Found" and "meetings"
+        DISCOVERED=$(grep 'Found.*meetings on page' "$TEMP_OUTPUT" | tail -1 | sed -E 's/.*Found ([0-9]+) meetings.*/\1/' || echo 0)
         DOWNLOADED=$(grep 'Successfully downloaded:' "$TEMP_OUTPUT" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
         NOT_READY=$(grep 'Not ready:' "$TEMP_OUTPUT" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
         FAILED=$(grep 'Errors:' "$TEMP_OUTPUT" | tail -1 | grep -Eo '[0-9]+/[0-9]+' | cut -d'/' -f1 || echo 0)
@@ -169,7 +170,7 @@ main() {
             DETAIL_COUNT=0
             MAX_MESSAGE_LENGTH=3500
 
-            # Parse details and format each entry
+            # Parse details and format each entry (only show successful items in detail)
             while IFS= read -r detail; do
                 if [ -z "$detail" ]; then
                     continue
@@ -179,36 +180,18 @@ main() {
                 STATUS=$(echo "$detail" | jq -r '.status // "unknown"')
                 DATE_TEXT=$(echo "$detail" | jq -r '.date_text // .date // ""')
 
-                # Format based on status
-                case "$STATUS" in
-                    "success")
-                        ACTION=$(echo "$detail" | jq -r '.action // "Note updated"')
-                        LINE="  ✓ ${TITLE}"
-                        if [ -n "$DATE_TEXT" ]; then
-                            LINE+=" (${DATE_TEXT})"
-                        fi
-                        LINE+=" → ${ACTION}"
-                        ;;
-                    "failed")
-                        REASON=$(echo "$detail" | jq -r '.reason // "Unknown error"')
-                        LINE="  ✗ ${TITLE}"
-                        if [ -n "$DATE_TEXT" ]; then
-                            LINE+=" (${DATE_TEXT})"
-                        fi
-                        LINE+=" → ${REASON}"
-                        ;;
-                    "skipped")
-                        REASON=$(echo "$detail" | jq -r '.reason // "Already processed"')
-                        LINE="  ⊘ ${TITLE}"
-                        if [ -n "$DATE_TEXT" ]; then
-                            LINE+=" (${DATE_TEXT})"
-                        fi
-                        LINE+=" → ${REASON}"
-                        ;;
-                    *)
-                        LINE="  ? ${TITLE}"
-                        ;;
-                esac
+                # Skip non-success items (they're shown in summary counts)
+                if [ "$STATUS" != "success" ]; then
+                    continue
+                fi
+
+                # Format successful items
+                ACTION=$(echo "$detail" | jq -r '.action // "Note updated"')
+                LINE="  ✓ ${TITLE}"
+                if [ -n "$DATE_TEXT" ]; then
+                    LINE+=" (${DATE_TEXT})"
+                fi
+                LINE+=" → ${ACTION}"
 
                 # Check message length before adding (only length limit, no item count limit)
                 TEMP_MESSAGE="${MESSAGE}${DETAIL_LINES}

@@ -69,18 +69,22 @@ def update_meeting_note(note_path, analysis, transcript_rel_path, metadata):
 
 def build_post_meeting_content(analysis, transcript_rel_path, metadata):
     """
-    Build formatted markdown content for post-meeting sections.
+    Build formatted markdown content for post-meeting sections (append strategy).
 
-    Returns: Dict mapping section names to formatted content
+    Returns: Dict mapping section names to formatted content with separators
     """
     content = {}
+    processed = metadata.get('processed_at', datetime.now().strftime('%Y-%m-%d %H:%M'))
 
-    # Discussion Highlights
+    # Add timestamp separator for appended content
+    separator = f"\n\n---\n**🤖 AI-Generated from Transcript** (Added: {processed})\n"
+
+    # Map discussion_highlights to "Notes During Meeting" section
     if analysis.get('discussion_highlights'):
         highlights = '\n'.join(f"- {h}" for h in analysis['discussion_highlights'])
-        content['discussion_highlights'] = highlights
+        content['notes_during_meeting'] = separator + highlights
 
-    # Action Items
+    # Action Items (maps directly to "Action Items" section)
     if analysis.get('action_items'):
         action_lines = []
         for person, items in analysis['action_items'].items():
@@ -88,22 +92,21 @@ def build_post_meeting_content(analysis, transcript_rel_path, metadata):
                 action_lines.append(f"\n**{person}:**")
                 for item in items:
                     action_lines.append(f"- [ ] {item}")
-        content['action_items'] = '\n'.join(action_lines)
+        content['action_items'] = separator + '\n'.join(action_lines)
 
-    # Topics Next Time
+    # Topics Next Time (can be added as follow-up items)
     if analysis.get('topics_next_time'):
-        topics = '\n'.join(f"- {t}" for t in analysis['topics_next_time'])
-        content['topics_next_time'] = topics
+        topics_text = "**Topics to Revisit:**\n" + '\n'.join(f"- {t}" for t in analysis['topics_next_time'])
+        content['topics_next_time'] = separator + topics_text
 
-    # Related Context
+    # Related Context (maps to Related Documents section)
     if analysis.get('related_context') and analysis['related_context']:
         context = '\n'.join(f"- {link}" for link in analysis['related_context'])
-        content['related_context'] = context
+        content['related_context'] = separator + context
 
-    # Transcript reference
+    # Transcript reference (goes at end of note, not in a section)
     if transcript_rel_path:
         duration = metadata.get('meeting_duration', 'Unknown')
-        processed = metadata.get('processed_at', datetime.now().strftime('%Y-%m-%d %H:%M'))
         transcript_section = f"""---
 **Original Transcript:** [[{transcript_rel_path}|View Transcript]]
 **Meeting Duration:** {duration}
@@ -115,57 +118,57 @@ def build_post_meeting_content(analysis, transcript_rel_path, metadata):
 
 def fill_post_meeting_sections(note_content, formatted_content):
     """
-    Fill empty post-meeting sections in the note with formatted content.
+    Append AI-generated content to post-meeting sections (Option 2: Append strategy).
 
-    Strategy: Find section headers and replace the content between them with
-    the new formatted content.
+    Strategy: Find section headers and append the new content after existing content,
+    preserving any manual notes. Adds timestamp separator to distinguish AI content.
 
-    Expected sections in Story 4-1 template:
-    - ### 🎯 Discussion Highlights
-    - ### ✅ Action Items Captured
-    - ### 💡 Topics to Review Next Time
+    Expected sections (works with both template types):
+    - ### 🎯 Discussion Highlights (or similar variants)
+    - ### ✅ Action Items Captured (or "Action Items")
+    - ### 💡 Topics to Review Next Time (or similar)
     - ### 🔗 Related Context
 
     Returns: Updated note content
     """
     updated = note_content
 
-    # Define section patterns and replacements
-    # Pattern explanation: Match header + content up to (but not including) next ### header
-    # Use negative lookahead to ensure we don't match lines starting with ###
+    # Define section patterns for appending
+    # Pattern: Match header + content up to (but not including) next ### header
+    # We'll append to the existing content rather than replace it
     sections = [
         {
-            'pattern': r'(### 🎯 Discussion Highlights)\s*\n((?:(?!^###).)*)',
-            'replacement': formatted_content.get('discussion_highlights', ''),
-            'key': 'discussion_highlights'
+            'pattern': r'(### Notes During Meeting)\s*\n((?:(?!^###).)*)',
+            'replacement': formatted_content.get('notes_during_meeting', ''),
+            'key': 'notes_during_meeting'
         },
         {
-            'pattern': r'(### ✅ Action Items Captured)\s*\n((?:(?!^###).)*)',
+            'pattern': r'(### Action Items)\s*\n((?:(?!^###).)*)',
             'replacement': formatted_content.get('action_items', ''),
             'key': 'action_items'
         },
         {
-            'pattern': r'(### 💡 Topics to Review Next Time)\s*\n((?:(?!^###).)*)',
-            'replacement': formatted_content.get('topics_next_time', ''),
-            'key': 'topics_next_time'
-        },
-        {
-            'pattern': r'(### 🔗 Related Context)\s*\n((?:(?!^###).)*)',
+            'pattern': r'(### Related Documents)\s*\n((?:(?!^###).)*)',
             'replacement': formatted_content.get('related_context', ''),
             'key': 'related_context'
         },
     ]
 
-    # Replace each section - pattern matches header + old content (stops at next ###)
+    # Append to each section - pattern matches header + existing content
     for section in sections:
         if section['replacement']:
-            # Replace with: (header)(newline)(new_content)(newline)
+            # Append strategy: (header)(newline)(existing_content)(new_content)(newline)
             updated = re.sub(
                 section['pattern'],
-                lambda m: m.group(1) + '\n\n' + section['replacement'] + '\n',
+                lambda m: m.group(1) + '\n' + m.group(2).rstrip() + section['replacement'] + '\n',
                 updated,
                 flags=re.MULTILINE | re.DOTALL
             )
+
+    # Add topics for next time at the end (before transcript reference)
+    if formatted_content.get('topics_next_time'):
+        if 'Topics to Revisit:' not in updated:
+            updated += '\n\n' + formatted_content['topics_next_time']
 
     # Add transcript reference at the end if not already present
     if formatted_content.get('transcript_reference'):

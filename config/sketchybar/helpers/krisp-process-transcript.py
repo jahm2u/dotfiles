@@ -158,8 +158,8 @@ def process_transcript(transcript_path, meeting_id):
     # Check if already processed
     if cache.is_processed(meeting_id):
         log(f"Meeting {meeting_id} already processed, skipping", "INFO")
-        result["success"] = True
         result["status"] = "skipped"
+        result["skipped"] = True
         result["reason"] = "Already processed"
         return result
 
@@ -167,6 +167,7 @@ def process_transcript(transcript_path, meeting_id):
     if cache.is_failed(meeting_id):
         log(f"Meeting {meeting_id} previously failed, skipping", "WARN")
         result["status"] = "skipped"
+        result["skipped"] = True
         result["reason"] = "Previously failed"
         return result
 
@@ -464,25 +465,56 @@ def process_transcript(transcript_path, meeting_id):
 
             # Generate template based on meeting type
             if meeting_type in ["ipmedia_1on1", "ipmedia_executive"]:
-                # 1on1 or Executive template
+                # 1on1 or Executive template (fallback - matches vault template structure)
                 person_name = classification.get("participant", "Unknown")
                 template = f"""# {note_date} 1on1 with {person_name}
 
 **Date:** {note_date}
-**Participants:** {person_name}, Jeff Hamersly
+**Participants:** [[Personal/Jeff|Jeff Hamersly]], [[Business/People/{classification.get('company', 'IPMedia')}/{person_name}/{person_name}|{person_name}]]
 **Company:** {classification.get('company', 'IPMedia')}
-**Meeting Type:** {meeting_type}
+**Meeting Type:** 1on1
 
-## 📝 Post-Meeting Summary
-*Auto-generated from transcript analysis*
+---
 
-### 🎯 Discussion Highlights
+## 📝 MEETING CAPTURE (Fill During/After Meeting)
 
-### ✅ Action Items Captured
+### Notes During Meeting
+<!-- Manual notes go here -->
 
-### 💡 Topics to Review Next Time
 
-### 🔗 Related Context
+### Action Items
+<!-- AI extracts from transcript; manual additions welcome -->
+
+
+### Key Insights & Quotes
+<!-- AI extracts significant quotes and insights from transcript -->
+
+
+### Decisions Made
+<!-- AI extracts from transcript -->
+
+
+### Blockers Identified
+<!-- AI extracts from transcript -->
+
+
+### Growth & Development
+<!-- AI analyzes from transcript -->
+
+
+### Business Impact
+<!-- AI analyzes and summarizes business implications -->
+
+
+---
+
+## 📚 REFERENCE & CONTEXT
+
+### Related Documents
+- [[Business/People/{classification.get('company', 'IPMedia')}/{person_name}/{person_name}|{person_name} Profile]]
+- [[Business/People/{classification.get('company', 'IPMedia')}/{person_name}/Meetings/|All Meetings with {person_name}]]
+
+---
 
 """
             elif meeting_type.startswith("ipmedia_team_"):
