@@ -244,6 +244,7 @@ detect_system_state() {
 
 # Configuration variables (populated by gather_configuration)
 CONFIG_INSTALL_DEPS=""
+CONFIG_INSTALL_BREWFILE=""
 CONFIG_CREATE_ENV=""
 CONFIG_SETUP_CALENDAR=""
 CONFIG_SETUP_OPENAI=""
@@ -289,6 +290,36 @@ gather_configuration() {
         echo ""
     else
         CONFIG_INSTALL_DEPS="skip"  # All deps already installed
+    fi
+
+    # ─────────────────────────────────────────────────────────────
+    # GROUP A2: Brewfile Dependencies
+    # ─────────────────────────────────────────────────────────────
+
+    if [[ "$STATE_BREW_INSTALLED" == "true" ]] && [[ -f "$DOTFILES_DIR/Brewfile" ]]; then
+        log "━━ Brewfile Dependencies ━━"
+        log "Checking for missing packages from Brewfile..."
+        echo ""
+
+        # Quick check if anything is missing
+        cd "$DOTFILES_DIR" || true
+        if brew bundle check --verbose 2>&1 | grep -qE "(not installed|missing)"; then
+            warn "Some Brewfile dependencies are missing"
+            log "Note: brew bundle install can take 10-30 minutes"
+            echo ""
+            if ask_user "Install missing Brewfile dependencies now?"; then
+                CONFIG_INSTALL_BREWFILE="true"
+            else
+                CONFIG_INSTALL_BREWFILE="false"
+                log "You can install them later with: cd $DOTFILES_DIR && brew bundle"
+            fi
+        else
+            log "All Brewfile dependencies already installed"
+            CONFIG_INSTALL_BREWFILE="skip"
+        fi
+        echo ""
+    else
+        CONFIG_INSTALL_BREWFILE="skip"
     fi
 
     # ─────────────────────────────────────────────────────────────
@@ -476,8 +507,8 @@ generate_plan() {
         PLAN+=("$step_num|deps|Install missing dependencies|${STATE_MISSING_DEPS[*]}")
     fi
 
-    # Brewfile dependencies (check and offer to install missing)
-    if [[ "$STATE_BREW_INSTALLED" == "true" ]]; then
+    # Brewfile dependencies (only if user confirmed)
+    if [[ "$CONFIG_INSTALL_BREWFILE" == "true" ]]; then
         ((step_num++))
         PLAN+=("$step_num|brewfile|Install Brewfile dependencies|Node, gh, fonts, apps, etc.")
     fi
@@ -683,7 +714,9 @@ execute_plan() {
                 ;;
 
             brewfile)
-                if exec_quiet "Checking/Installing Brewfile deps" check_and_install_brewfile_dependencies; then
+                # Print newline after progress indicator (brewfile prints its own output)
+                echo ""
+                if execute_brewfile_install; then
                     show_result 0
                 else
                     show_result 1
@@ -820,6 +853,28 @@ execute_install_deps() {
         esac
     done
     return 0
+}
+
+execute_brewfile_install() {
+    log "Installing Brewfile dependencies..."
+    log "This may take 10-30 minutes depending on what needs to be installed"
+    log "Progress will be shown below:"
+    echo ""
+
+    cd "$DOTFILES_DIR" || return 1
+
+    # Show output directly (brew bundle provides its own progress)
+    # Log to file AND display to user
+    if brew bundle install 2>&1 | tee -a "$EXEC_LOG_FILE"; then
+        echo ""
+        log "✓ Brewfile dependencies installed successfully"
+        return 0
+    else
+        echo ""
+        warn "Some Brewfile dependencies failed to install"
+        log "Check log for details: $EXEC_LOG_FILE"
+        return 1
+    fi
 }
 
 execute_brewfile_check() {
@@ -1544,56 +1599,9 @@ create_symlink() {
     fi
 }
 
-check_and_install_brewfile_dependencies() {
-    log "Checking Brewfile dependencies..."
-
-    # Check if brew is available
-    if ! command -v brew &>/dev/null; then
-        error "Homebrew not installed - cannot check/install dependencies"
-        log "Install Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-        log "Then run: brew bundle in the dotfiles directory"
-        return 1
-    fi
-
-    # Check if Brewfile exists
-    if [[ ! -f "$DOTFILES_DIR/Brewfile" ]]; then
-        error "Brewfile not found at $DOTFILES_DIR/Brewfile"
-        return 1
-    fi
-
-    # Use brew bundle check to see if anything is missing
-    cd "$DOTFILES_DIR"
-
-    log "Checking which dependencies are missing..."
-
-    # Capture missing dependencies
-    local missing_output
-    if missing_output=$(brew bundle check 2>&1); then
-        log "✓ All Brewfile dependencies are installed"
-        return 0
-    else
-        # Parse the output to show what's missing
-        warn "Some Brewfile dependencies are missing:"
-        echo "$missing_output" | grep -i "missing" || echo "$missing_output"
-
-        log ""
-        if ask_user "Install missing dependencies with 'brew bundle install'?"; then
-            log "Installing missing Brewfile dependencies..."
-            if brew bundle install; then
-                log "✓ Successfully installed Brewfile dependencies"
-                return 0
-            else
-                error "Failed to install some dependencies"
-                log "You can retry manually with: cd $DOTFILES_DIR && brew bundle"
-                return 1
-            fi
-        else
-            warn "Skipping dependency installation"
-            log "Install later with: cd $DOTFILES_DIR && brew bundle"
-            return 1
-        fi
-    fi
-}
+# Note: check_and_install_brewfile_dependencies function removed
+# Brewfile installation is now handled in gather_configuration (Phase 2) for questions
+# and execute_brewfile_install (Phase 4) for execution - per 4-phase architecture
 
 initialize_calendar_infrastructure() {
     log "Initializing calendar automation infrastructure"
@@ -1633,12 +1641,14 @@ initialize_calendar_infrastructure() {
         fi
     done
 
-    # Clear khal database for fresh import
+    # Note: We no longer clear the khal database during installation
+    # The database can contain thousands of events and clearing takes too long
+    # Calendar sync will handle updating the database incrementally
     if [[ -d "$HOME/.local/share/khal/calendars" ]]; then
         local calendar_count=$(find "$HOME/.local/share/khal/calendars" -type d -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
         if [[ $calendar_count -gt 0 ]]; then
-            rm -rf "$HOME/.local/share/khal/calendars/"* 2>/dev/null
-            log "✓ Cleared khal database (will resync)"
+            log "✓ Existing khal database found ($calendar_count calendars)"
+            log "  (Will be updated incrementally by sync)"
         fi
     fi
 
@@ -1702,14 +1712,27 @@ initialize_calendar_infrastructure() {
         warn "requirements.txt not found at $requirements_file"
     fi
 
-    # Verify khal can initialize its database
+    # Verify khal is installed and optionally trigger initial sync
     if command -v khal &>/dev/null; then
-        log "Testing khal database initialization..."
-        if khal list today 1d &>/dev/null; then
-            log "✓ khal database initialized successfully"
+        log "✓ khal installed - calendar sync ready"
+
+        # Check if calendar URLs are configured
+        if [[ -f "$DOTFILES_DIR/.env" ]] && grep -qE "CALENDAR_URL_|ICAL_URLS" "$DOTFILES_DIR/.env" 2>/dev/null; then
+            log "Triggering initial calendar sync..."
+            local sync_script="$HOME/.config/sketchybar/helpers/sync-calendars.sh"
+
+            if [[ -x "$sync_script" ]]; then
+                # Run sync in background to avoid blocking installation
+                # Output will be logged to calendar-sync.log
+                bash "$sync_script" &>/dev/null &
+                local sync_pid=$!
+                log "  Calendar sync started (PID: $sync_pid)"
+                log "  Monitor progress: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
+            else
+                warn "Sync script not found or not executable"
+            fi
         else
-            warn "khal database test failed (non-blocking)"
-            warn "This is normal for first-time setup - will work after first sync"
+            log "  (Calendar URLs not configured - add to .env to enable sync)"
         fi
     else
         warn "khal not installed - calendar sync will not work"

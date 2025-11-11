@@ -18,7 +18,7 @@ cask "betterdisplay"                # Display management tool
 cask "warp"                        # Modern terminal with AI features
 cask "visual-studio-code"          # Code editor
 cask "postman"                     # API development and testing
-brew "node@20"                     # Node.js version 20
+brew "node"                        # Node.js (latest stable)
 brew "gh"                          # GitHub CLI
 brew "git"                         # Version control
 # Claude AI CLI installed via npm in bootstrap.sh
@@ -42,6 +42,9 @@ cask "spotify"                     # Music streaming
 
 # Calendar and scheduling
 brew "khal"                        # Calendar application
+
+# System utilities
+brew "coreutils"                   # GNU core utilities (includes gtimeout)
 
 # Fonts (required for sketchybar and terminal apps)
 cask "font-jetbrains-mono-nerd-font"  # JetBrains Mono with Nerd Font icons

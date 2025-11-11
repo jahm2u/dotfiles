@@ -7,12 +7,47 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${SCRIPT_DIR}/../logs"
 LOG_FILE="${LOG_DIR}/calendar-sync.log"
+LOCK_FILE="$HOME/.cache/sketchybar/calendar-sync.lock"
 
 # Ensure log directory exists
 mkdir -p "$LOG_DIR" || {
     echo "FATAL: Cannot create log directory: $LOG_DIR" >&2
     exit 1
 }
+
+# Lock mechanism to prevent concurrent syncs
+acquire_lock() {
+    # Check if another sync is running
+    if [[ -f "$LOCK_FILE" ]]; then
+        local lock_pid
+        lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+
+        # Check if the process is still running
+        if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] Another sync is already running (PID: $lock_pid)" | tee -a "$LOG_FILE"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Exiting to avoid concurrent syncs" | tee -a "$LOG_FILE"
+            exit 0
+        else
+            # Stale lock file - process died
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] Removing stale lock file (PID: $lock_pid)" | tee -a "$LOG_FILE"
+            rm -f "$LOCK_FILE"
+        fi
+    fi
+
+    # Create lock file with current PID
+    mkdir -p "$(dirname "$LOCK_FILE")"
+    echo $$ > "$LOCK_FILE"
+}
+
+release_lock() {
+    rm -f "$LOCK_FILE" 2>/dev/null || true
+}
+
+# Set trap to release lock on exit
+trap release_lock EXIT
+
+# Acquire lock before proceeding
+acquire_lock
 
 # Logging function - outputs to both console and log file
 log() {
