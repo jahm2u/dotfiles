@@ -26,7 +26,7 @@ import argparse
 
 # Configuration
 CACHE_DIR = Path.home() / ".cache/sketchybar"
-CACHE_FILE = CACHE_DIR / "processed-krisp-meetings.json"
+CACHE_FILE = CACHE_DIR / "krisp-downloaded-transcripts.json"
 LOG_FILE = Path.home() / ".config/sketchybar/logs/krisp-download.log"
 TRANSCRIPTS_DIR = Path.home() / ".config/sketchybar/krisp-transcripts"
 UNMATCHED_DIR = TRANSCRIPTS_DIR / "unmatched"

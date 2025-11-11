@@ -8,11 +8,13 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+import glob
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
+import re
 
 
 def load_environment():
@@ -31,18 +33,71 @@ def load_environment():
     raise FileNotFoundError("Could not find .env file in any expected location")
 
 
-def get_template_path(meeting_type: str, vault_path: str) -> str:
+def load_meeting_config(person_folder: str) -> dict:
     """
-    Get template file path based on meeting type.
+    Load person-specific meeting configuration from .meeting-config.json
+
+    Config options:
+    - use_cross_meeting_context: bool (scan other meetings for context)
+    - context_scope: str or list (e.g., "IPMedia" or ["IPMedia", "TP"])
+    - context_lookback_days: int (how many days to scan)
+    - custom_template: str (relative path to template in person folder)
+
+    Args:
+        person_folder: Path to person's folder
+
+    Returns:
+        dict with config, or empty dict if no config found
+    """
+    if not person_folder:
+        return {}
+
+    config_path = os.path.join(person_folder, "Meetings", ".meeting-config.json")
+
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Warning: Failed to load meeting config from {config_path}: {e}", file=sys.stderr)
+
+    return {}
+
+
+def get_template_path(meeting_type: str, vault_path: str, person_folder: str = None) -> str:
+    """
+    Get template file path based on meeting type and person-specific overrides.
+
+    Priority order:
+    1. Person-specific TEMPLATE.md in their Meetings folder
+    2. Person-specific template from .meeting-config.json
+    3. Global template by meeting type
 
     Args:
         meeting_type: Type from classification (ipmedia_1on1, co_*_meeting, etc.)
         vault_path: Path to Obsidian vault
+        person_folder: Path to person's folder (optional)
 
     Returns:
         Path to template file
     """
-    # Default to 1on1 template
+    # Check for person-specific template first
+    if person_folder:
+        # Check for TEMPLATE.md in person's Meetings folder
+        person_template = os.path.join(person_folder, "Meetings", "TEMPLATE.md")
+        if os.path.exists(person_template):
+            print(f"Using person-specific template: {person_template}", file=sys.stderr)
+            return person_template
+
+        # Check for custom template in config
+        config = load_meeting_config(person_folder)
+        if config.get('custom_template'):
+            custom_path = os.path.join(person_folder, "Meetings", config['custom_template'])
+            if os.path.exists(custom_path):
+                print(f"Using config-specified template: {custom_path}", file=sys.stderr)
+                return custom_path
+
+    # Default to global template based on meeting type
     template_name = "1on1-template.md"
 
     if "co_" in meeting_type and "_meeting" in meeting_type:
@@ -65,14 +120,60 @@ def get_template_path(meeting_type: str, vault_path: str) -> str:
     return template_locations[0]
 
 
-def load_template(template_path: str) -> str:
-    """Load template content."""
+def parse_template_frontmatter(template_content: str) -> tuple[dict, str]:
+    """
+    Parse YAML frontmatter from template.
+
+    Expects format:
+    ---
+    meeting_type: EXEC
+    requires_cross_context: true
+    ---
+    # Template content...
+
+    Args:
+        template_content: Raw template content
+
+    Returns:
+        (metadata_dict, content_without_frontmatter)
+    """
+    import yaml
+
+    # Check if template starts with frontmatter
+    if not template_content.startswith('---\n'):
+        return {}, template_content
+
+    # Extract frontmatter
+    parts = template_content.split('---\n', 2)
+    if len(parts) < 3:
+        return {}, template_content
+
+    frontmatter_yaml = parts[1]
+    content = parts[2]
+
+    try:
+        metadata = yaml.safe_load(frontmatter_yaml)
+        return metadata or {}, content
+    except yaml.YAMLError as e:
+        print(f"Warning: Failed to parse template frontmatter: {e}", file=sys.stderr)
+        return {}, template_content
+
+
+def load_template(template_path: str) -> tuple[str, dict]:
+    """
+    Load template content and parse metadata.
+
+    Returns:
+        (template_content, template_metadata)
+    """
     try:
         with open(template_path, 'r', encoding='utf-8') as f:
-            return f.read()
+            full_content = f.read()
+            metadata, content = parse_template_frontmatter(full_content)
+            return content, metadata
     except FileNotFoundError:
         # Return basic default template (Employee-First format)
-        return """# {{date}} 1on1 with {{participant}}
+        default_template = """# {{date}} 1on1 with {{participant}}
 
 ## {{participant}}'s Agenda (Start here)
 
@@ -153,9 +254,10 @@ _This section will be auto-filled from meeting transcript_
 ### Follow-up Required
 
 """
+        return default_template, {}
 
 
-def generate_meeting_prep_content(continuity: dict, classification: dict, template_content: str) -> dict:
+def generate_meeting_prep_content(continuity: dict, classification: dict, template_content: str, cross_context: str = "") -> dict:
     """
     Generate Meeting Prep section content using two-stage OpenAI refinement.
 
@@ -166,6 +268,7 @@ def generate_meeting_prep_content(continuity: dict, classification: dict, templa
         continuity: Analysis from analyze-meeting-history.py
         classification: Classification from classify-meeting.py
         template_content: Template file content (for context-aware generation)
+        cross_context: Optional cross-meeting context from other team meetings (for execs)
 
     Returns:
         dict with prep section content
@@ -182,12 +285,27 @@ def generate_meeting_prep_content(continuity: dict, classification: dict, templa
     # Serialize continuity data for GPT to refine
     continuity_json = json.dumps(continuity, indent=2)
 
+    # Build cross-context section if available
+    cross_context_section = ""
+    if cross_context:
+        cross_context_section = f"""
+
+COMPANY-WIDE CONTEXT (from recent meetings across {company}):
+{cross_context[:8000]}  # Limit to avoid token overflow
+
+Use this context to:
+- Surface patterns or concerns that {participant} should be aware of
+- Identify company-wide trends affecting their area
+- Suggest strategic discussion topics based on what's happening across teams
+"""
+
     prompt = f"""You are preparing Jeff Hamersly for a 1-on-1 meeting with {participant} from {company}.
 
 Transform raw meeting analysis into a CLEAN, NON-REPETITIVE meeting agenda. Jeff hates redundancy.
 
 RAW ANALYSIS DATA:
 {continuity_json}
+{cross_context_section}
 
 CRITICAL RULES - READ CAREFULLY:
 1. **ZERO REPETITION** - Each topic appears ONCE in the most appropriate section. If "Update backlog" is in Critical, it CANNOT appear in Questions, Topics, or Follow-ups.
@@ -354,13 +472,104 @@ def main():
             print(json.dumps(result, indent=2))
             sys.exit(0)
 
-        # Load template
-        template_path = get_template_path(classification["meeting_type"], vault_path)
-        template_content = load_template(template_path)
+        # Load template and person config
+        template_path = get_template_path(classification["meeting_type"], vault_path, args.person_folder)
+        template_content, template_metadata = load_template(template_path)
+
+        person_config = load_meeting_config(args.person_folder)
+
+        # Check if cross-meeting context is needed
+        # Sources: template metadata or person config
+        needs_cross_context = (
+            template_metadata.get("requires_cross_context", False) or
+            person_config.get("use_cross_meeting_context", False)
+        )
+
+        cross_context = ""
+        if needs_cross_context:
+            # Get context scope and lookback from config
+            context_scope = person_config.get("context_scope", classification.get("company", "IPMedia"))
+            lookback_days = person_config.get("context_lookback_days", 7)
+
+            print(f"Gathering cross-meeting context from {context_scope} (last {lookback_days} days)...", file=sys.stderr)
+
+            # Call cross-meeting context scanner via subprocess
+            import subprocess
+            script_path = Path(__file__).parent / "analyze-meeting-history.py"
+
+            # Use the get_cross_meeting_context function by calling the script
+            # We'll create a small wrapper to make this work
+            import glob
+            from datetime import timedelta
+
+            # Inline implementation (copy of the function from analyze-meeting-history.py)
+            def get_cross_meeting_context_inline(vault_path_arg, scope, lookback_days_arg):
+                cutoff_date = datetime.now() - timedelta(days=lookback_days_arg)
+                cutoff_str = cutoff_date.strftime("%Y-%m-%d")
+
+                scope_path = os.path.join(vault_path_arg, "Business", "People", scope)
+                if not os.path.isdir(scope_path):
+                    print(f"Warning: Scope directory not found: {scope_path}", file=sys.stderr)
+                    return ""
+
+                person_folders = []
+                for item in os.listdir(scope_path):
+                    item_path = os.path.join(scope_path, item)
+                    if os.path.isdir(item_path) and not item.startswith('.'):
+                        meetings_dir = os.path.join(item_path, "Meetings")
+                        if os.path.isdir(meetings_dir):
+                            person_folders.append((item, meetings_dir))
+
+                recent_meetings = []
+                for person_name, meetings_dir in person_folders:
+                    pattern = os.path.join(meetings_dir, "????-??-??*.md")
+                    meeting_files = glob.glob(pattern)
+
+                    for meeting_file in meeting_files:
+                        filename = os.path.basename(meeting_file)
+                        date_match = filename[:10]
+
+                        if date_match >= cutoff_str:
+                            recent_meetings.append({
+                                'person': person_name,
+                                'date': date_match,
+                                'path': meeting_file
+                            })
+
+                recent_meetings.sort(key=lambda m: m['date'])
+
+                content_parts = []
+                for meeting in recent_meetings:
+                    try:
+                        with open(meeting['path'], 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            header = f"--- {meeting['date']} Meeting with {meeting['person']} ---"
+                            content_parts.append(f"{header}\n{content}\n")
+                    except Exception as e:
+                        print(f"Warning: Could not read {meeting['path']}: {e}", file=sys.stderr)
+                        continue
+
+                if not content_parts:
+                    return ""
+
+                summary = f"=== Cross-Meeting Context: {len(recent_meetings)} meetings from {scope} in last {lookback_days_arg} days ===\n\n"
+                return summary + "\n".join(content_parts)
+
+            cross_context = get_cross_meeting_context_inline(vault_path, context_scope, lookback_days)
+
+            if cross_context:
+                print(f"✓ Gathered {len(cross_context)} chars of cross-meeting context", file=sys.stderr)
+            else:
+                print(f"⚠ No cross-meeting context found", file=sys.stderr)
 
         # Generate prep content with AI (two-stage refinement)
         # Only runs if file doesn't exist - saves API credits!
-        prep_content = generate_meeting_prep_content(continuity, classification, template_content)
+        prep_content = generate_meeting_prep_content(
+            continuity,
+            classification,
+            template_content,
+            cross_context=cross_context
+        )
 
         # Calculate next meeting date
         next_meeting = calculate_next_meeting_date(

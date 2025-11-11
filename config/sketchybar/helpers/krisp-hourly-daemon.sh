@@ -92,24 +92,45 @@ main() {
         exit 1
     fi
 
-    # Phase 2: Create processing queue from downloaded transcripts
-    if [ "$DOWNLOADED" -gt 0 ]; then
-        log "INFO" "Phase 2: Creating processing queue from transcripts..."
+    # Check for pending transcripts (either newly downloaded or previously unprocessed)
+    PENDING_TRANSCRIPTS=$(ls -1 "$HOME/.config/sketchybar/krisp-transcripts"/*.txt 2>/dev/null | wc -l | tr -d ' ')
+
+    # Phase 2: Create enhanced processing queue with calendar matching
+    # Always create queue to check for any pending transcripts (new or existing)
+    log "INFO" "Phase 2: Creating enhanced processing queue with calendar matching..."
+    if "$VENV_PYTHON" "$SCRIPT_DIR/krisp-create-queue-enhanced.py" 2>&1 | tee -a "$LOG_FILE"; then
+        log "INFO" "Enhanced queue created with calendar matching"
+
+        # Check if queue has items to process
+        if [ -f "$CACHE_DIR/krisp-pending-downloads.json" ]; then
+            QUEUE_COUNT=$(jq -r '.total // 0' "$CACHE_DIR/krisp-pending-downloads.json" 2>/dev/null || echo 0)
+            log "INFO" "Queue contains $QUEUE_COUNT meetings"
+        fi
+    else
+        log "WARN" "Enhanced queue creation failed, trying simple fallback..."
+        # Fallback to simple queue creator
         if "$VENV_PYTHON" "$SCRIPT_DIR/krisp-create-queue-from-transcripts.py" 2>&1 | tee -a "$LOG_FILE"; then
-            log "INFO" "Queue file created successfully"
+            log "INFO" "Simple queue created (without calendar matching)"
         else
-            log "WARN" "Failed to create queue file, batch processing may fail"
+            log "ERROR" "Failed to create any queue file"
         fi
     fi
 
-    # Phase 3: Batch processing downloaded transcripts
+    # Phase 3: Batch processing transcripts
     PROCESSED=0
     PROCESSING_FAILED=0
     SKIPPED=0
     BATCH_DETAILS="[]"
 
-    if [ "$DOWNLOADED" -gt 0 ]; then
-        log "INFO" "Phase 3: Processing downloaded transcripts..."
+    # Ensure archive directory exists
+    ARCHIVE_DIR="$HOME/.config/sketchybar/krisp-transcripts/processed"
+    mkdir -p "$ARCHIVE_DIR"
+
+    # Use queue count from Phase 2 (if available) or check for transcripts
+    QUEUE_COUNT=${QUEUE_COUNT:-$PENDING_TRANSCRIPTS}
+
+    if [ "$QUEUE_COUNT" -gt 0 ]; then
+        log "INFO" "Phase 3: Processing $QUEUE_COUNT queued meetings..."
         if BATCH_OUTPUT=$("$VENV_PYTHON" "$SCRIPT_DIR/krisp-batch-process.py" 2>&1); then
             # Extract JSON output (from first { to end of file)
             BATCH_JSON=$(echo "$BATCH_OUTPUT" | sed -n '/^{$/,$p')
@@ -120,6 +141,24 @@ main() {
                 SKIPPED=$(echo "$BATCH_JSON" | jq -r '.skipped // 0' 2>/dev/null || echo 0)
                 BATCH_DETAILS=$(echo "$BATCH_JSON" | jq -c '.details // []' 2>/dev/null || echo "[]")
                 log "INFO" "Batch processing complete: $PROCESSED processed, $PROCESSING_FAILED failed, $SKIPPED skipped"
+
+                # Archive successfully processed transcripts
+                if [ "$PROCESSED" -gt 0 ]; then
+                    log "INFO" "Moving $PROCESSED processed transcripts to archive..."
+                    # Extract successfully processed file IDs and move them
+                    echo "$BATCH_DETAILS" | jq -r '.[] | select(.status == "success") | .meeting_id // empty' | while read -r meeting_id; do
+                        if [ -n "$meeting_id" ]; then
+                            # Move both .txt and .json files if they exist
+                            for ext in txt json; do
+                                SOURCE_FILE="$HOME/.config/sketchybar/krisp-transcripts/krisp-transcript-${meeting_id}.${ext}"
+                                if [ -f "$SOURCE_FILE" ]; then
+                                    mv "$SOURCE_FILE" "$ARCHIVE_DIR/" 2>/dev/null && \
+                                        log "INFO" "  Archived: krisp-transcript-${meeting_id}.${ext}"
+                                fi
+                            done
+                        fi
+                    done
+                fi
             else
                 log "WARN" "Could not parse batch processing output"
             fi
@@ -128,7 +167,7 @@ main() {
             # Don't exit - processing failures shouldn't break the daemon
         fi
     else
-        log "INFO" "No transcripts to process (batch phase skipped)"
+        log "INFO" "No pending transcripts to process (batch phase skipped)"
     fi
 
     # Calculate remaining pending

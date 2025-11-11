@@ -28,7 +28,7 @@ for env_path in env_paths:
 
 # Cache directory - use standard cache location, not Obsidian vault
 CACHE_DIR = Path.home() / ".cache/sketchybar"
-CACHE_FILE = CACHE_DIR / "krisp-processed-meetings-cache.json"
+CACHE_FILE = CACHE_DIR / "krisp-updated-meeting-notes.json"
 
 LOG_FILE = Path.home() / ".config/sketchybar/logs/krisp-automation.log"
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)

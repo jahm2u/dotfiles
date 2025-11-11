@@ -10,8 +10,9 @@ import sys
 import os
 import re
 import time
+import subprocess
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 from playwright_stealth import stealth_sync
 from dotenv import load_dotenv
@@ -20,7 +21,7 @@ import importlib.util
 
 # Configuration
 CACHE_DIR = Path.home() / ".cache/sketchybar"
-CACHE_FILE = CACHE_DIR / "processed-krisp-meetings.json"
+CACHE_FILE = CACHE_DIR / "krisp-downloaded-transcripts.json"
 PROGRESS_FILE = CACHE_DIR / "krisp-progress.json"
 LOG_FILE = Path.home() / ".config/sketchybar/logs/krisp-download.log"
 TRANSCRIPTS_DIR = Path.home() / ".config/sketchybar/krisp-transcripts"
@@ -43,6 +44,146 @@ def log(message, level="INFO"):
     print(log_line)
     with open(LOG_FILE, "a") as f:
         f.write(log_line + "\n")
+
+def parse_krisp_date(title):
+    """
+    Parse date and time from Krisp title format.
+    Examples:
+      "04:30 PM - Slack meeting November 4" → ("2024-11-04", "04:30 PM")
+      "11:30 AM - Discord meeting October 31" → ("2024-10-31", "11:30 AM")
+
+    Key fix: Assume meetings are from PAST, not future.
+    If date appears to be in future, it's actually from last year.
+    """
+    try:
+        # Extract time from beginning
+        time_match = re.match(r'(\d{1,2}:\d{2}\s+[AP]M)\s*-', title)
+        time_str = time_match.group(1) if time_match else None
+
+        # Extract month and day from end
+        date_match = re.search(r'meeting\s+([A-Za-z]+)\s+(\d{1,2})', title)
+        if not date_match:
+            return None, time_str
+
+        month_str = date_match.group(1)
+        day = int(date_match.group(2))
+
+        # Map month name to number
+        month_map = {
+            'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3,
+            'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6,
+            'july': 7, 'jul': 7, 'august': 8, 'aug': 8,
+            'september': 9, 'sep': 9, 'sept': 9, 'october': 10, 'oct': 10,
+            'november': 11, 'nov': 11, 'december': 12, 'dec': 12
+        }
+
+        month = month_map.get(month_str.lower())
+        if not month:
+            return None, time_str
+
+        # Determine year: assume meetings are from the past
+        now = datetime.now()
+
+        # Try current year first
+        try:
+            meeting_date = datetime(now.year, month, day)
+            # If this date is in the future (more than 1 day ahead), use last year
+            if meeting_date > now + timedelta(days=1):
+                meeting_date = datetime(now.year - 1, month, day)
+        except ValueError:
+            # Invalid date (e.g., Feb 30), use last year
+            meeting_date = datetime(now.year - 1, month, day)
+
+        return meeting_date.strftime("%Y-%m-%d"), time_str
+
+    except Exception as e:
+        log(f"Failed to parse date from '{title}': {e}", "WARN")
+        return None, None
+
+def enrich_with_calendar_match(title, meeting_id):
+    """
+    Enrich meeting metadata with calendar matching.
+    Returns dict with full classification data.
+    """
+    log(f"Enriching metadata with calendar match for: {title}")
+
+    # Parse date/time from title
+    date, time_str = parse_krisp_date(title)
+
+    if not date:
+        log("Could not parse date from title", "WARN")
+        return {
+            "meeting_id": meeting_id,
+            "title": title,
+            "downloaded_at": datetime.now().isoformat(),
+            "date": None,
+            "time": None,
+            "calendar_matched": False
+        }
+
+    log(f"Parsed date: {date}, time: {time_str}")
+
+    # Call unified classifier with calendar matching
+    try:
+        classify_script = HELPERS_DIR / "classify-meeting-unified.py"
+        venv_python = Path.home() / ".config/sketchybar/venv/bin/python3"
+
+        cmd = [str(venv_python), str(classify_script), "--title", title, "--date", date]
+        if time_str:
+            cmd.extend(["--time", time_str])
+
+        log(f"Calling classifier: {' '.join(cmd)}")
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0 and result.stdout:
+            classification = json.loads(result.stdout)
+
+            # Build enriched metadata
+            metadata = {
+                "meeting_id": meeting_id,
+                "title": title,
+                "downloaded_at": datetime.now().isoformat(),
+                "date": date,
+                "time": time_str,
+                "calendar_matched": classification.get('source') == 'calendar',
+                "calendar_title": classification.get('meeting_title'),
+                "meeting_type": classification.get('meeting_type'),
+                "company": classification.get('company'),
+                "participant": classification.get('participant'),
+                "person_folder": classification.get('person_folder'),
+                "confidence": classification.get('confidence', 0),
+                "classification_source": classification.get('source')
+            }
+
+            log(f"✓ Calendar match: {metadata['calendar_matched']}, Type: {metadata['meeting_type']}, "
+                f"Company: {metadata['company']}, Participant: {metadata['participant']}")
+
+            return metadata
+        else:
+            log(f"Classifier failed: {result.stderr}", "WARN")
+
+    except subprocess.TimeoutExpired:
+        log("Classifier timed out", "ERROR")
+    except json.JSONDecodeError as e:
+        log(f"Failed to parse classifier output: {e}", "ERROR")
+    except Exception as e:
+        log(f"Calendar matching error: {e}", "ERROR")
+
+    # Fallback: basic metadata without calendar match
+    return {
+        "meeting_id": meeting_id,
+        "title": title,
+        "downloaded_at": datetime.now().isoformat(),
+        "date": date,
+        "time": time_str,
+        "calendar_matched": False
+    }
 
 def load_cache_module():
     """Load cache module for tracking processed meetings"""
@@ -350,25 +491,18 @@ def main():
             # Skip if already processed
             if cache and meeting_id and cache.is_processed(meeting_id):
                 log(f"⊘ Already processed, skipping...", "INFO")
-                # Navigate back to list
-                log("Navigating back to list...")
-                page.goto("https://app.krisp.ai/meeting-notes?page=1&limit=20", wait_until="load", timeout=30000)
-                page.wait_for_selector('a.meeting-item', state='visible', timeout=10000)
-                page.wait_for_timeout(2000)
-                continue
-
-            if status == 'success' and transcript_text:
+            elif status == 'success' and transcript_text:
                 # Save transcript
                 if meeting_id:
                     transcript_path = TRANSCRIPTS_DIR / f"krisp-transcript-{meeting_id}.txt"
-                    # Also save metadata with meeting title
-                    metadata = {
-                        "meeting_id": meeting_id,
-                        "title": title,
-                        "downloaded_at": datetime.now().isoformat()
-                    }
+
+                    # Enrich metadata with calendar matching
+                    metadata = enrich_with_calendar_match(title, meeting_id)
+
+                    # Save enriched metadata
                     metadata_path = TRANSCRIPTS_DIR / f"krisp-transcript-{meeting_id}.json"
                     metadata_path.write_text(json.dumps(metadata, indent=2))
+                    log(f"✓ Saved enriched metadata to: {metadata_path}")
                 else:
                     # No meeting ID but we have transcript - use timestamp
                     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -381,12 +515,14 @@ def main():
 
                 # Mark as processed in cache to prevent re-downloading
                 if cache and meeting_id:
-                    metadata = {
+                    cache_metadata = {
                         "title": title,
                         "downloaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        "transcript_path": str(transcript_path)
+                        "transcript_path": str(transcript_path),
+                        "date": metadata.get('date') if meeting_id else None,
+                        "meeting_type": metadata.get('meeting_type') if meeting_id else None
                     }
-                    if cache.add_processed_meeting(meeting_id, metadata):
+                    if cache.add_processed_meeting(meeting_id, cache_metadata):
                         log(f"✓ Marked meeting as processed in cache")
                     else:
                         log(f"⚠ Failed to update cache for meeting {meeting_id}", "WARN")
@@ -399,9 +535,20 @@ def main():
 
             # Navigate back to list
             log("Navigating back to list...")
-            page.goto("https://app.krisp.ai/meeting-notes?page=1&limit=20", wait_until="load", timeout=30000)
-            page.wait_for_selector('a.meeting-item', state='visible', timeout=10000)
-            page.wait_for_timeout(2000)  # Extra buffer
+            try:
+                page.goto("https://app.krisp.ai/meeting-notes?page=1&limit=20", wait_until="load", timeout=30000)
+                page.wait_for_selector('a.meeting-item', state='visible', timeout=15000)  # Increased timeout
+                page.wait_for_timeout(2000)  # Extra buffer
+            except Exception as nav_error:
+                log(f"⚠ Navigation back failed: {nav_error}", "WARN")
+                # Try to recover by refreshing the page
+                try:
+                    log("Attempting recovery with page refresh...")
+                    page.reload(wait_until="load", timeout=30000)
+                    page.wait_for_selector('a.meeting-item', state='visible', timeout=15000)
+                except Exception as recovery_error:
+                    log(f"✗ Recovery failed: {recovery_error}", "ERROR")
+                    raise  # Re-raise to exit gracefully
 
             # Wait between downloads
             if i < meetings_to_process - 1:

@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 # Configuration
 CACHE_DIR = Path.home() / ".cache/sketchybar"
 PENDING_QUEUE_FILE = CACHE_DIR / "krisp-pending-downloads.json"
-CACHE_FILE = CACHE_DIR / "processed-krisp-meetings.json"
+CACHE_FILE = CACHE_DIR / "krisp-downloaded-transcripts.json"
 LOG_FILE = Path.home() / ".config/sketchybar/logs/krisp-discovery.log"
 AUTH_FILE = Path.home() / ".config/sketchybar/krisp-auth.json"
 

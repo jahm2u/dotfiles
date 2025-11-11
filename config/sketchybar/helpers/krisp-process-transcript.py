@@ -209,12 +209,13 @@ def process_transcript(transcript_path, meeting_id):
         else:
             year = str(datetime.now().year)
 
+        # Use unified classification with calendar matching
         match_cmd = [
             str(VENV_PYTHON),
-            str(HELPERS_DIR / "krisp-match-meetings.py"),
+            str(HELPERS_DIR / "classify-meeting-unified.py"),
             "--title", meeting_meta['title'],
-            "--year", year,
-            "--json"
+            "--date", meeting_meta.get('date', ''),  # Will be parsed from title if needed
+            "--time", meeting_meta.get('time', '')   # Optional time hint
         ]
 
         try:

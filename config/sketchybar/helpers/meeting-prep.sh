@@ -215,12 +215,15 @@ main() {
         exit 1
     fi
 
-    # Step 1: Classify meeting
-    log "INFO" "Step 1: Classifying meeting"
-    # Capture stderr separately to avoid contaminating JSON output
-    CLASSIFICATION=$("$PYTHON" "${SCRIPT_DIR}/classify-meeting.py" \
+    # Step 1: Classify meeting (with calendar matching for accuracy)
+    log "INFO" "Step 1: Classifying meeting (with calendar matching)"
+    # Use unified classification that includes calendar matching
+    # Extract just the time portion from MEETING_TIME for the classifier
+    MEETING_TIME_ONLY=$(echo "$MEETING_TIME" | grep -o '[0-9]\+:[0-9]\+ [AP]M' | head -1)
+    CLASSIFICATION=$("$PYTHON" "${SCRIPT_DIR}/classify-meeting-unified.py" \
         --title "$MEETING_TITLE" \
         --date "$MEETING_DATE" \
+        --time "$MEETING_TIME_ONLY" \
         --participants "$MEETING_PARTICIPANTS" 2>>"$LOG_FILE")
 
     if [[ $? -ne 0 ]]; then

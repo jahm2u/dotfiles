@@ -1,634 +1,200 @@
-# Development Savepoint #02 - Meeting Widget Fixes & Todoist Enhancements
-
-**Date:** 2025-11-01
-**Story:** 3.2 - Sketchybar Popup Enhancements (Continued from Savepoint #01)
-**Developer:** Nich
-**Status:** Significant progress - ready for final integration testing
+# Krisp Automation System - Handoff Notes (Part 2)
+**Date:** 2025-11-10
+**Engineer:** John
+**Context:** Fixed navigation bug, attempted unified classification - calendar matching is broken
 
 ---
 
-## Completed Work
+## 1. Completed Work ✅
 
-### Phase 1: Critical Meeting Widget Fork Bomb Fix ✅
+### Navigation Bug Fixed
+- **File**: `krisp-download-transcripts-simple.py`
+- **Issue**: Double navigation causing timeouts after processing meeting #15
+- **Fix**: Removed duplicate navigation block (lines 354-357), changed `if` to `elif` so all code paths flow through single navigation at line 393-397
+- **Status**: ✅ Script now completes successfully, processes all meetings without timeout
 
-**Problem:** Meeting widget spawning 40+ runaway khal Python processes, consuming 99% CPU and crashing system.
-
-**Root Cause:** `check_meetings_today()` function was calling `khal list today today` on EVERY display update (2x per second), bypassing the cache system that was designed to prevent this.
-
-**Solution Implemented:**
-- Modified `check_meetings_today()` to read from cached events list instead of spawning khal processes
-- Fixed bash compatibility issue (`local -n` nameref → `eval` pattern)
-- Result: **0 khal processes** during normal operation
-
-**Files Modified:**
-- `config/sketchybar/plugins/meeting.sh` (lines 197-227)
-
-### Phase 2: Comprehensive Failsafe System ✅
-
-Implemented 5-layer defense against runaway processes:
-
-1. **Process Count Check** - Aborts if ≥3 khal processes running
-2. **Lock File Mechanism** - Prevents concurrent data fetches (60s stale timeout)
-3. **Timeout Wrapper** - Kills khal if takes >10 seconds
-4. **Rate Limiting** - Minimum 1 second between script executions
-5. **Emergency Stop** - `meeting.sh emergency-stop` kills all khal processes
-
-**New Functions Added:**
-- `check_process_count()` - Monitors khal process count
-- `acquire_lock() / release_lock()` - Mutex for fetch operations
-- `run_khal_with_timeout()` - Timeout wrapper with process management
-- `check_rate_limit()` - Prevents spam executions
-
-**Files Created:**
-- `config/sketchybar/helpers/meeting-health-check.sh` - Diagnostic tool
-  - Shows khal process count, lock status, cache age, errors
-  - `--watch` mode for continuous monitoring
-  - `--emergency` mode to kill runaway processes
-
-**Configuration:**
-```bash
-MAX_KHAL_PROCESSES=3
-KHAL_TIMEOUT=10
-MIN_RUN_INTERVAL=1
-```
-
-### Phase 3: Enhanced Meeting Widget Messages ✅
-
-**User Feedback:** Meeting text was changing every 0.5 seconds with generic messages. User wanted:
-- Messages that stick (not constantly changing)
-- More work-focused, direct tone
-- Context-aware (if working, motivate productivity)
-
-**Solution:**
-- Messages now cache for **1 hour** (3600 seconds)
-- Replaced generic messages with direct, work-focused variants:
-  - "Zero meetings. Ship it!"
-  - "Meetings crushed! 💪"
-  - "Deep work mode 🎯"
-  - "Maker's schedule today"
-
-**Implementation:**
-- Updated `get_random_message()` to cache messages with timestamps
-- Cache files: `~/.cache/sketchybar/meeting_message_*`
-- Messages only regenerate after 1 hour OR context changes (time of day)
-
-**Files Modified:**
-- `config/sketchybar/plugins/meeting.sh` (lines 152-211)
-
-### Phase 4: GPT-4o Message Generation Foundation ✅
-
-Created AI-powered message generation system for future enhancement:
-
-**Features:**
-- Time-aware context (morning/afternoon/evening/late_night)
-- Day-aware (weekday vs weekend)
-- Uses OpenAI API (gpt-4o-mini model) following Hammerspoon pattern
-- Loads API key from `.env` file (`OPENAI_API_KEY`)
-- 10-second timeout with graceful fallback
-- Comprehensive error handling
-
-**Files Created:**
-- `config/sketchybar/helpers/generate-meeting-message.sh`
-
-**Note:** Currently not integrated into meeting.sh (static messages work great). Can be enabled later by calling this script from `get_random_message()` function.
-
-### Phase 5: Todoist Popup Enhancements ✅
-
-Implemented ALL 5 user-requested Todoist features:
-
-#### 1. Show 25 Tasks (Previously 5) ✅
-- **Why:** User has 44 tasks in Todoist "Today" view, was only seeing first 5
-- **Changed:** `todoist-precache.sh` line 78: `sorted_tasks[:25]`
-- **Changed:** `todoist_popup.sh` loop: `{1..25}`
-- **Changed:** `sketchybarrc-desktop/laptop` loop: `{1..25}`
-
-#### 2. Priority-Colored Unicode Circles ✅
-- **Old:** Nerd Font icons (󰄴 󰄵 󰄶 󰃯) - all same color
-- **New:** Unicode circles with Catppuccin Macchiato colors
-  - P1 (●) = RED (0xffed8796) - Urgent
-  - P2 (●) = PEACH (0xfff5a97f) - High
-  - P3 (●) = BLUE (0xff8aadf4) - Medium
-  - P4 (○) = OVERLAY0 (0xff6e738d) - Normal (unfilled circle)
-
-**Implementation:**
-- `todoist-precache.sh`: Added COLOR field to cache format (line 95-105)
-- `todoist_popup.sh`: Color mapping dictionary (lines 96-101)
-- `todoist_popup.sh`: Apply colors to icons (line 135)
-
-#### 3. Removed External Link Buttons ✅
-- **Old:** Each task had 󰏌 action button to open in Todoist web
-- **New:** Clean layout, no action buttons
-- **Changed:** `todoist_popup.sh` line 149: `drawing=off` for all action buttons
-
-#### 4. Wider Popup (~600px equivalent) ✅
-- **Old:** Labels truncated at 40 characters
-- **New:** `label.max_chars=80` (double width, no truncation)
-- **Changed:** `sketchybarrc-desktop/laptop` line 175
-- **Result:** Long task titles like "Can I use the Claude CLI with BMAD to brainstorm a PowerBI project..." now display fully
-
-#### 5. Optimized Close Timing ✅
-- **Old:** Sequential execution caused visible lag
-  ```bash
-  echo '$TASK_ID' > file && sketchybar --update && sketchybar --set popup.drawing=off
-  ```
-- **New:** Popup closes INSTANTLY, update happens in background
-  ```bash
-  sketchybar --set popup.drawing=off && (echo '$TASK_ID' > file && sketchybar --update) &
-  ```
-- **Changed:** `todoist_popup.sh` line 145
-
-**Files Modified:**
-- `config/sketchybar/helpers/todoist-precache.sh`
-- `config/sketchybar/plugins/todoist_popup.sh`
-- `config/sketchybar/sketchybarrc-desktop`
-- `config/sketchybar/sketchybarrc-laptop`
-
-### Phase 6: Todoist Update Frequency ✅
-
-**User Request:** "How often does todolist update? I checked an item off, how long do I need to wait?"
-
-**Previous:** 5 minutes (300 seconds) - too slow
-**User Preference:** 30 seconds for "instant" feel
-**Decision:** 30 seconds (within Todoist API limits: 450 req/15min)
-
-**Changed:**
-- `~/Library/LaunchAgents/com.user.todoist-precache.plist` line 15
-- `StartInterval` = 30 (seconds)
-- LaunchAgent reloaded successfully
-
-**API Rate Limit Analysis:**
-- Todoist allows: 450 requests per 15 minutes (30 req/min)
-- Every 30 seconds: 120 requests/hour (well within limits)
-- No risk of rate limiting
-
-### Phase 7: Calendar Dropdown Fix ✅
-
-**Issue from Savepoint #01:** Meeting popup was showing ALL meetings (including tomorrow's), not just TODAY's meetings.
-
-**User Requirement (per Story 3.2):**
-> "ALWAYS show meetings for the day and not next day or previous day. The widget should ONLY care about TODAY."
-
-**Solution:**
-- Added TODAY date filter in `meeting_popup.sh`
-- Filter events by date BEFORE categorizing as past/future
-- Lines 50, 72-74: Date comparison logic
-
-**Implementation:**
-```bash
-TODAY=$(date "+%Y-%m-%d")
-if [[ "$EVENT_DATE" != "$TODAY" ]]; then
-    continue  # Skip non-today meetings
-fi
-```
-
-**Files Modified:**
-- `config/sketchybar/plugins/meeting_popup.sh`
-
-### Phase 8: Popup Alignment Fix ✅
-
-**User Request:** "Can you make the popup line up to the left for calendar, align to the right for todoist? So we have an invisible center margin that none go over"
-
-**Rationale:** Respect the MacBook notch area, cleaner visual separation
-
-**Changes:**
-- Meeting popup: `popup.align=left` (was center)
-- Todoist popup: `popup.align=right` (was center)
-- Updated in both laptop and desktop configs
-
-**Files Modified:**
-- `config/sketchybar/sketchybarrc-laptop` (lines 138, 220)
-- `config/sketchybar/sketchybarrc-desktop` (lines 129, 226)
+### Unified Classification Created (But Not Working)
+- **Created**: `classify-meeting-unified.py` - Intended single source of truth
+- **Created**: `krisp-create-queue-enhanced.py` - Queue creator with calendar matching
+- **Updated**:
+  - `meeting-prep.sh` → Uses classify-meeting-unified.py
+  - `krisp-hourly-daemon.sh` → Uses enhanced queue creator
+  - `krisp-process-transcript.py` → Uses unified classifier
 
 ---
 
-## Pending Work
+## 2. Critical Problems Found 🚨
 
-### 1. LaunchAgent Installation Integration (HIGH PRIORITY)
+### Calendar Matching is Fundamentally Broken
+**Current Results**: Out of 28 meetings, only 4 classified
+- Claims to match "1on1 Thais Jeff" on Nov 7 and Nov 10
+- **User confirms**: No meeting with Thais on Friday (one of those dates)
+- **This means our calendar matching is returning WRONG data**
 
-**Status:** Todoist precache LaunchAgent is **NOT** part of `scripts/install.sh` yet.
+### Issues Identified
+1. **Calendar query may be looking at wrong dates**
+   - Krisp titles: "November 7"
+   - Need to verify: Are we querying 2024-11-07 or 2025-11-07?
+   - Transcripts downloaded Nov 7 2024, but code may assume 2025
 
-**Current Situation:**
-- Calendar sync LaunchAgent: ✅ Installed automatically (lines 641-690 in install.sh)
-- Todoist precache LaunchAgent: ❌ Manual installation only
+2. **Time matching tolerance wrong**
+   - Current: 30 minutes
+   - User: Some meetings only 20 minutes long
+   - **30-minute tolerance would SKIP meetings entirely**
+   - Should be ±5-10 minutes max for matching
 
-**LaunchAgent File Location:**
-- Source: Should be in `config/sketchybar/launch-agents/com.user.todoist-precache.plist`
-- Target: `~/Library/LaunchAgents/com.user.todoist-precache.plist`
-
-**What's Needed:**
-1. Create `config/sketchybar/launch-agents/` directory
-2. Move `com.user.todoist-precache.plist` to that directory
-3. Add LaunchAgent installation logic to `scripts/install.sh` (mirror calendar sync pattern)
-4. Add validation logic (similar to lines 324-348 for calendar sync)
-5. Update installation documentation in CLAUDE.md
-
-**Code Pattern to Follow:**
-```bash
-# In scripts/install.sh, after calendar sync installation (line 758):
-
-# Todoist precache LaunchAgent (optional)
-if confirm "Install Todoist precache LaunchAgent for instant popup? (requires TODOIST_API_TOKEN in .env)"; then
-    install_todoist_precache_launchagent
-    validate_todoist_precache_launchagent
-else
-    log "Skipping Todoist precache LaunchAgent installation"
-fi
-```
-
-**Function to Add:**
-```bash
-install_todoist_precache_launchagent() {
-    local label="com.user.todoist-precache"
-    local plist_source="$REPO_DIR/config/sketchybar/launch-agents/$label.plist"
-    local plist_target="$HOME/Library/LaunchAgents/$label.plist"
-
-    log "Installing Todoist precache LaunchAgent"
-
-    if [[ ! -f "$plist_source" ]]; then
-        error "LaunchAgent plist not found at: $plist_source"
-        return 1
-    fi
-
-    # Unload existing if loaded
-    if launchctl list | grep -q "$label"; then
-        launchctl unload "$plist_target" 2>/dev/null
-    fi
-
-    # Copy plist
-    cp "$plist_source" "$plist_target"
-
-    # Load LaunchAgent
-    if launchctl load -w "$plist_target" 2>/dev/null; then
-        log "✓ LaunchAgent loaded successfully"
-    else
-        warn "Failed to load LaunchAgent (non-blocking)"
-    fi
-}
-```
-
-### 2. Documentation Updates
-
-Need to add Todoist precache architecture section to CLAUDE.md (mirror calendar sync pattern):
-
-**Section to Add:**
-```markdown
-#### Todoist Precache Architecture
-
-The Todoist precache system provides instant popup performance by fetching tasks in the background every 30 seconds.
-
-**Complete Data Flow:**
-```
-.env (TODOIST_API_TOKEN) → LaunchAgent (30s) → todoist-precache.sh →
-curl fetch (API v2) → Python parse (25 tasks) → cache write → todoist_synced event →
-todoist_popup.sh reads cache → instant popup display
-```
-
-**Component Details:**
-
-1. **todoist-precache.sh** (`config/sketchybar/helpers/todoist-precache.sh`)
-   - Fetches tasks from Todoist API v2
-   - Filter: `today | overdue`
-   - Sorts by priority (P1/P2/P3/P4), then due date
-   - Caches top 25 tasks with priority colors
-   - Triggers `todoist_synced` custom event
-   - Comprehensive logging to `logs/todoist-precache.log`
-
-2. **todoist_popup.sh** (`config/sketchybar/plugins/todoist_popup.sh`)
-   - Reads from cache (~/.cache/sketchybar/todoist_tasks_cache)
-   - Displays 25 tasks with colored priority circles
-   - Yellow highlight for currently focused task
-   - Instant popup close on selection
-
-3. **LaunchAgent** (`~/Library/LaunchAgents/com.user.todoist-precache.plist`)
-   - Runs every 30 seconds (StartInterval=30)
-   - RunAtLoad enabled
-   - **CRITICAL:** EnvironmentVariables PATH includes `/opt/homebrew/bin`
-
-**Configuration:**
-- API Token: `.env` file in project root (git-ignored)
-- Format: `TODOIST_API_TOKEN=your_token_here`
-
-**Manual Sync:**
-```bash
-bash ~/.config/sketchybar/helpers/todoist-precache.sh
-```
-
-**LaunchAgent Management:**
-```bash
-# Check status
-launchctl list | grep todoist-precache
-
-# View logs
-tail -f ~/.config/sketchybar/logs/todoist-precache.log
-
-# Reload
-launchctl unload ~/Library/LaunchAgents/com.user.todoist-precache.plist
-launchctl load -w ~/Library/LaunchAgents/com.user.todoist-precache.plist
-```
-```
-
-### 3. GPT-4o Integration (OPTIONAL ENHANCEMENT)
-
-Currently using static work-focused messages with 1-hour cache. GPT-4o integration is built but not enabled.
-
-**To Enable:**
-1. Add `OPENAI_API_KEY` to `.env` file
-2. Modify `get_random_message()` in `meeting.sh` to call `generate-meeting-message.sh`
-3. Test fallback behavior when API fails
-
-**Trade-offs:**
-- **Static messages:** Instant, no API costs, predictable
-- **GPT-4o messages:** More variety, context-aware, costs ~$0.0001 per generation
-
-**User seems satisfied with static messages**, so this is low priority.
-
-### 4. Story 3.2 Completion Tasks
-
-- [ ] Integration testing (all phases working together)
-- [ ] Performance testing (confirm <100ms popup open time)
-- [ ] Update sprint-status.yaml (mark story complete)
-- [ ] Update story-3.2.md file list and completion notes
-- [ ] Create git commit for LaunchAgent integration
+3. **Pattern matching also incorrect**
+   - Detecting "1on1 Thais Jeff" format
+   - But extracting wrong person (should exclude "Jeff")
 
 ---
 
-## Blockers / Risks
+## 3. What Actually Needs to Happen 🎯
 
-### ⚠️ Medium Risk: LaunchAgent Not in Install Script
+### The Real Problem
+- User has nearly ALL meetings in calendar (±10 min variance)
+- 28 Krisp transcripts exist
+- Calendar has events at those times
+- **But our code can't match them**
 
-**Risk:** New users won't get Todoist precache automatically. They'll see "Refreshing tasks..." on first popup click.
-
-**Mitigation:** Document manual installation steps OR complete pending work #1.
-
-**Workaround for Testing:**
-```bash
-# Manual installation (temporary)
-cp ~/repos/02_personal/dotfiles/config/sketchybar/launch-agents/com.user.todoist-precache.plist \
-   ~/Library/LaunchAgents/
-launchctl load -w ~/Library/LaunchAgents/com.user.todoist-precache.plist
-```
-
-### ⚠️ Low Risk: API Token Management
-
-**Consideration:** Users need to:
-1. Get Todoist API token from https://todoist.com/prefs/integrations
-2. Add to `.env` file
-3. Ensure `.env` is git-ignored (already is)
-
-**Documentation:** This is covered in .env.example but should be emphasized in CLAUDE.md.
-
-### ✅ No Risk: Calendar Sync System
-
-Calendar sync LaunchAgent is fully integrated and tested. No issues.
+### Root Causes to Fix
+1. **Date parsing** - Krisp says "November 3" but what year?
+2. **khal query** - Are we even calling it correctly?
+3. **Time comparison** - 30 min tolerance is too wide, need 5-10 min
+4. **Pattern extraction** - "1on1 Thais Jeff" should extract "Thais" not both names
 
 ---
 
-## Next Steps (Priority Order)
+## 4. Next Developer: Start Here 🔍
 
-### For Next Developer
-
-**Step 1: Integrate Todoist LaunchAgent into Install Script (1-2 hours)**
-
-This is the highest priority to complete Story 3.2.
-
-1. Create directory structure:
-   ```bash
-   mkdir -p ~/repos/02_personal/dotfiles/config/sketchybar/launch-agents
-   ```
-
-2. Move LaunchAgent plist to proper location:
-   ```bash
-   mv ~/Library/LaunchAgents/com.user.todoist-precache.plist \
-      ~/repos/02_personal/dotfiles/config/sketchybar/launch-agents/
-   ```
-
-3. Add installation function to `scripts/install.sh`:
-   - Copy pattern from calendar sync installation (lines 641-690)
-   - Add validation function (mirror lines 324-348)
-   - Add confirmation prompt (line 758+)
-
-4. Test installation:
-   ```bash
-   ./scripts/install.sh
-   # Should prompt for Todoist LaunchAgent installation
-   # Should validate it loaded successfully
-   ```
-
-**Step 2: Update Documentation (30 minutes)**
-
-1. Add Todoist precache section to CLAUDE.md (see "Documentation Updates" above)
-2. Update .env.example if needed
-3. Commit documentation changes
-
-**Step 3: Final Integration Testing (1 hour)**
-
-Test all Story 3.2 features working together:
-
-**Meeting Widget Tests:**
-- [ ] No runaway khal processes (check with `ps aux | grep khal`)
-- [ ] Health check shows healthy: `~/.config/sketchybar/helpers/meeting-health-check.sh`
-- [ ] Messages cache for 1 hour (check `~/.cache/sketchybar/meeting_message_*_time`)
-- [ ] Popup shows only TODAY's meetings
-- [ ] Popup aligned left
-
-**Todoist Widget Tests:**
-- [ ] Shows 25 tasks (check cache: `sed '1,/^TASKS_START$/d' ~/.cache/sketchybar/todoist_tasks_cache | wc -l`)
-- [ ] Priority circles show correct colors (P1=red, P2=orange, P3=blue, P4=unfilled)
-- [ ] No external link buttons visible
-- [ ] Long task titles display without truncation
-- [ ] Popup closes instantly on task selection
-- [ ] Updates within 30 seconds of checking off task in Todoist
-- [ ] Popup aligned right
-
-**System Tests:**
-- [ ] Both popups respect center notch area (don't overlap)
-- [ ] LaunchAgent loaded: `launchctl list | grep todoist-precache`
-- [ ] Logs clean: `tail -20 ~/.config/sketchybar/logs/todoist-precache.log`
-
-**Step 4: Complete Story 3.2 (30 minutes)**
-
-1. Update `docs/sprint-status.yaml`:
-   ```yaml
-   story-3.2:
-     status: complete
-     completion_date: 2025-11-01
-   ```
-
-2. Update `docs/stories/story-3.2.md`:
-   - Mark all tasks complete
-   - Update file list
-   - Add completion notes
-
-3. Create final commit:
-   ```bash
-   git add config/sketchybar/launch-agents/ scripts/install.sh CLAUDE.md
-   git commit -m "Complete Story 3.2: Integrate Todoist LaunchAgent into install script"
-   ```
-
----
-
-## Technical Notes
-
-### File Modifications Summary
-
-**Modified (Session 2):**
-- `config/sketchybar/plugins/meeting.sh` - Failsafes, messages, caching
-- `config/sketchybar/plugins/meeting_popup.sh` - Today-only filter, alignment
-- `config/sketchybar/plugins/todoist_popup.sh` - 25 tasks, colors, no buttons, alignment
-- `config/sketchybar/sketchybarrc-desktop` - 25 slots, wider labels, popup alignment
-- `config/sketchybar/sketchybarrc-laptop` - 25 slots, wider labels, popup alignment
-- `~/Library/LaunchAgents/com.user.todoist-precache.plist` - 30-second interval
-
-**Created (Session 2):**
-- `config/sketchybar/helpers/meeting-health-check.sh` - Diagnostic tool
-- `config/sketchybar/helpers/generate-meeting-message.sh` - GPT-4o integration (optional)
-- `config/sketchybar/helpers/todoist-precache.sh` - Background task fetcher
-
-**Needs Creation:**
-- `config/sketchybar/launch-agents/com.user.todoist-precache.plist` - Move from ~/Library
-
-### Architecture Patterns
-
-**Meeting Widget Failsafe Pattern:**
-```
-User action → meeting.sh →
-  1. Rate limit check (skip if <1s since last run)
-  2. Process count check (abort if ≥3 khal processes)
-  3. Acquire lock (skip if another fetch in progress)
-  4. Timeout wrapper (kill khal after 10s)
-  5. Execute khal with cache fallback
-  6. Release lock
-```
-
-**Todoist Precache Pattern:**
-```
-LaunchAgent (30s) → todoist-precache.sh →
-curl fetch (30s timeout) → Python parse (25 tasks, priority sort) →
-cache write (pipe-delimited: id|icon|color|content|url|project) →
-trigger todoist_synced event → todoist_popup.sh reads cache →
-instant popup display (<100ms)
-```
-
-**Message Caching Pattern:**
-```
-get_random_message(array_name) →
-  1. Check cache file age
-  2. If <1 hour AND same context: return cached
-  3. If expired OR context changed: generate new
-  4. Cache new message with timestamp
-  5. Return message
-```
-
-### Cache Files Reference
-
-**Meeting Widget:**
-- `~/.cache/sketchybar/meeting_events_list` - Cached calendar events
-- `~/.cache/sketchybar/meeting_message_FREE_DAY_MESSAGES` - Cached message
-- `~/.cache/sketchybar/meeting_message_FREE_DAY_MESSAGES_time` - Message timestamp
-- `~/.cache/sketchybar/meeting_message_END_OF_DAY_MESSAGES` - Cached message
-- `~/.cache/sketchybar/meeting_message_END_OF_DAY_MESSAGES_time` - Message timestamp
-- `~/.cache/sketchybar/meeting_fetch.lock` - Fetch lock file
-- `~/.cache/sketchybar/meeting_last_run` - Rate limit timestamp
-- `~/.cache/sketchybar/meeting_error.log` - Error log
-
-**Todoist Widget:**
-- `~/.cache/sketchybar/todoist_tasks_cache` - Cached task list (25 tasks)
-- `~/.cache/sketchybar/todoist_working_task` - Currently focused task ID
-- `~/.config/sketchybar/logs/todoist-precache.log` - Sync logs
-- `~/.config/sketchybar/logs/todoist-precache-stdout.log` - LaunchAgent stdout
-- `~/.config/sketchybar/logs/todoist-precache-stderr.log` - LaunchAgent stderr
-
-### Testing Commands
-
+### Step 1: Verify Date Logic
 ```bash
-# Meeting widget health check
-~/.config/sketchybar/helpers/meeting-health-check.sh
+# Check what year Krisp transcripts are from
+ls -la ~/.config/sketchybar/krisp-transcripts/*.json | head -5
 
-# Watch health in real-time
-~/.config/sketchybar/helpers/meeting-health-check.sh --watch
+# Look at downloaded_at timestamps - are they 2024 or 2025?
+cat ~/.config/sketchybar/krisp-transcripts/krisp-transcript-*.json | jq '.downloaded_at' | head -5
+```
 
-# Emergency stop all khal processes
-~/.config/sketchybar/helpers/meeting-health-check.sh --emergency
+The year wrapping logic in `parse_krisp_date()` is likely wrong:
+```python
+# Current code assumes if month > now.month, use previous year
+# But Nov 2024 meetings would appear as 2025 if run in Jan 2025!
+```
 
-# Manual Todoist sync
-bash ~/.config/sketchybar/helpers/todoist-precache.sh
+### Step 2: Debug Calendar Query
+Add logging to `query_calendar_events()` in `classify-meeting-unified.py`:
+```python
+def query_calendar_events(date_str):
+    print(f"[DEBUG] Querying khal for date: {date_str}", file=sys.stderr)
+    result = subprocess.run(
+        ['khal', 'list', date_str, '1d', '--format', '{start-time} | {title}'],
+        capture_output=True, text=True, timeout=30
+    )
+    print(f"[DEBUG] khal returned {result.returncode}", file=sys.stderr)
+    print(f"[DEBUG] Output: {result.stdout[:200]}", file=sys.stderr)
+```
 
-# Check Todoist cache
-cat ~/.cache/sketchybar/todoist_tasks_cache
+### Step 3: Test Real Meeting
+```bash
+# User confirmed Nov 3 had meetings
+# Test if we can match a specific one
+khal list 2024-11-03 1d --format '{start-time} | {title}'
 
-# Check LaunchAgent status
-launchctl list | grep "todoist-precache\|calendar-sync"
+# Then test classifier
+cd ~/.config/sketchybar
+venv/bin/python3 helpers/classify-meeting-unified.py \
+  --title "12:00 PM - Slack meeting November 3" \
+  --date "2024-11-03" \
+  --time "12:00 PM" 2>&1
+```
 
-# View logs
-tail -f ~/.config/sketchybar/logs/todoist-precache.log
-tail -f ~/.config/sketchybar/logs/calendar-sync.log
+### Step 4: Fix Time Tolerance
+Change from 30 minutes to 10 minutes in `classify-meeting-unified.py`:
+```python
+# Line ~152: Look for close time match (within 30 minutes)
+if diff <= 30:  # Change to: if diff <= 10:
+```
+
+### Step 5: Fix Pattern Extraction
+The "1on1 Thais Jeff" pattern should only extract first name:
+```python
+# Current line 198:
+r'1on1\s+(\w+)(?:\s+\w+)?',  # This captures "Thais" ✓
+
+# But need to filter out "Jeff" from participant field
+# Add check: if participant.lower() == 'jeff': continue
 ```
 
 ---
 
-## Git Commits Made (Session 2)
+## 5. Files That Need Work 📁
 
-**Commit 1: Meeting Widget Fixes**
-```
-Fix critical meeting widget fork bomb and enhance with failsafes
+**Primary**:
+- `classify-meeting-unified.py` (lines 87-165: calendar matching)
+- `krisp-create-queue-enhanced.py` (lines 44-95: date parsing)
 
-- Fixed 99% CPU issue (40+ runaway khal processes)
-- Added 5-layer failsafe system (locks, timeouts, rate limits)
-- Enhanced messages (work-focused, 1-hour cache)
-- Created health monitoring tool
-
-Files: meeting.sh, meeting-health-check.sh, generate-meeting-message.sh
-```
-
-**Commit 2: Todoist Enhancements**
-```
-Todoist enhancements and calendar dropdown fix (Story 3.2)
-
-- Show 25 tasks instead of 5
-- Priority-colored Unicode circles (P1/P2/P3/P4)
-- Removed external link buttons
-- Wider popup (80 char labels)
-- Optimized close timing
-- Meeting popup: today-only filter
-
-Files: todoist-precache.sh, todoist_popup.sh, meeting_popup.sh,
-       sketchybarrc-desktop, sketchybarrc-laptop
-```
-
-**Commit 3: Popup Alignment & Todoist Frequency** (NOT YET COMMITTED)
-```
-# Needs commit:
-- Popup alignment (meeting=left, todoist=right)
-- Todoist 30-second update interval
-```
+**Secondary**:
+- `meeting-prep.sh` (already updated, should work once classifier fixed)
+- `krisp-hourly-daemon.sh` (already updated, should work once classifier fixed)
 
 ---
 
-## Handoff Checklist
+## 6. Test Data Available 📊
 
-- [x] All code changes documented
-- [x] Next steps clearly prioritized
-- [x] Blockers identified
-- [x] Testing commands provided
-- [x] Cache file locations documented
-- [x] LaunchAgent installation path outlined
-- [ ] Documentation updates written (ready to copy-paste)
-- [ ] Final commit ready (alignment + frequency changes)
+```
+28 Krisp transcripts in ~/.config/sketchybar/krisp-transcripts/
+Queue file: ~/.cache/sketchybar/krisp-pending-downloads.json
+
+User calendar has events like:
+- Nov 3: MP Product Team Meeting at 11:00 AM
+- Nov 3: Mkt Headquarter at 12:00 PM
+- Nov 4: 1on1 Otávio Jeff
+
+Krisp captured:
+- Nov 3: Slack meetings at 10:45 AM, 11:02 AM, 12:00 PM
+- Nov 4: Discord meeting at 01:09 PM
+```
+
+**These SHOULD match but DON'T** - that's the bug.
 
 ---
 
-**Developer Notes:**
+## 7. Scripts to Remove (After Fix) 🗑️
 
-The meeting widget fork bomb was a critical bug that's now fully resolved with comprehensive failsafes. The system is stable and performing well.
+Once unified classifier is working:
+- `classify-meeting.py` - Old non-calendar version
+- `krisp-match-meetings.py` - Functionality now in unified script
+- `krisp-create-queue-from-transcripts.py` - Replaced by enhanced version
 
-All 5 Todoist enhancements requested by the user are complete and working beautifully. The popup now shows 25 tasks with colored priority circles, no clutter, wider labels, and instant close timing. Updates happen every 30 seconds which feels instant when checking off tasks.
+**Don't remove yet** - may need for reference during debugging.
 
-The main remaining work is administrative: integrating the Todoist LaunchAgent into the install script so new users get it automatically. This is straightforward - just mirror the existing calendar sync pattern.
+---
 
-User is very happy with the improvements. The meeting widget messages are direct and motivating ("Zero meetings. Ship it!"), and the Todoist popup finally matches the native Todoist experience.
+## 8. Key Insight 💡
 
-The GPT-4o message generation is built and ready if the user ever wants truly dynamic messages, but the static messages are working great so it's not a priority.
+User said: "ALL of my meetings in my calendar are +-10 minutes, I VERY RARELY miss a meeting."
 
-Story 3.2 is essentially complete from a functionality standpoint. Just needs the installation integration and documentation updates to close it out properly.
+**This means**:
+- Our 4/28 success rate is unacceptable (should be ~28/28)
+- The calendar matching logic is critically broken
+- Don't assume meetings are unscheduled - they're ALL scheduled
+- Fix the matcher, don't change the tolerance expectations
 
-— Nich
+---
+
+## 9. Warning ⚠️
+
+The "1on1 Thais Jeff" matches we found may be FALSE POSITIVES:
+- User says no Thais meeting on Friday
+- But we claimed to find one
+- Calendar query might be returning cached/old data
+- Or querying wrong date range entirely
+
+**Verify everything before trusting any output.**
+
+---
+
+*Handoff prepared by: John*
+*Status: Navigation fixed ✅, Classification broken ❌, needs calendar matching rewrite*
+*Next dev: Start with date verification - that's likely the root cause*
