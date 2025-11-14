@@ -147,6 +147,9 @@ def match_with_calendar(title, date, time_str=None):
     if not events:
         return None
 
+    # Initialize time_24h to None (may be set below if time_str provided)
+    time_24h = None
+
     # If we have a specific time, try to match it
     if time_str:
         # Convert to 24h format for comparison
@@ -305,8 +308,11 @@ def extract_team_from_title(title):
         # BI team
         (r'\bkpi\b|bi\s+meeting|reunião\s+de\s+kpi', 'BI'),
 
+        # SUPORTE team (Ops/Support team) - check before HR since "RH <> SUPORTE" should be SUPORTE
+        (r'suporte', 'Suporte'),
+
         # HR team
-        (r'\bhr\b|recruitment|rh\b|suporte|slackbot', 'Hr'),
+        (r'\bhr\b|recruitment|rh\b|slackbot', 'Hr'),
 
         # Marketing team
         (r'mkt\b|marketing|social\s+media|press|traffic\s+weekly', 'Marketing'),
@@ -392,7 +398,17 @@ def classify_from_calendar_title(title):
         result['confidence'] = 0.95
         return result
 
-    # Check for 1-on-1 patterns
+    # Check for team meetings FIRST (before 1-on-1) to catch cross-team meetings
+    # Example: "Weekly RH <> SUPORTE" should be team meeting, not 1-on-1
+    team_name = extract_team_from_title(title)
+    if team_name:
+        result['meeting_type'] = f'ipmedia_team_{team_name.lower()}'
+        result['company'] = 'IPMedia'
+        result['team'] = team_name
+        result['confidence'] = 0.85
+        return result
+
+    # Check for 1-on-1 patterns (AFTER team check)
     one_on_one_indicators = [
         r'1:1', r'1on1', r'1-on-1',
         r'<>', r'\s&\s'  # Separators indicating 1-on-1
@@ -419,15 +435,6 @@ def classify_from_calendar_title(title):
     if portfolio_company:
         result['meeting_type'] = f'co_{portfolio_company.lower()}_meeting'
         result['company'] = portfolio_company
-        result['confidence'] = 0.85
-        return result
-
-    # Check for team meetings
-    team_name = extract_team_from_title(title)
-    if team_name:
-        result['meeting_type'] = f'ipmedia_team_{team_name.lower()}'
-        result['company'] = 'IPMedia'
-        result['team'] = team_name
         result['confidence'] = 0.85
         return result
 

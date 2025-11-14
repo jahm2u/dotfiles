@@ -27,32 +27,87 @@ VENV_PYTHON = HELPERS_DIR.parent / "venv/bin/python3"
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
-def log(message, level="INFO"):
-    """Log message with timestamp"""
+def log(message, level="INFO", context=None, exc_info=None):
+    """
+    Enhanced logging with context and exception support (matching krisp-process-transcript.py).
+
+    Args:
+        message: Log message
+        level: Log level (INFO, WARN, ERROR, DEBUG)
+        context: Dict with contextual metadata (queue_pos, meeting_id, transcript, etc.)
+        exc_info: Exception object for full traceback logging
+    """
+    import traceback
+    import sys
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_line = f"[{timestamp}] [{level}] {message}"
-    print(log_line)
+
+    # Build context string
+    ctx_str = ""
+    if context:
+        ctx_items = [f"{k}={v}" for k, v in context.items()]
+        ctx_str = f" [{', '.join(ctx_items)}]"
+
+    log_line = f"[{timestamp}] [{level}]{ctx_str} {message}"
+
+    # Console output (INFO and WARN to stdout, ERROR to stderr)
+    if level in ["ERROR"]:
+        print(log_line, file=sys.stderr)
+    else:
+        print(log_line)
+
+    # File output with exception details
     with open(LOG_FILE, "a") as f:
         f.write(log_line + "\n")
+
+        # Log exception traceback to file only
+        if exc_info:
+            f.write(f"[{timestamp}] [ERROR] Exception: {type(exc_info).__name__}: {str(exc_info)}\n")
+            tb_lines = traceback.format_exception(type(exc_info), exc_info, exc_info.__traceback__)
+            for tb_line in tb_lines:
+                f.write(f"[{timestamp}] [ERROR] {tb_line}")
+                if not tb_line.endswith('\n'):
+                    f.write('\n')
 
 
 def load_pending_queue():
     """Load pending queue metadata"""
+    ctx = {"function": "load_pending_queue", "queue_file": str(PENDING_QUEUE_FILE)}
+
     if not PENDING_QUEUE_FILE.exists():
-        log("No pending queue file found", "ERROR")
+        log("Pending queue file not found", "ERROR", context=ctx)
         return []
 
-    with open(PENDING_QUEUE_FILE) as f:
-        data = json.load(f)
+    try:
+        log(f"Loading pending queue: {PENDING_QUEUE_FILE}", "DEBUG", context=ctx)
+        with open(PENDING_QUEUE_FILE) as f:
+            data = json.load(f)
 
-    return data.get('meetings', [])
+        meetings = data.get('meetings', [])
+        log(f"Loaded {len(meetings)} meetings from queue", "DEBUG", context=ctx)
+        return meetings
+
+    except json.JSONDecodeError as e:
+        log(f"Invalid JSON in pending queue file", "ERROR", exc_info=e, context=ctx)
+        return []
+    except Exception as e:
+        log(f"Failed to load pending queue", "ERROR", exc_info=e, context=ctx)
+        return []
 
 
 def find_downloaded_transcripts():
     """Find all downloaded transcript files"""
-    transcripts = list(TRANSCRIPTS_DIR.glob("krisp-transcript-*.txt"))
-    log(f"Found {len(transcripts)} downloaded transcripts")
-    return transcripts
+    ctx = {"function": "find_downloaded_transcripts", "transcripts_dir": str(TRANSCRIPTS_DIR)}
+
+    log(f"Scanning transcripts directory", "DEBUG", context=ctx)
+
+    try:
+        transcripts = list(TRANSCRIPTS_DIR.glob("krisp-transcript-*.txt"))
+        log(f"Found {len(transcripts)} downloaded transcripts", "INFO", context=ctx)
+        return transcripts
+    except Exception as e:
+        log(f"Failed to scan transcripts directory", "ERROR", exc_info=e, context=ctx)
+        return []
 
 
 def extract_meeting_id(transcript_path):
@@ -73,18 +128,25 @@ def build_processing_queue(transcripts, queue_metadata):
 
     Returns: List of dicts with transcript_path, meeting_id, date, title
     """
+    ctx = {"function": "build_processing_queue", "transcripts_count": len(transcripts), "metadata_count": len(queue_metadata)}
+
+    log(f"Building processing queue from {len(transcripts)} transcripts", "DEBUG", context=ctx)
+
     processing_queue = []
 
     # Create metadata lookup by meeting_id
     metadata_by_id = {m['id']: m for m in queue_metadata}
+    log(f"Created metadata lookup for {len(metadata_by_id)} meetings", "DEBUG", context=ctx)
 
+    skipped_count = 0
     for transcript_path in transcripts:
         meeting_id = extract_meeting_id(transcript_path)
 
         # Find metadata
         metadata = metadata_by_id.get(meeting_id)
         if not metadata:
-            log(f"No metadata found for {meeting_id}, skipping", "WARN")
+            skipped_count += 1
+            log(f"No metadata found for {meeting_id}, skipping", "WARN", context={"meeting_id": meeting_id, "transcript": str(transcript_path)})
             continue
 
         processing_queue.append({
@@ -98,6 +160,8 @@ def build_processing_queue(transcripts, queue_metadata):
     # Sort by date (oldest first)
     processing_queue.sort(key=lambda x: x['date'])
 
+    log(f"Built queue: {len(processing_queue)} meetings (skipped {skipped_count} without metadata)", "INFO", context=ctx)
+
     return processing_queue
 
 
@@ -107,6 +171,14 @@ def process_transcript(transcript_path, meeting_id):
 
     Returns: Dict with status, reason, and details
     """
+    ctx = {
+        "function": "process_transcript",
+        "meeting_id": meeting_id,
+        "transcript": transcript_path
+    }
+
+    log(f"Invoking krisp-process-transcript.py", "DEBUG", context=ctx)
+
     cmd = [
         str(VENV_PYTHON),
         str(HELPERS_DIR / "krisp-process-transcript.py"),
@@ -123,49 +195,64 @@ def process_transcript(transcript_path, meeting_id):
             timeout=180  # 3 minutes per transcript (includes AI processing)
         )
 
+        log(f"Process completed with exit code: {result.returncode}", "DEBUG", context=ctx)
+
         if result.returncode == 0:
             # Parse result
-            output = json.loads(result.stdout)
+            try:
+                output = json.loads(result.stdout)
+            except json.JSONDecodeError as e:
+                log(f"Invalid JSON from process: {result.stdout[:500]}", "ERROR", exc_info=e, context=ctx)
+                return {
+                    'status': 'failed',
+                    'reason': 'Invalid JSON output',
+                    'error': str(e)
+                }
+
             if output.get('success'):
+                action = output.get('action', 'Note updated')
+                log(f"✓ {action}", "INFO", context=ctx)
                 return {
                     'status': 'success',
-                    'action': 'Note updated',
+                    'action': action,
+                    'note_path': output.get('note_path', ''),
                     'details': output
                 }
             elif output.get('skipped'):
-                log(f"  Skipped (already processed or failed previously)", "INFO")
+                reason = output.get('reason', 'Already processed')
+                log(f"⊘ Skipped: {reason}", "INFO", context=ctx)
                 return {
                     'status': 'skipped',
-                    'reason': 'Already processed',
+                    'reason': reason,
                     'details': output
                 }
             else:
                 errors = ', '.join(output.get('errors', ['unknown']))
-                log(f"  Failed: {errors}", "ERROR")
+                log(f"✗ Failed: {errors}", "ERROR", context=ctx)
                 return {
                     'status': 'failed',
                     'reason': errors,
                     'details': output
                 }
         else:
-            log(f"  Process failed: {result.stderr}", "ERROR")
+            log(f"Process returned non-zero exit: {result.stderr[:500]}", "ERROR", context=ctx)
             return {
                 'status': 'failed',
                 'reason': 'Process error',
-                'error': result.stderr
+                'error': result.stderr[:500]
             }
 
     except subprocess.TimeoutExpired:
-        log(f"  Timeout processing transcript", "ERROR")
+        log(f"Process timed out (>180s)", "ERROR", context=ctx)
         return {
             'status': 'failed',
-            'reason': 'Timeout'
+            'reason': 'Timeout (>180s)'
         }
     except Exception as e:
-        log(f"  Error: {str(e)}", "ERROR")
+        log(f"Process failed unexpectedly", "ERROR", exc_info=e, context=ctx)
         return {
             'status': 'failed',
-            'reason': str(e)
+            'reason': f"Unexpected error: {str(e)}"
         }
 
 
@@ -219,8 +306,17 @@ def main():
     # Process transcripts
     stats = {'success': 0, 'failed': 0, 'skipped': 0, 'details': []}
 
+    log(f"Starting batch processing: {total} meetings", "INFO")
+
     for i, item in enumerate(processing_queue, 1):
-        log(f"\n[{i}/{total}] Processing: [{item['date']}] {item['title']}")
+        ctx = {
+            "queue_pos": f"{i}/{total}",
+            "meeting_id": item['meeting_id'],
+            "date": item['date'],
+            "title": item['title'][:50]  # Truncate for logging
+        }
+
+        log(f"Processing meeting: [{item['date']}] {item['title']}", "INFO", context=ctx)
 
         result = process_transcript(item['transcript_path'], item['meeting_id'])
 
@@ -237,22 +333,28 @@ def main():
             stats['success'] += 1
             detail['action'] = result.get('action', 'Note updated')
             detail['note_path'] = result.get('note_path', '')
-            log(f"  ✓ Success ({stats['success']}/{total})")
+            log(f"✓ Success: {detail['action']} ({stats['success']}/{total})", "INFO", context=ctx)
         elif result['status'] == 'skipped':
             stats['skipped'] += 1
             detail['reason'] = result.get('reason', 'Already processed')
-            log(f"  ⊘ Skipped ({stats['skipped']}/{total})")
+            log(f"⊘ Skipped: {detail['reason']} ({stats['skipped']}/{total})", "INFO", context=ctx)
         else:  # failed
             stats['failed'] += 1
             detail['reason'] = result.get('reason', 'Unknown error')
-            log(f"  ✗ Failed ({stats['failed']}/{total})")
+            log(f"✗ Failed: {detail['reason']} ({stats['failed']}/{total})", "ERROR", context=ctx)
 
         stats['details'].append(detail)
 
-    log(f"\n=== BATCH PROCESSING COMPLETE ===")
-    log(f"Success: {stats['success']}")
-    log(f"Failed: {stats['failed']}")
-    log(f"Skipped: {stats['skipped']}")
+    # Summary with context
+    summary_ctx = {
+        "total": total,
+        "success": stats['success'],
+        "failed": stats['failed'],
+        "skipped": stats['skipped']
+    }
+
+    log(f"=== BATCH PROCESSING COMPLETE ===", "INFO", context=summary_ctx)
+    log(f"Results: {stats['success']} succeeded, {stats['failed']} failed, {stats['skipped']} skipped", "INFO", context=summary_ctx)
 
     # Output JSON for programmatic use
     print(json.dumps(stats, indent=2))
