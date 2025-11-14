@@ -257,7 +257,11 @@ get_icon_blink_state() {
 update_display_from_cache() {
     # Check if we have cached event list
     if [[ ! -f "$EVENTS_LIST_CACHE" ]]; then
-        sketchybar --set "$NAME" icon="󰃭" label="Loading..." \
+        sketchybar --set "$NAME" \
+            icon="󰃭" \
+            icon.color="$WIDGET_ICON_COLOR" \
+            background.color="$BLUE" \
+            label="Loading..." \
         --set meeting.name label="Loading..."
         return 1
     fi
@@ -271,14 +275,22 @@ update_display_from_cache() {
     # Handle sync failures
     if [[ "$SYNC_STATUS" == "failed" ]] || [[ "$SYNC_STATUS" == "partial" ]]; then
         SYNC_TIME=$(get_sync_timestamp)
-        sketchybar --set "$NAME" icon="󰁡" label="Sync Failed ($SYNC_TIME)" \
+        sketchybar --set "$NAME" \
+            icon="󰁡" \
+            icon.color="$WIDGET_ICON_COLOR" \
+            background.color="$BLUE" \
+            label="Sync Failed ($SYNC_TIME)" \
         --set meeting.name label="Sync Failed ($SYNC_TIME)"
         return 0
     fi
 
     # Handle no calendar access
     if [[ "$EVENTS" =~ "No calendars" ]]; then
-        sketchybar --set "$NAME" icon="󰃭" label="No calendar access" \
+        sketchybar --set "$NAME" \
+            icon="󰃭" \
+            icon.color="$WIDGET_ICON_COLOR" \
+            background.color="$BLUE" \
+            label="No calendar access" \
         --set meeting.name label="No calendar access"
         return 0
     fi
@@ -286,7 +298,11 @@ update_display_from_cache() {
     # Handle empty event list
     if [[ -z "$EVENTS" ]] || [[ "$EVENTS" =~ "No events" ]]; then
         LABEL=$(get_random_message FREE_DAY_MESSAGES)
-        sketchybar --set "$NAME" icon="󰃭" label="$LABEL" \
+        sketchybar --set "$NAME" \
+            icon="󰃭" \
+            icon.color="$WIDGET_ICON_COLOR" \
+            background.color="$BLUE" \
+            label="$LABEL" \
         --set meeting.name label="$LABEL"
         return 0
     fi
@@ -330,7 +346,11 @@ update_display_from_cache() {
                 LABEL=$(get_random_message FREE_DAY_MESSAGES)
             fi
 
-            sketchybar --set "$NAME" icon="󰃭" label="$LABEL" \
+            sketchybar --set "$NAME" \
+                icon="󰃭" \
+                icon.color="$WIDGET_ICON_COLOR" \
+                background.color="$BLUE" \
+                label="$LABEL" \
             --set meeting.name label="$LABEL"
             return
         fi
@@ -397,7 +417,11 @@ update_display_from_cache() {
             LABEL=$(get_random_message FREE_DAY_MESSAGES)
         fi
 
-        sketchybar --set "$NAME" icon="󰃭" label="$LABEL" \
+        sketchybar --set "$NAME" \
+            icon="󰃭" \
+            icon.color="$WIDGET_ICON_COLOR" \
+            background.color="$BLUE" \
+            label="$LABEL" \
         --set meeting.name label="$LABEL"
     fi
 }
