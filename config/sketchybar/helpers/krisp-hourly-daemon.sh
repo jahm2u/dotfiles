@@ -224,9 +224,30 @@ main() {
                     continue
                 fi
 
-                # Format successful items
+                # Format successful items with Obsidian deep link
                 ACTION=$(echo "$detail" | jq -r '.action // "Note updated"')
-                LINE="  ✓ ${TITLE}"
+                NOTE_PATH=$(echo "$detail" | jq -r '.note_path // ""')
+
+                # Generate Obsidian deep link if note_path is available
+                if [ -n "$NOTE_PATH" ] && [ -n "${OBSIDIAN_VAULT_PATH:-}" ]; then
+                    # Extract vault name (last component of vault path)
+                    VAULT_NAME=$(basename "$OBSIDIAN_VAULT_PATH")
+
+                    # Get relative path from vault
+                    RELATIVE_PATH="${NOTE_PATH#$OBSIDIAN_VAULT_PATH/}"
+
+                    # URL encode the path (spaces to %20)
+                    ENCODED_PATH=$(echo "$RELATIVE_PATH" | sed 's/ /%20/g')
+
+                    # Create Obsidian URI
+                    OBSIDIAN_URI="obsidian://open?vault=${VAULT_NAME}&file=${ENCODED_PATH}"
+
+                    # Make title clickable
+                    LINE="  ✓ <a href=\"${OBSIDIAN_URI}\">${TITLE}</a>"
+                else
+                    LINE="  ✓ ${TITLE}"
+                fi
+
                 if [ -n "$DATE_TEXT" ]; then
                     LINE+=" (${DATE_TEXT})"
                 fi
@@ -307,6 +328,35 @@ $PERSON_NOT_FOUND_ERRORS
 
 <i>Create folders at:
 \$VAULT/Business/People/{Company}/{Person}/Meetings/</i>"
+        fi
+
+        # Show unclassified meetings with copy-pastable prompt
+        if [ "$BATCH_DETAILS" != "[]" ]; then
+            UNCLASSIFIED_MEETINGS=$(echo "$BATCH_DETAILS" | jq -r '.[] | select(.meeting_type == "unclassified") | .event_title // .title' 2>/dev/null)
+
+            if [ -n "$UNCLASSIFIED_MEETINGS" ]; then
+                # Build copy-pastable prompt
+                UNCLASSIFIED_LIST=$(echo "$UNCLASSIFIED_MEETINGS" | sed 's/^/  - /')
+                PROMPT="⚠️ <b>Unclassified Meetings Found:</b>
+
+The following meetings couldn't be automatically classified:
+$UNCLASSIFIED_LIST
+
+📋 <b>Copy &amp; paste this to classify them:</b>
+
+<code>Please add classification patterns for these meeting titles to classify-meeting-unified.py:
+$UNCLASSIFIED_MEETINGS
+
+For each meeting, tell me:
+1. Is it a 1on1, team meeting, portfolio company, or company-wide?
+2. If team meeting: which team?
+3. If portfolio company: which company?
+4. If 1on1: with whom?</code>"
+
+                MESSAGE+="
+
+$PROMPT"
+            fi
         fi
 
         # Add summary footer

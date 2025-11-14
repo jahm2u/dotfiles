@@ -419,9 +419,9 @@ def determine_save_path(classification: dict, person_folder: str, date: str, vau
         return os.path.join(meetings_dir, f"{date} {company} Weekly.md")
 
     elif "team_" in meeting_type:
-        # Team: Business/Teams/{Team}/Meetings/{date} {Team} Team Meeting.md
+        # Team: Business/IPMedia/Teams/{Team}/Meetings/{date} {Team} Team Meeting.md
         team_name = meeting_type.replace("ipmedia_team_", "").title()
-        meetings_dir = os.path.join(vault_path, "Business", "Teams", team_name, "Meetings")
+        meetings_dir = os.path.join(vault_path, "Business", "IPMedia", "Teams", team_name, "Meetings")
         os.makedirs(meetings_dir, exist_ok=True)
         return os.path.join(meetings_dir, f"{date} {team_name} Team Meeting.md")
 

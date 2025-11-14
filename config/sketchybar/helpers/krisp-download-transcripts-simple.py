@@ -513,19 +513,9 @@ def main():
                 log(f"✓ Transcript length: {len(transcript_text)} characters")
                 success_count += 1
 
-                # Mark as processed in cache to prevent re-downloading
-                if cache and meeting_id:
-                    cache_metadata = {
-                        "title": title,
-                        "downloaded_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        "transcript_path": str(transcript_path),
-                        "date": metadata.get('date') if meeting_id else None,
-                        "meeting_type": metadata.get('meeting_type') if meeting_id else None
-                    }
-                    if cache.add_processed_meeting(meeting_id, cache_metadata):
-                        log(f"✓ Marked meeting as processed in cache")
-                    else:
-                        log(f"⚠ Failed to update cache for meeting {meeting_id}", "WARN")
+                # Note: We don't mark as processed here - let krisp-process-transcript.py
+                # mark it as processed after successful AI analysis and note update
+                log(f"✓ Download complete, will be processed in batch phase")
             elif status == 'not_ready':
                 log(f"⏳ Transcript not ready yet, skipping...", "WARN")
                 not_ready_count += 1

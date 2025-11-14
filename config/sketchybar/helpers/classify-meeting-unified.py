@@ -164,16 +164,44 @@ def match_with_calendar(title, date, time_str=None):
                     return event
 
             # Look for close time match (within 15 minutes - meetings often start late)
+            # Collect all matches and prefer more important meetings
+            matches = []
             for event in events:
                 try:
                     event_time = datetime.strptime(event['start_time'], "%H:%M")
                     target_time = datetime.strptime(time_24h, "%H:%M")
                     diff = abs((event_time - target_time).total_seconds() / 60)
                     if diff <= 15:
-                        log(f"Close calendar match (±{int(diff)}min): {event['title']}", "INFO")
-                        return event
+                        matches.append((diff, event))
                 except:
                     continue
+
+            if matches:
+                # If multiple matches at same time, prefer by priority:
+                # 1. Internal Meeting / Board / Company-wide (highest priority)
+                # 2. 1on1s
+                # 3. Team meetings
+                # 4. Everything else
+                def event_priority(event_tuple):
+                    diff, event = event_tuple
+                    title_lower = event['title'].lower()
+
+                    # Priority 1: Company-wide meetings
+                    if any(kw in title_lower for kw in ['internal meeting', 'board meeting', 'company-wide', 'all hands', 'quarterly', 'monthly']):
+                        return (0, diff)  # Highest priority
+                    # Priority 2: 1on1s
+                    elif any(kw in title_lower for kw in ['1on1', '1:1', '<>']):
+                        return (1, diff)
+                    # Priority 3: Team meetings
+                    elif any(kw in title_lower for kw in ['team', 'meeting', 'weekly', 'sync']):
+                        return (2, diff)
+                    # Priority 4: Everything else
+                    else:
+                        return (3, diff)
+
+                best_match = min(matches, key=event_priority)
+                log(f"Close calendar match (±{int(best_match[0])}min): {best_match[1]['title']}", "INFO")
+                return best_match[1]
 
     # If no time match within 15 min, try relaxed matching (within 30 min)
     # but ONLY for events that also have platform hints
@@ -262,61 +290,157 @@ def extract_participant_from_title(title, user_names=['jeff', 'hamersly']):
     return None
 
 
+def extract_team_from_title(title):
+    """
+    Extract specific team name from meeting title.
+    Returns team name string or None.
+    """
+    title_lower = title.lower()
+
+    # Team-specific patterns (order matters - most specific first)
+    team_patterns = [
+        # Leadership team (Internal Meeting is company-wide, not team)
+        (r'headquarters?\s+meeting|(?<!internal\s)leadership', 'Leadership'),
+
+        # BI team
+        (r'\bkpi\b|bi\s+meeting|reunião\s+de\s+kpi', 'BI'),
+
+        # HR team
+        (r'\bhr\b|recruitment|rh\b|suporte|slackbot', 'Hr'),
+
+        # Marketing team
+        (r'mkt\b|marketing|social\s+media|press|traffic\s+weekly', 'Marketing'),
+
+        # Product team
+        (r'product\s+team|growth\s+squad|meumatch|seo|meu\s+patrocinio', 'Product'),
+
+        # Operations team
+        (r'ops\s+team|operations', 'Operations'),
+
+        # Development team
+        (r'development|dev\s+team|engineering', 'Development'),
+
+        # IT Infrastructure
+        (r'it[-\s]infrastructure|infrastructure', 'IT-Infrastructure'),
+
+        # Traffic team (though often maps to Marketing)
+        (r'traffic\s+(?!weekly)', 'Traffic'),
+    ]
+
+    for pattern, team_name in team_patterns:
+        if re.search(pattern, title_lower):
+            return team_name
+
+    return None
+
+
+def extract_portfolio_company(title):
+    """
+    Extract portfolio company code from meeting title.
+    Returns company code or None.
+    """
+    title_lower = title.lower()
+
+    # Portfolio company patterns
+    company_patterns = [
+        (r'\btp\b|thierry\s+paul|weekly\s+meeting\s+tp', 'TP'),
+        (r'excelsior|weekly\s+meeting\s+excelsior', 'Excelsior'),
+        (r'\bpd\b|best\s+meeting\s+ever', 'PD'),
+        (r'masstraffic|mt\s+weekly', 'MT'),
+        (r'gone.*(?:weekly|sync)(?!.*standup)', 'Gone'),  # Gone company meetings (not standup)
+        (r'\[dt\]|danniiboy|danniboy', 'DT'),
+        (r'\[co\]|cross[-\s]org', 'CO'),
+    ]
+
+    for pattern, company_code in company_patterns:
+        if re.search(pattern, title_lower):
+            return company_code
+
+    return None
+
+
 def classify_from_calendar_title(title):
     """
     Classify a meeting based on calendar title (more reliable than Krisp titles).
-    Returns dict with meeting_type, company, participant.
+    Returns dict with meeting_type, company, participant, team.
     """
     title_lower = title.lower()
     result = {
         'meeting_type': 'unknown',
         'company': None,
         'participant': None,
+        'team': None,
         'confidence': 0
     }
+
+    # EXCLUSION LIST: Skip non-meetings (lunch, breaks, focus time, etc.)
+    exclusion_patterns = [
+        r'\blunch\b', r'\bbreak\b', r'\bfocus time\b', r'\bblocked\b',
+        r'\bhold\b', r'\breserved\b', r'\bpersonal\b', r'\bOOO\b',
+        r'\bout of office\b', r'\bvacation\b', r'\bPTO\b'
+    ]
+    if any(re.search(pattern, title, re.IGNORECASE) for pattern in exclusion_patterns):
+        result['meeting_type'] = 'excluded'
+        result['confidence'] = 1.0
+        return result
+
+    # Check for Executive meetings (Ron meeting with special context loading)
+    if re.search(r'\bron\b.*\bweekly\b|\bweekly\b.*\bron\b', title, re.IGNORECASE):
+        result['meeting_type'] = 'ipmedia_executive'
+        result['company'] = 'IPMedia'
+        result['participant'] = 'Ron'
+        result['confidence'] = 0.95
+        return result
 
     # Check for 1-on-1 patterns
     one_on_one_indicators = [
         r'1:1', r'1on1', r'1-on-1',
         r'<>', r'\s&\s'  # Separators indicating 1-on-1
     ]
-
     is_one_on_one = any(re.search(pattern, title, re.IGNORECASE) for pattern in one_on_one_indicators)
 
     if is_one_on_one:
-        result['meeting_type'] = 'one-on-one'
+        result['meeting_type'] = 'ipmedia_1on1'
+        result['company'] = 'IPMedia'
         result['participant'] = extract_participant_from_title(title)
         result['confidence'] = 0.9 if result['participant'] else 0.5
+        return result
 
-    # If no 1:1 pattern, check for company meetings
-    if result['meeting_type'] == 'unknown':
-        company_patterns = [
-            (r'\[IPMedia\]', 'IPMedia'),
-            (r'IPMedia', 'IPMedia'),
-            (r'\[DT\]', 'DT'),
-            (r'\[MT\]', 'MT'),
-            (r'\[CO\]', 'CO'),
-            (r'All Hands', 'company'),
-            (r'Team Meeting', 'team'),
-            (r'Sprint', 'team'),
-            (r'Retro', 'team'),
-            (r'Planning', 'team')
-        ]
+    # Check for standup meetings
+    standup_patterns = [r'standup', r'stand-up', r'stand up', r'daily', r'scrum']
+    if any(re.search(pattern, title, re.IGNORECASE) for pattern in standup_patterns):
+        result['meeting_type'] = 'ipmedia_standup'
+        result['company'] = 'IPMedia'
+        result['confidence'] = 0.9
+        return result
 
-        for pattern, company in company_patterns:
-            if re.search(pattern, title, re.IGNORECASE):
-                result['company'] = company if company != 'company' and company != 'team' else 'IPMedia'
-                result['meeting_type'] = 'company' if company == 'company' else 'team'
-                result['confidence'] = 0.8
-                break
+    # Check for portfolio company meetings
+    portfolio_company = extract_portfolio_company(title)
+    if portfolio_company:
+        result['meeting_type'] = f'co_{portfolio_company.lower()}_meeting'
+        result['company'] = portfolio_company
+        result['confidence'] = 0.85
+        return result
 
-    # Extract participant if not already found
-    if not result['participant'] and result['meeting_type'] == 'one-on-one':
-        # Try to extract name before common words
-        name_match = re.search(r'^(\w+)\s+(?:1:1|1on1|meeting)', title, re.IGNORECASE)
-        if name_match:
-            result['participant'] = name_match.group(1)
+    # Check for team meetings
+    team_name = extract_team_from_title(title)
+    if team_name:
+        result['meeting_type'] = f'ipmedia_team_{team_name.lower()}'
+        result['company'] = 'IPMedia'
+        result['team'] = team_name
+        result['confidence'] = 0.85
+        return result
 
+    # Check for company-wide meetings
+    # Includes: All Hands, Company-Wide, Internal Meeting, Board Meetings, Quarterly/Monthly meetings
+    if re.search(r'all\s+hands|company(?:\s+wide)?|internal\s+meeting|board\s+meeting|quarterly|monthly|overview.*novembro', title, re.IGNORECASE):
+        result['meeting_type'] = 'ipmedia_company_wide'
+        result['company'] = 'IPMedia'
+        result['confidence'] = 0.8
+        return result
+
+    # If nothing matched, return unknown (will use unclassified folder)
+    result['confidence'] = 0
     return result
 
 

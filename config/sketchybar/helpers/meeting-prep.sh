@@ -171,9 +171,9 @@ determine_note_path() {
         echo "${OBSIDIAN_VAULT_PATH}/Business/CO/${COMPANY}/Meetings/${DATE} ${COMPANY} Weekly.md"
 
     elif [[ "$MEETING_TYPE" == *"team_"* ]]; then
-        # Team: Business/Teams/{Team}/Meetings/{date} {Team} Team Meeting.md
+        # Team: Business/IPMedia/Teams/{Team}/Meetings/{date} {Team} Team Meeting.md
         local TEAM_NAME=$(echo "$MEETING_TYPE" | sed 's/ipmedia_team_//g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')
-        echo "${OBSIDIAN_VAULT_PATH}/Business/Teams/${TEAM_NAME}/Meetings/${DATE} ${TEAM_NAME} Team Meeting.md"
+        echo "${OBSIDIAN_VAULT_PATH}/Business/IPMedia/Teams/${TEAM_NAME}/Meetings/${DATE} ${TEAM_NAME} Team Meeting.md"
 
     else
         # Default: {person_folder}/Meetings/{date} Meeting.md

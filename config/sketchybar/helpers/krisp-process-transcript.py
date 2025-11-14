@@ -69,16 +69,18 @@ def extract_speakers(transcript_path):
         with open(transcript_path, 'r') as f:
             content = f.read()
 
-        # Pattern: capture everything before ' | MM:SS'
-        pattern = r'^([^|]+) \| \d+:\d+$'
+        # Pattern: capture only the speaker name (letters/spaces) before ' | MM:SS'
+        # Don't allow newlines in the capture group to prevent matching previous text lines
+        pattern = r'^([A-Za-z\s]+) \| \d+:\d+$'
         matches = re.findall(pattern, content, re.MULTILINE)
 
         for speaker in matches:
             speaker = speaker.strip()
-            # Filter out generic labels and Jeff
-            if speaker not in ["Speaker 2", "Speaker 3", "Speaker 4", "Jeff Ipmedia", "Jeff Hamersly", "Jeff"]:
+            # Only filter out Jeff (keep generic Speaker labels to count participants)
+            if speaker not in ["Jeff Ipmedia", "Jeff Hamersly", "Jeff"]:
                 speakers.add(speaker)
 
+        # Return unique speakers as a list
         return list(speakers)
     except Exception as e:
         log(f"Error extracting speakers: {str(e)}", "WARN")
@@ -153,6 +155,11 @@ def process_transcript(transcript_path, meeting_id):
         "stages_completed": []
     }
 
+    # Initialize variables that will be used throughout
+    event_title = "Unknown"
+    event_date = None
+    meeting_type = "unknown"
+
     cache = load_cache_module()
 
     # Check if already processed
@@ -200,6 +207,10 @@ def process_transcript(transcript_path, meeting_id):
 
         log(f"Found metadata: {meeting_meta['title']}", "INFO")
 
+        # Extract date early for use in calendar matching and note naming
+        event_date = meeting_meta.get("date")
+        note_date = event_date  # Used for note filename creation
+
         # Stage 2: Match to calendar event (AC #1)
         log("Stage 1: Matching to calendar event...", "INFO")
 
@@ -241,8 +252,23 @@ def process_transcript(transcript_path, meeting_id):
         speakers = extract_speakers(transcript_path)
         log(f"Extracted speakers from transcript: {speakers}", "INFO")
 
-        # If we have a single speaker (likely 1on1), try participant-based matching
-        if len(speakers) == 1:
+        # FILTER: Skip empty or single-speaker transcripts (solo recordings, not meetings)
+        # Note: 1on1s will have 2+ speakers, so this only catches true solo recordings
+        if len(speakers) == 0:
+            log(f"Skipping empty transcript (no speakers detected)", "WARN")
+            cache.add_failed_match(
+                meeting_id,
+                "empty_transcript",
+                {"transcript_path": str(transcript_path)}
+            )
+            result["errors"].append("empty_transcript")
+            result["status"] = "skipped"
+            result["reason"] = "empty_transcript"
+            return result
+
+        # If we have multiple speakers, try participant-based matching
+        # Only if event_date is available (required for khal query)
+        if len(speakers) >= 1 and event_date:
             participant_events = search_calendar_by_participant(speakers[0], event_date)
 
             if participant_events:
@@ -292,48 +318,37 @@ def process_transcript(transcript_path, meeting_id):
         # Extract event data from match result
         matched_event = calendar_match.get("event", {})
         event_title = matched_event.get("title", "Unknown")
-        # Use the date from the Krisp metadata
-        event_date = meeting_meta.get("date")
+        # event_date already extracted earlier (line 209)
 
-        # Stage 3: Classify meeting (AC #2)
-        log("Stage 2: Classifying meeting type...", "INFO")
-        classify_cmd = [
-            str(VENV_PYTHON),
-            str(HELPERS_DIR / "classify-meeting.py"),
-            "--title", event_title,
-            "--date", event_date,
-            "--participants", ""  # No participant data from khal
-        ]
+        # Stage 3: Use classification from calendar match (AC #2)
+        # The unified classifier already classified the meeting in Stage 1
+        log("Stage 2: Using classification from calendar match...", "INFO")
+        classification = {
+            "meeting_type": calendar_match.get("meeting_type", "unknown"),
+            "company": calendar_match.get("company"),
+            "participant": calendar_match.get("participant"),
+            "confidence": calendar_match.get("confidence", 0)
+        }
+        log(f"Classification: {classification['meeting_type']} (company: {classification['company']}, participant: {classification['participant']})", "INFO")
 
-        try:
-            classify_result = subprocess.run(
-                classify_cmd,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-
-            if classify_result.returncode != 0:
-                raise Exception(f"Classification failed: {classify_result.stderr}")
-
-            classification = json.loads(classify_result.stdout)
-            result["stages_completed"].append("classification")
-
-        except Exception as e:
-            # AC #8: Classification failure → skip with error log
-            log(f"Classification error: {str(e)}", "ERROR")
+        # FILTER: Skip excluded meetings (lunch, breaks, etc.)
+        if classification['meeting_type'] == 'excluded':
+            log(f"Skipping excluded meeting: {event_title}", "INFO")
             cache.add_failed_match(
                 meeting_id,
-                "classification_failed",
-                {"transcript_path": str(transcript_path), "error": str(e)}
+                "excluded_meeting",
+                {"transcript_path": str(transcript_path), "event_title": event_title}
             )
-            result["errors"].append(f"classification_failed: {str(e)}")
+            result["status"] = "skipped"
+            result["reason"] = "excluded_meeting"
             return result
+
+        result["stages_completed"].append("classification")
 
         # Stage 4: Determine folder and note path based on meeting type
         log("Stage 3: Determining meeting folder...", "INFO")
         meeting_type = classification.get("meeting_type", "unknown")
-        note_date = event_date  # Use event_date extracted earlier from calendar match
+        note_date = event_date if event_date else meeting_meta.get("date")  # Use event_date or fallback to meeting_meta
 
         # Get vault path from env
         vault_path = Path(os.getenv("OBSIDIAN_VAULT_PATH", ""))
@@ -386,9 +401,9 @@ def process_transcript(transcript_path, meeting_id):
                 return result
 
         elif meeting_type.startswith("ipmedia_team_"):
-            # Team meeting: Business/Teams/{Team}/Meetings/
+            # Team meeting: Business/IPMedia/Teams/{Team}/Meetings/
             team_name = meeting_type.replace("ipmedia_team_", "").title()
-            meetings_folder = vault_path / "Business" / "Teams" / team_name / "Meetings"
+            meetings_folder = vault_path / "Business" / "IPMedia" / "Teams" / team_name / "Meetings"
             meetings_folder.mkdir(parents=True, exist_ok=True)
 
             # Note naming: "YYYY-MM-DD {Team} Team Meeting.md"
@@ -418,8 +433,8 @@ def process_transcript(transcript_path, meeting_id):
             log(f"Using company folder: {meetings_folder}", "INFO")
 
         elif meeting_type == "ipmedia_standup":
-            # Standup: Business/Teams/Development/Meetings/
-            meetings_folder = vault_path / "Business" / "Teams" / "Development" / "Meetings"
+            # Standup: Business/IPMedia/Teams/Development/Meetings/
+            meetings_folder = vault_path / "Business" / "IPMedia" / "Teams" / "Development" / "Meetings"
             meetings_folder.mkdir(parents=True, exist_ok=True)
 
             # Note naming: "YYYY-MM-DD Standup.md"
@@ -428,13 +443,17 @@ def process_transcript(transcript_path, meeting_id):
             log(f"Using standup folder: {meetings_folder}", "INFO")
 
         else:
-            # Unknown meeting type
-            log(f"Unknown meeting type: {meeting_type}", "ERROR")
-            cache.add_failed_match(meeting_id, "unknown_meeting_type", {"transcript_path": str(transcript_path), "meeting_type": meeting_type})
-            result["errors"].append(f"unknown_meeting_type: {meeting_type}")
-            result["status"] = "failed"
-            result["reason"] = "Unknown error"
-            return result
+            # Unknown meeting type - use Unclassified folder (graceful degradation)
+            log(f"Unknown meeting type '{meeting_type}', using Unclassified folder", "WARN")
+            meetings_folder = vault_path / "Business" / "Meetings" / "Unclassified"
+            meetings_folder.mkdir(parents=True, exist_ok=True)
+
+            # Use calendar event title for filename (sanitize)
+            safe_title = event_title.replace("/", "-").replace(":", "")[:60]
+            note_filename = f"{note_date} {safe_title}.md"
+            note_path = meetings_folder / note_filename
+            meeting_type = "unclassified"  # Mark for special Telegram notification
+            log(f"Using unclassified folder: {meetings_folder}", "INFO")
 
         result["stages_completed"].append("folder_determined")
 
@@ -449,12 +468,13 @@ def process_transcript(transcript_path, meeting_id):
             meeting_identifier = "Standup"
         elif meeting_type.startswith("co_"):
             meeting_identifier = meeting_type.replace("co_", "").replace("_meeting", "").upper()
+        elif meeting_type == "unclassified":
+            meeting_identifier = "Unclassified"
         else:
             meeting_identifier = "Unknown"
 
         # Stage 5: Find or create meeting note
         log(f"Stage 4: Locating meeting note: {note_filename}", "INFO")
-        note_date = event_date  # Use event_date extracted earlier from calendar match
 
         # Track if note was created (for telegram notification details)
         note_was_created = not note_path.exists()
@@ -579,7 +599,7 @@ def process_transcript(transcript_path, meeting_id):
 ### ✅ Action Items
 
 """
-            else:
+            elif meeting_type.startswith("co_"):
                 # Portfolio company template
                 company_code = meeting_type.replace("co_", "").replace("_meeting", "").upper()
                 template = f"""# {note_date} {company_code} Meeting
@@ -587,6 +607,28 @@ def process_transcript(transcript_path, meeting_id):
 **Date:** {note_date}
 **Company:** {company_code}
 **Meeting Type:** Portfolio Company Meeting
+
+## 📝 Meeting Summary
+*Auto-generated from transcript analysis*
+
+### 🎯 Key Discussion Points
+
+### ✅ Action Items
+
+### 📊 Updates & Metrics
+
+### 🔗 Related Context
+
+"""
+            else:
+                # Unclassified meeting template
+                template = f"""# {note_date} {event_title}
+
+**Date:** {note_date}
+**Meeting Type:** Unclassified
+**Original Title:** {event_title}
+
+⚠️ **Note:** This meeting was not automatically classified. Please review and add proper classification patterns.
 
 ## 📝 Meeting Summary
 *Auto-generated from transcript analysis*
@@ -621,10 +663,10 @@ def process_transcript(transcript_path, meeting_id):
             str(HELPERS_DIR / "krisp-analyze-transcript.py"),
             "--transcript", str(transcript_path),
             "--note", str(note_path),
-            "--person", meeting_identifier,
-            "--company", classification.get("company", "Unknown"),
-            "--meeting-type", classification.get("meeting_type", "1on1"),
-            "--date", note_date,
+            "--person", meeting_identifier or "Unknown",
+            "--company", classification.get("company") or "Unknown",
+            "--meeting-type", classification.get("meeting_type") or "1on1",
+            "--date", note_date or "Unknown",
             "--json"
         ]
 
@@ -754,6 +796,9 @@ def process_transcript(transcript_path, meeting_id):
         note_filename = note_path.name
         action_verb = "Created" if note_was_created else "Updated"
         result["action"] = f"{action_verb} {note_filename}"
+        result["meeting_type"] = meeting_type  # For unclassified detection in Telegram notification
+        result["event_title"] = event_title  # Original calendar title for prompt
+        result["note_path"] = str(note_path)  # For Obsidian deep link in Telegram
 
         log(f"✓ Successfully processed meeting {meeting_id}", "INFO")
         return result
@@ -816,7 +861,8 @@ def main():
             print(f"  Errors: {', '.join(result['errors'])}")
             print(f"  Completed stages: {', '.join(result['stages_completed'])}")
 
-    sys.exit(0 if result.get("success") else 1)
+    # Exit with 0 for success OR skipped (skipped is not an error)
+    sys.exit(0 if (result.get("success") or result.get("skipped")) else 1)
 
 
 if __name__ == '__main__':

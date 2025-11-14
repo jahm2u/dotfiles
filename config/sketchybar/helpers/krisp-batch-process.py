@@ -236,6 +236,7 @@ def main():
         if result['status'] == 'success':
             stats['success'] += 1
             detail['action'] = result.get('action', 'Note updated')
+            detail['note_path'] = result.get('note_path', '')
             log(f"  ✓ Success ({stats['success']}/{total})")
         elif result['status'] == 'skipped':
             stats['skipped'] += 1
