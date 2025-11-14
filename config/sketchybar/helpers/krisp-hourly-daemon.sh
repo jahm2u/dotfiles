@@ -43,9 +43,17 @@ send_telegram() {
     fi
 
     log "INFO" "Sending Telegram notification..."
+
+    # Build JSON payload with proper escaping using jq
+    local payload
+    payload=$(jq -n \
+        --arg chat_id "${TELEGRAM_CHAT_ID}" \
+        --arg text "$message" \
+        '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
+
     if curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
         -H "Content-Type: application/json" \
-        -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"$message\", \"parse_mode\": \"HTML\"}" \
+        -d "$payload" \
         >/dev/null 2>&1; then
         log "INFO" "✓ Telegram notification sent"
     else
