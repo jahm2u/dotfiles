@@ -104,6 +104,27 @@ def build_post_meeting_content(analysis, transcript_rel_path, metadata):
         context = '\n'.join(f"- {link}" for link in analysis['related_context'])
         content['related_context'] = separator + context
 
+    # Executive-specific sections
+    if analysis.get('key_insights'):
+        insights = '\n'.join(f"- {insight}" for insight in analysis['key_insights'])
+        content['key_insights'] = separator + insights
+
+    if analysis.get('decisions'):
+        decisions = '\n'.join(f"- {decision}" for decision in analysis['decisions'])
+        content['decisions'] = separator + decisions
+
+    if analysis.get('blockers'):
+        blockers = '\n'.join(f"- {blocker}" for blocker in analysis['blockers'])
+        content['blockers'] = separator + blockers
+
+    if analysis.get('growth_development'):
+        growth = '\n'.join(f"- {item}" for item in analysis['growth_development'])
+        content['growth_development'] = separator + growth
+
+    if analysis.get('business_impact'):
+        impact = '\n'.join(f"- {item}" for item in analysis['business_impact'])
+        content['business_impact'] = separator + impact
+
     # Transcript reference (goes at end of note, not in a section)
     if transcript_rel_path:
         duration = metadata.get('meeting_duration', 'Unknown')
@@ -146,6 +167,31 @@ def fill_post_meeting_sections(note_content, formatted_content):
             'pattern': r'(### Action Items)\s*\n((?:(?!^###).)*)',
             'replacement': formatted_content.get('action_items', ''),
             'key': 'action_items'
+        },
+        {
+            'pattern': r'(### Key Insights & Quotes)\s*\n((?:(?!^###).)*)',
+            'replacement': formatted_content.get('key_insights', ''),
+            'key': 'key_insights'
+        },
+        {
+            'pattern': r'(### Decisions Made)\s*\n((?:(?!^###).)*)',
+            'replacement': formatted_content.get('decisions', ''),
+            'key': 'decisions'
+        },
+        {
+            'pattern': r'(### Blockers Identified)\s*\n((?:(?!^###).)*)',
+            'replacement': formatted_content.get('blockers', ''),
+            'key': 'blockers'
+        },
+        {
+            'pattern': r'(### Growth & Development)\s*\n((?:(?!^###).)*)',
+            'replacement': formatted_content.get('growth_development', ''),
+            'key': 'growth_development'
+        },
+        {
+            'pattern': r'(### Business Impact)\s*\n((?:(?!^###).)*)',
+            'replacement': formatted_content.get('business_impact', ''),
+            'key': 'business_impact'
         },
         {
             'pattern': r'(### Related Documents)\s*\n((?:(?!^###).)*)',

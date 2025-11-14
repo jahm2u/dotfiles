@@ -74,8 +74,66 @@ def analyze_transcript_with_note(transcript_path, note_path, meeting_context, ma
         log(f"Failed to read note: {str(e)}", "ERROR")
         return None
 
-    # Build AI prompt
-    prompt = f"""You are analyzing a meeting transcript to fill out the post-meeting sections of a meeting note.
+    # Build AI prompt - different for executive meetings
+    is_executive = meeting_context.get('meeting_type') == 'ipmedia_executive'
+
+    if is_executive:
+        # Enhanced prompt for Ron/executive meetings
+        prompt = f"""You are analyzing an executive 1on1 meeting transcript between a CEO (Ron) and CTO (Jeff Hamersly).
+
+**Meeting Context:**
+- CEO: {meeting_context['person_name']}
+- CTO: Jeff Hamersly
+- Company: {meeting_context['company']}
+- Date: {meeting_context['date']}
+
+**Existing Meeting Note:**
+```
+{note_text}
+```
+
+**Meeting Transcript:**
+```
+{transcript_text}
+```
+
+**Instructions:**
+This is a strategic executive meeting. Fill out ALL the post-meeting sections comprehensively based on the transcript:
+
+1. **Discussion Highlights** - Extract 5-8 key points covering all major topics discussed
+2. **Action Items** - All specific tasks with owners (use [[PersonName]] format)
+3. **Key Insights & Quotes** - 3-5 significant insights or memorable quotes from the discussion
+4. **Decisions Made** - Clear decisions reached during the meeting
+5. **Blockers Identified** - Any obstacles, challenges, or issues raised
+6. **Growth & Development** - Topics related to team growth, hiring, development
+7. **Business Impact** - Strategic business implications, metrics, or outcomes discussed
+8. **Topics to Review Next Time** - 3-5 follow-up topics for next meeting
+9. **Related Context** - Obsidian wikilinks to projects/people mentioned
+
+Output ONLY a JSON object with these fields:
+{{
+  "discussion_highlights": ["point 1 covering topic A", "point 2 covering topic B", "..."],
+  "action_items": {{
+    "[[{meeting_context['person_name']}]]": ["task 1", "task 2"],
+    "[[Jeff Hamersly]]": ["task 1"]
+  }},
+  "key_insights": ["insight 1", "quote: '...'", "..."],
+  "decisions": ["decision 1", "decision 2"],
+  "blockers": ["blocker 1 with context", "blocker 2"],
+  "growth_development": ["hiring for X role", "team Y needs Z"],
+  "business_impact": ["metric X changed", "strategic implication Y"],
+  "topics_next_time": ["topic 1", "topic 2", "topic 3"],
+  "related_context": ["[[Project/Name]]", "[[Team/Name]]"]
+}}
+
+IMPORTANT:
+- Cover ALL topics from the transcript, not just a few
+- Extract specific details and context for each item
+- Avoid repetition - each point should cover a distinct topic
+- Be comprehensive - this is an important strategic meeting"""
+    else:
+        # Standard prompt for regular 1on1s
+        prompt = f"""You are analyzing a meeting transcript to fill out the post-meeting sections of a meeting note.
 
 **Meeting Context:**
 - Participants: {meeting_context['person_name']}, Jeff Hamersly
@@ -123,6 +181,9 @@ Be specific and actionable. Extract actual commitments from the transcript."""
 
             log(f"Calling OpenAI API (attempt {attempt + 1}/{max_retries})...")
 
+            # Executive meetings need more tokens for comprehensive analysis
+            max_tokens = 3000 if is_executive else 1500
+
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -130,7 +191,7 @@ Be specific and actionable. Extract actual commitments from the transcript."""
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
-                max_completion_tokens=1500,
+                max_completion_tokens=max_tokens,
                 timeout=timeout
             )
 
@@ -146,8 +207,13 @@ Be specific and actionable. Extract actual commitments from the transcript."""
 
             analysis = json.loads(content)
 
-            # Validate structure
-            required_fields = ['discussion_highlights', 'action_items', 'topics_next_time']
+            # Validate structure based on meeting type
+            if is_executive:
+                required_fields = ['discussion_highlights', 'action_items', 'key_insights',
+                                 'decisions', 'blockers', 'growth_development', 'business_impact', 'topics_next_time']
+            else:
+                required_fields = ['discussion_highlights', 'action_items', 'topics_next_time']
+
             if not all(field in analysis for field in required_fields):
                 raise ValueError(f"Missing required fields in analysis: {required_fields}")
 
