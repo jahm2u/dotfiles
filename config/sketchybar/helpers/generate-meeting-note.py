@@ -103,7 +103,7 @@ def get_template_path(meeting_type: str, vault_path: str, person_folder: str = N
     if "co_" in meeting_type and "_meeting" in meeting_type:
         template_name = "company-meeting-template.md"
     elif "team_" in meeting_type:
-        template_name = "team-meeting-template.md"
+        template_name = "meeting-team-template.md"  # Fixed: actual filename in vault
 
     # Try multiple template locations
     template_locations = [
@@ -479,10 +479,11 @@ def main():
         person_config = load_meeting_config(args.person_folder)
 
         # Check if cross-meeting context is needed
-        # Sources: template metadata or person config
+        # Sources: template metadata, person config, or executive meeting type
         needs_cross_context = (
             template_metadata.get("requires_cross_context", False) or
-            person_config.get("use_cross_meeting_context", False)
+            person_config.get("use_cross_meeting_context", False) or
+            classification.get("meeting_type") == "ipmedia_executive"  # Auto-enable for executive meetings
         )
 
         cross_context = ""
@@ -503,6 +504,8 @@ def main():
             from datetime import timedelta
 
             # Inline implementation (copy of the function from analyze-meeting-history.py)
+            # This dynamically discovers ALL person folders within the scope (e.g., IPMedia)
+            # and pulls their recent meetings - no hardcoded team list needed!
             def get_cross_meeting_context_inline(vault_path_arg, scope, lookback_days_arg):
                 cutoff_date = datetime.now() - timedelta(days=lookback_days_arg)
                 cutoff_str = cutoff_date.strftime("%Y-%m-%d")
@@ -582,6 +585,10 @@ def main():
         note_content = note_content.replace("{{participant}}", participant)
         note_content = note_content.replace("{{company}}", classification.get("company", ""))
         note_content = note_content.replace("{{next_meeting}}", next_meeting)
+
+        # Add previous meeting date from continuity
+        previous_meeting = continuity.get("meeting_patterns", {}).get("last_meeting_date", "")
+        note_content = note_content.replace("{{previous_meeting}}", previous_meeting or "No previous meeting")
 
         # Replace prep sections (ensure all values are strings)
         def ensure_string(value):
