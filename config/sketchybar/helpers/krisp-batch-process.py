@@ -96,13 +96,33 @@ def load_pending_queue():
 
 
 def find_downloaded_transcripts():
-    """Find all downloaded transcript files"""
+    """
+    Find all downloaded transcript files.
+    Supports both old and new naming conventions:
+    - Old: krisp-transcript-{meeting_id}.txt
+    - New: {date}-{sanitized-title}-{meeting_id}.txt
+    """
     ctx = {"function": "find_downloaded_transcripts", "transcripts_dir": str(TRANSCRIPTS_DIR)}
 
     log(f"Scanning transcripts directory", "DEBUG", context=ctx)
 
     try:
-        transcripts = list(TRANSCRIPTS_DIR.glob("krisp-transcript-*.txt"))
+        # Find all .txt files that have a corresponding .json metadata file
+        all_txt_files = list(TRANSCRIPTS_DIR.glob("*.txt"))
+        transcripts = []
+
+        for txt_file in all_txt_files:
+            # Check for corresponding JSON metadata file
+            json_file = txt_file.with_suffix('.json')
+            if json_file.exists():
+                transcripts.append(txt_file)
+
+        # Also include old-format files without JSON (for backwards compatibility)
+        old_format = list(TRANSCRIPTS_DIR.glob("krisp-transcript-*.txt"))
+        for old_file in old_format:
+            if old_file not in transcripts:
+                transcripts.append(old_file)
+
         log(f"Found {len(transcripts)} downloaded transcripts", "INFO", context=ctx)
         return transcripts
     except Exception as e:
@@ -111,16 +131,42 @@ def find_downloaded_transcripts():
 
 
 def extract_meeting_id(transcript_path):
-    """Extract meeting ID from transcript filename"""
-    # Format: krisp-transcript-{meeting_id}.txt
-    filename = transcript_path.name
-    meeting_id = filename.replace("krisp-transcript-", "").replace(".txt", "")
-    return meeting_id
+    """
+    Extract meeting ID from transcript filename.
+    Supports both old and new naming conventions:
+    - Old: krisp-transcript-{meeting_id}.txt → {meeting_id}
+    - New: {date}-{sanitized-title}-{meeting_id}.txt → {meeting_id}
+    """
+    import re
+
+    filename = transcript_path.stem  # filename without extension
+
+    # Old format: krisp-transcript-{meeting_id}
+    if filename.startswith("krisp-transcript-"):
+        return filename.replace("krisp-transcript-", "")
+
+    # New format: {date}-{title}-{meeting_id}
+    # Meeting ID is a 32-char hex string at the end
+    match = re.search(r'-([0-9a-f]{32})$', filename)
+    if match:
+        return match.group(1)
+
+    # Fallback: try to find any 32-char hex string
+    match = re.search(r'([0-9a-f]{32})', filename)
+    if match:
+        return match.group(1)
+
+    # Last resort: use full filename as ID
+    return filename
 
 
 def build_processing_queue(transcripts, queue_metadata):
     """
     Build processing queue sorted by date (oldest first).
+
+    Priority for metadata:
+    1. JSON companion file (source of truth for new format)
+    2. Pending queue file (fallback for old format)
 
     Args:
         transcripts: List of transcript file paths
@@ -134,33 +180,55 @@ def build_processing_queue(transcripts, queue_metadata):
 
     processing_queue = []
 
-    # Create metadata lookup by meeting_id
+    # Create metadata lookup by meeting_id (fallback)
     metadata_by_id = {m['id']: m for m in queue_metadata}
     log(f"Created metadata lookup for {len(metadata_by_id)} meetings", "DEBUG", context=ctx)
 
     skipped_count = 0
+    json_metadata_count = 0
+
     for transcript_path in transcripts:
         meeting_id = extract_meeting_id(transcript_path)
 
-        # Find metadata
-        metadata = metadata_by_id.get(meeting_id)
+        # Priority 1: Try JSON companion file (source of truth)
+        json_path = transcript_path.with_suffix('.json')
+        metadata = None
+
+        if json_path.exists():
+            try:
+                with open(json_path) as f:
+                    metadata = json.load(f)
+                json_metadata_count += 1
+                log(f"Using JSON metadata for {meeting_id}", "DEBUG", context={"meeting_id": meeting_id})
+            except Exception as e:
+                log(f"Failed to read JSON metadata: {e}", "WARN", context={"meeting_id": meeting_id})
+
+        # Priority 2: Fallback to pending queue
+        if not metadata:
+            metadata = metadata_by_id.get(meeting_id)
+
         if not metadata:
             skipped_count += 1
             log(f"No metadata found for {meeting_id}, skipping", "WARN", context={"meeting_id": meeting_id, "transcript": str(transcript_path)})
             continue
 
+        # Use calendar_title if available (resolved name), else original title
+        display_title = metadata.get('calendar_title') or metadata.get('title', 'Unknown')
+
         processing_queue.append({
             'transcript_path': str(transcript_path),
             'meeting_id': meeting_id,
             'date': metadata.get('date') or '9999-12-31',  # Sort unknowns last
-            'title': metadata.get('title', 'Unknown'),
-            'date_text': metadata.get('date_text', 'Unknown')
+            'title': display_title,
+            'original_title': metadata.get('title', 'Unknown'),
+            'meeting_type': metadata.get('meeting_type', 'unknown'),
+            'date_text': metadata.get('date_text', metadata.get('date', 'Unknown'))
         })
 
     # Sort by date (oldest first)
     processing_queue.sort(key=lambda x: x['date'])
 
-    log(f"Built queue: {len(processing_queue)} meetings (skipped {skipped_count} without metadata)", "INFO", context=ctx)
+    log(f"Built queue: {len(processing_queue)} meetings ({json_metadata_count} from JSON, skipped {skipped_count} without metadata)", "INFO", context=ctx)
 
     return processing_queue
 

@@ -100,9 +100,10 @@ def extract_speakers(transcript_path):
 
         log(f"Transcript size: {len(content)} bytes", "DEBUG", context=ctx)
 
-        # Pattern: capture only the speaker name (letters/spaces) before ' | MM:SS'
+        # Pattern: capture speaker name (letters/numbers/spaces) before ' | MM:SS'
+        # Include numbers to match "Speaker 1", "Speaker 2" generic labels from Krisp
         # Don't allow newlines in the capture group to prevent matching previous text lines
-        pattern = r'^([A-Za-z\s]+) \| \d+:\d+$'
+        pattern = r'^([A-Za-z0-9\s]+) \| \d+:\d+$'
         matches = re.findall(pattern, content, re.MULTILINE)
 
         log(f"Found {len(matches)} speaker lines in transcript", "DEBUG", context=ctx)
@@ -253,28 +254,55 @@ def process_transcript(transcript_path, meeting_id):
         return result
 
     try:
-        # Stage 1: Load meeting metadata from pending downloads
+        # Stage 1: Load meeting metadata
+        # Priority: JSON companion file > pending-downloads.json
         log(f"Stage 1: Loading meeting metadata", "INFO", context=ctx)
 
-        # Load metadata from krisp-pending-downloads.json
-        pending_file = Path.home() / ".cache/sketchybar/krisp-pending-downloads.json"
-        if not pending_file.exists():
-            log(f"Pending downloads file not found at {pending_file}", "ERROR", context=ctx)
-            cache.add_failed_match(meeting_id, "metadata_not_found", {"transcript_path": str(transcript_path)})
-            result["errors"].append("metadata_not_found")
-            result["status"] = "failed"
-            result["reason"] = "metadata_not_found"
-            return result
+        meeting_meta = None
+        json_source = None
 
-        log(f"Reading pending downloads from {pending_file}", "DEBUG", context=ctx)
+        # Priority 1: Try JSON companion file (source of truth for new naming convention)
+        json_companion = transcript_path.with_suffix('.json')
+        if json_companion.exists():
+            try:
+                log(f"Found JSON companion file: {json_companion}", "DEBUG", context=ctx)
+                with open(json_companion, 'r') as f:
+                    meeting_meta = json.load(f)
+                # Normalize field names (companion uses 'meeting_id', pending uses 'id')
+                if 'meeting_id' in meeting_meta and 'id' not in meeting_meta:
+                    meeting_meta['id'] = meeting_meta['meeting_id']
+                json_source = "json_companion"
+                log(f"✓ Loaded metadata from JSON companion", "INFO", context=ctx)
+            except Exception as e:
+                log(f"Failed to read JSON companion: {e}", "WARN", context=ctx)
 
-        with open(pending_file, 'r') as f:
-            pending_data = json.load(f)
-
-        # Find meeting metadata by ID
-        meeting_meta = next((m for m in pending_data.get('meetings', []) if m['id'] == meeting_id), None)
+        # Priority 2: Fallback to pending-downloads.json
         if not meeting_meta:
-            log(f"Meeting metadata not found in pending downloads", "ERROR", context=ctx)
+            pending_file = Path.home() / ".cache/sketchybar/krisp-pending-downloads.json"
+            log(f"Looking for pending downloads file: {pending_file}", "DEBUG", context=ctx)
+
+            if not pending_file.exists():
+                log(f"Pending downloads file not found at {pending_file}", "ERROR", context=ctx)
+                cache.add_failed_match(meeting_id, "metadata_not_found", {"transcript_path": str(transcript_path)})
+                result["errors"].append("metadata_not_found")
+                result["status"] = "failed"
+                result["reason"] = "metadata_not_found"
+                return result
+
+            log(f"Reading pending downloads from {pending_file} ({os.path.getsize(pending_file)} bytes)", "DEBUG", context=ctx)
+
+            with open(pending_file, 'r') as f:
+                pending_data = json.load(f)
+
+            total_meetings = len(pending_data.get('meetings', []))
+            log(f"Loaded pending downloads: {total_meetings} total meetings", "DEBUG", context=ctx)
+
+            # Find meeting metadata by ID
+            meeting_meta = next((m for m in pending_data.get('meetings', []) if m['id'] == meeting_id), None)
+            json_source = "pending_downloads"
+
+        if not meeting_meta:
+            log(f"Meeting metadata not found in any source", "ERROR", context=ctx)
             cache.add_failed_match(meeting_id, "metadata_not_found", {"transcript_path": str(transcript_path)})
             result["errors"].append("metadata_not_found")
             result["status"] = "failed"
@@ -282,71 +310,92 @@ def process_transcript(transcript_path, meeting_id):
             return result
 
         # Update context with meeting details
-        ctx["title"] = meeting_meta['title']
+        ctx["title"] = meeting_meta.get('title', 'Unknown')
         ctx["date"] = meeting_meta.get('date', 'unknown')
         ctx["time"] = meeting_meta.get('time', 'unknown')
+        ctx["metadata_source"] = json_source
 
-        log(f"Found metadata: {meeting_meta['title']}", "INFO", context=ctx)
-        log(f"Meeting date: {meeting_meta.get('date', 'unknown')}, time: {meeting_meta.get('time', 'unknown')}", "DEBUG", context=ctx)
+        log(f"✓ Found metadata from {json_source}: title='{meeting_meta.get('title')}', date={meeting_meta.get('date', 'unknown')}, time={meeting_meta.get('time', 'unknown')}", "INFO", context=ctx)
 
         # Extract date early for use in calendar matching and note naming
         event_date = meeting_meta.get("date")
         note_date = event_date  # Used for note filename creation
 
-        # Stage 2: Match to calendar event (AC #1)
-        log("Stage 1: Matching to calendar event...", "INFO", context=ctx)
+        # Stage 2: Get classification
+        # If JSON metadata already has classification, use it (skip re-classification)
+        calendar_match = None
 
-        # Extract year from date, fallback to current year if None
-        if meeting_meta.get('date'):
-            year = meeting_meta['date'].split('-')[0]
+        if json_source == "json_companion" and meeting_meta.get('meeting_type') and meeting_meta.get('meeting_type') != 'unknown':
+            # Use pre-computed classification from JSON companion (source of truth)
+            log("Stage 1: Using pre-computed classification from JSON metadata...", "INFO", context=ctx)
+            calendar_match = {
+                'meeting_type': meeting_meta.get('meeting_type'),
+                'meeting_title': meeting_meta.get('calendar_title') or meeting_meta.get('title'),
+                'company': meeting_meta.get('company'),
+                'participant': meeting_meta.get('participant'),
+                'confidence': meeting_meta.get('confidence', 0.9),
+                'source': meeting_meta.get('classification_source', 'json_metadata')
+            }
+            log(f"✓ Classification from JSON: type={calendar_match['meeting_type']}, confidence={calendar_match['confidence']}", "INFO", context=ctx)
+            result["stages_completed"].append("classification_from_json")
         else:
-            year = str(datetime.now().year)
+            # Need to run classification (old format or unknown type)
+            log("Stage 1: Running calendar classification...", "INFO", context=ctx)
 
-        # Use unified classification with calendar matching
-        match_cmd = [
-            str(VENV_PYTHON),
-            str(HELPERS_DIR / "classify-meeting-unified.py"),
-            "--title", meeting_meta['title'],
-            "--date", meeting_meta.get('date', ''),  # Will be parsed from title if needed
-            "--time", meeting_meta.get('time', '')   # Optional time hint
-        ]
+            # Extract year from date, fallback to current year if None
+            if meeting_meta.get('date'):
+                year = meeting_meta['date'].split('-')[0]
+            else:
+                year = str(datetime.now().year)
 
-        log(f"Running classification: {' '.join(match_cmd[2:])}", "DEBUG", context=ctx)
+            # Use unified classification with calendar matching
+            match_cmd = [
+                str(VENV_PYTHON),
+                str(HELPERS_DIR / "classify-meeting-unified.py"),
+                "--title", meeting_meta.get('title', ''),
+                "--date", meeting_meta.get('date', ''),  # Will be parsed from title if needed
+                "--time", meeting_meta.get('time', '')   # Optional time hint
+            ]
 
-        try:
-            match_result = subprocess.run(
-                match_cmd,
-                capture_output=True,
-                text=True,
-                timeout=180  # 3 minutes for large calendar databases (8000+ events)
-            )
+            log(f"Running classification command: {' '.join(match_cmd)}", "DEBUG", context=ctx)
+            log(f"Classification input: title='{meeting_meta.get('title', '')}', date='{meeting_meta.get('date', '')}', time='{meeting_meta.get('time', '')}'", "DEBUG", context=ctx)
 
-            if match_result.returncode != 0:
-                log(f"Classification script failed with exit code {match_result.returncode}", "ERROR", context=ctx)
-                if match_result.stderr:
-                    log(f"Classification stderr: {match_result.stderr[:500]}", "DEBUG", context=ctx)
-                raise Exception(f"Calendar matching failed: {match_result.stderr}")
+            try:
+                match_result = subprocess.run(
+                    match_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=180  # 3 minutes for large calendar databases (8000+ events)
+                )
 
-            log(f"Classification output: {len(match_result.stdout)} bytes", "DEBUG", context=ctx)
-            calendar_match = json.loads(match_result.stdout)
-            log(f"Classification result: type={calendar_match.get('meeting_type')}, confidence={calendar_match.get('confidence')}", "INFO", context=ctx)
+                log(f"Classification completed: exit_code={match_result.returncode}, stdout_size={len(match_result.stdout)} bytes, stderr_size={len(match_result.stderr)} bytes", "DEBUG", context=ctx)
 
-        except json.JSONDecodeError as e:
-            log(f"Failed to parse classification JSON output", "ERROR", exc_info=e, context=ctx)
-            log(f"Raw output: {match_result.stdout[:500]}", "DEBUG", context=ctx)
-            cache.add_failed_match(meeting_id, "classification_parse_error", {"transcript_path": str(transcript_path), "error": str(e)})
-            result["errors"].append(f"classification_parse_error: {str(e)}")
-            return result
-        except subprocess.TimeoutExpired as e:
-            log(f"Classification timed out after 180 seconds", "ERROR", exc_info=e, context=ctx)
-            cache.add_failed_match(meeting_id, "classification_timeout", {"transcript_path": str(transcript_path)})
-            result["errors"].append("classification_timeout")
-            return result
-        except Exception as e:
-            log(f"Classification failed unexpectedly", "ERROR", exc_info=e, context=ctx)
-            cache.add_failed_match(meeting_id, "calendar_match_error", {"transcript_path": str(transcript_path), "error": str(e)})
-            result["errors"].append(f"calendar_match_error: {str(e)}")
-            return result
+                if match_result.returncode != 0:
+                    log(f"Classification script failed with exit code {match_result.returncode}", "ERROR", context=ctx)
+                    if match_result.stderr:
+                        log(f"Classification stderr (first 500 chars): {match_result.stderr[:500]}", "DEBUG", context=ctx)
+                    raise Exception(f"Calendar matching failed: {match_result.stderr}")
+
+                log(f"Parsing classification JSON output ({len(match_result.stdout)} bytes)", "DEBUG", context=ctx)
+                calendar_match = json.loads(match_result.stdout)
+                log(f"Classification result: type={calendar_match.get('meeting_type')}, confidence={calendar_match.get('confidence')}", "INFO", context=ctx)
+
+            except json.JSONDecodeError as e:
+                log(f"Failed to parse classification JSON output", "ERROR", exc_info=e, context=ctx)
+                log(f"Raw output: {match_result.stdout[:500]}", "DEBUG", context=ctx)
+                cache.add_failed_match(meeting_id, "classification_parse_error", {"transcript_path": str(transcript_path), "error": str(e)})
+                result["errors"].append(f"classification_parse_error: {str(e)}")
+                return result
+            except subprocess.TimeoutExpired as e:
+                log(f"Classification timed out after 180 seconds", "ERROR", exc_info=e, context=ctx)
+                cache.add_failed_match(meeting_id, "classification_timeout", {"transcript_path": str(transcript_path)})
+                result["errors"].append("classification_timeout")
+                return result
+            except Exception as e:
+                log(f"Classification failed unexpectedly", "ERROR", exc_info=e, context=ctx)
+                cache.add_failed_match(meeting_id, "calendar_match_error", {"transcript_path": str(transcript_path), "error": str(e)})
+                result["errors"].append(f"calendar_match_error: {str(e)}")
+                return result
 
         # Stage 2.5: Speaker-based matching fallback for improved accuracy
         log("Stage 2: Speaker-based matching (fallback/validation)", "INFO", context=ctx)
@@ -358,15 +407,12 @@ def process_transcript(transcript_path, meeting_id):
         # FILTER: Skip empty or single-speaker transcripts (solo recordings, not meetings)
         # Note: 1on1s will have 2+ speakers, so this only catches true solo recordings
         if len(speakers) == 0:
-            log(f"Empty transcript detected, no speakers found - skipping as solo recording", "WARN", context=ctx)
-            cache.add_failed_match(
-                meeting_id,
-                "empty_transcript",
-                {"transcript_path": str(transcript_path)}
-            )
-            result["errors"].append("empty_transcript")
+            log(f"Empty transcript detected, no speakers found - skipping as solo recording (not a failure, just excluded)", "INFO", context=ctx)
+            # DON'T add to failed matches - this is a valid exclusion, not a failure
+            # Empty transcripts can happen for solo recordings, ambient noise, etc.
+            # They should be silently excluded without preventing future reprocessing
             result["status"] = "skipped"
-            result["reason"] = "empty_transcript"
+            result["reason"] = "empty_transcript_excluded"
             return result
 
         # If we have multiple speakers, try participant-based matching
@@ -455,14 +501,19 @@ def process_transcript(transcript_path, meeting_id):
         note_date = event_date if event_date else meeting_meta.get("date")  # Use event_date or fallback to meeting_meta
 
         # Get vault path from env
-        vault_path = Path(os.getenv("OBSIDIAN_VAULT_PATH", ""))
+        vault_path_str = os.getenv("OBSIDIAN_VAULT_PATH", "")
+        log(f"Checking vault path: OBSIDIAN_VAULT_PATH='{vault_path_str}'", "DEBUG", context=ctx)
+
+        vault_path = Path(vault_path_str) if vault_path_str else None
         if not vault_path or not vault_path.exists():
-            log("OBSIDIAN_VAULT_PATH not set or invalid", "ERROR")
+            log(f"OBSIDIAN_VAULT_PATH not set or invalid: '{vault_path_str}'", "ERROR", context=ctx)
             cache.add_failed_match(meeting_id, "vault_not_found", {"transcript_path": str(transcript_path)})
             result["errors"].append("vault_not_found")
             result["status"] = "failed"
             result["reason"] = "vault_not_found"
             return result
+
+        log(f"✓ Vault path validated: {vault_path}", "DEBUG", context=ctx)
 
         # Handle different meeting types
         if meeting_type in ["ipmedia_1on1", "ipmedia_executive"]:
@@ -484,13 +535,17 @@ def process_transcript(transcript_path, meeting_id):
                 "--company", company_name
             ]
 
-            log(f"Running find-person-folder.sh: --person {person_name} --company {company_name}", "DEBUG", context=ctx)
+            log(f"Running find-person-folder command: {' '.join(find_cmd)}", "DEBUG", context=ctx)
+            log(f"Person search input: person='{person_name}', company='{company_name}'", "DEBUG", context=ctx)
 
             try:
                 find_result = subprocess.run(find_cmd, capture_output=True, text=True, timeout=10)
 
+                log(f"Person folder search completed: exit_code={find_result.returncode}, stdout_size={len(find_result.stdout)} bytes, stderr_size={len(find_result.stderr)} bytes", "DEBUG", context=ctx)
+
                 if find_result.returncode != 0:
-                    log(f"Person folder search failed: {find_result.stderr.strip()}", "ERROR", context=ctx)
+                    log(f"Person folder search failed with exit code {find_result.returncode}", "ERROR", context=ctx)
+                    log(f"Person folder search stderr: {find_result.stderr.strip()}", "DEBUG", context=ctx)
                     log(f"Person not found in vault: {person_name}", "ERROR", context=ctx)
                     cache.add_failed_match(
                         meeting_id, "person_not_found",
@@ -630,10 +685,12 @@ def process_transcript(transcript_path, meeting_id):
 
         if note_was_created:
             # AC #8: Missing note → create from template, continue processing
-            log(f"Note not found, creating from template", "WARN", context=ctx)
+            log(f"⚠️ Note not found, creating from template (meeting_type={meeting_type})", "WARN", context=ctx)
+            log(f"Creating meetings folder if needed: {meetings_folder}", "DEBUG", context=ctx)
             meetings_folder.mkdir(parents=True, exist_ok=True)
 
             # Generate template based on meeting type
+            log(f"Generating template content for meeting_type='{meeting_type}'", "DEBUG", context=ctx)
             if meeting_type in ["ipmedia_1on1", "ipmedia_executive"]:
                 # 1on1 or Executive template (fallback - matches vault template structure)
                 person_name = classification.get("participant", "Unknown")
@@ -831,7 +888,8 @@ def process_transcript(transcript_path, meeting_id):
             "--json"
         ]
 
-        log(f"Running AI analysis: --person {meeting_identifier} --meeting-type {classification.get('meeting_type')}", "DEBUG", context=ctx)
+        log(f"Running AI analysis command: {' '.join(analyze_cmd)}", "DEBUG", context=ctx)
+        log(f"AI analysis input: transcript={transcript_path} ({os.path.getsize(transcript_path)} bytes), person={meeting_identifier}, meeting_type={classification.get('meeting_type')}", "DEBUG", context=ctx)
 
         try:
             analyze_result = subprocess.run(
@@ -841,11 +899,12 @@ def process_transcript(transcript_path, meeting_id):
                 timeout=120  # 2 minutes for AI processing
             )
 
-            log(f"AI analysis completed with exit code: {analyze_result.returncode}", "DEBUG", context=ctx)
+            log(f"AI analysis completed: exit_code={analyze_result.returncode}, stdout_size={len(analyze_result.stdout)} bytes, stderr_size={len(analyze_result.stderr)} bytes", "DEBUG", context=ctx)
 
             if analyze_result.returncode != 0:
                 # AC #8: AI failure → already retried in script, skip
-                log(f"AI analysis failed: {analyze_result.stderr[:500]}", "ERROR", context=ctx)
+                log(f"AI analysis failed with exit code {analyze_result.returncode}", "ERROR", context=ctx)
+                log(f"AI analysis stderr (first 500 chars): {analyze_result.stderr[:500]}", "DEBUG", context=ctx)
                 cache.add_failed_match(
                     meeting_id,
                     "ai_analysis_failed",
@@ -856,9 +915,9 @@ def process_transcript(transcript_path, meeting_id):
                 result["reason"] = "ai_analysis_failed"
                 return result
 
-            log(f"AI analysis output: {len(analyze_result.stdout)} bytes", "DEBUG", context=ctx)
+            log(f"Parsing AI analysis JSON output ({len(analyze_result.stdout)} bytes)", "DEBUG", context=ctx)
             analysis = json.loads(analyze_result.stdout)
-            log(f"✓ AI analysis complete: {len(analysis.get('discussion_highlights', []))} highlights, {len(analysis.get('action_items', {}))} action items", "INFO", context=ctx)
+            log(f"✓ AI analysis complete: {len(analysis.get('discussion_highlights', []))} highlights, {len(analysis.get('action_items', []))} action items", "INFO", context=ctx)
             result["stages_completed"].append("ai_analysis")
 
         except subprocess.TimeoutExpired:
@@ -897,31 +956,61 @@ def process_transcript(transcript_path, meeting_id):
 
         transcript_rel_path = f"attachments/{note_date}-{meeting_identifier.lower().replace(' ', '-')}-transcript.txt"
 
+        # Read raw transcript text for GPT merge (team/KPI meetings)
+        transcript_text = ""
+        try:
+            log(f"Reading raw transcript text from {transcript_path}", "DEBUG", context=ctx)
+            with open(transcript_path, 'r') as f:
+                transcript_text = f.read()
+            log(f"Read {len(transcript_text)} bytes of transcript text", "DEBUG", context=ctx)
+        except Exception as e:
+            log(f"Could not read transcript text", "WARN", exc_info=e, context=ctx)
+
+        # Determine template path based on meeting type
+        template_filename = "1on1-template.md"  # default
+        if meeting_type == "ipmedia_kpi":
+            template_filename = "meeting-kpi-template.md"
+        elif "team_" in meeting_type:
+            template_filename = "meeting-team-template.md"
+        elif "executive" in meeting_type or "company" in meeting_type:
+            template_filename = "company-meeting-template.md"
+
+        template_path = vault_path / "bmad" / "vault-ops" / "templates" / template_filename
+        log(f"Template determined: {template_filename} (path: {template_path})", "DEBUG", context=ctx)
+
+        # Check template exists
+        if not template_path.exists():
+            log(f"⚠️ Template file not found at {template_path}, will use fallback", "WARN", context=ctx)
+
         update_cmd = [
             str(VENV_PYTHON),
             str(HELPERS_DIR / "krisp-update-note.py"),
             "--note", str(note_path),
             "--transcript-path", transcript_rel_path,
-            "--duration", "Unknown"  # TODO: Calculate from transcript
+            "--duration", "Unknown",  # TODO: Calculate from transcript
+            "--transcript-text", transcript_text,
+            "--template-path", str(template_path)
         ]
 
-        log(f"Running note update: krisp-update-note.py --note {note_filename}", "DEBUG", context=ctx)
-        log(f"Analysis payload: {len(json.dumps(analysis))} bytes", "DEBUG", context=ctx)
+        analysis_json = json.dumps(analysis)
+        log(f"Running note update command: {' '.join(update_cmd[:6])} ... (full command logged separately)", "DEBUG", context=ctx)
+        log(f"Note update input: note={note_filename}, analysis_payload={len(analysis_json)} bytes, transcript_text={len(transcript_text)} bytes, template={template_filename}", "DEBUG", context=ctx)
 
         try:
             update_result = subprocess.run(
                 update_cmd,
-                input=json.dumps(analysis),
+                input=analysis_json,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=120  # Increased from 10s to 120s for GPT merge operations
             )
 
-            log(f"Note update completed with exit code: {update_result.returncode}", "DEBUG", context=ctx)
+            log(f"Note update completed: exit_code={update_result.returncode}, stdout_size={len(update_result.stdout)} bytes, stderr_size={len(update_result.stderr)} bytes", "DEBUG", context=ctx)
 
             if update_result.returncode != 0:
                 # AC #8: File I/O error → skip with permissions log
-                log(f"Note update failed: {update_result.stderr[:500]}", "ERROR", context=ctx)
+                log(f"Note update failed with exit code {update_result.returncode}", "ERROR", context=ctx)
+                log(f"Note update stderr (first 500 chars): {update_result.stderr[:500]}", "DEBUG", context=ctx)
                 cache.add_failed_match(
                     meeting_id,
                     "file_io_error",
@@ -964,7 +1053,8 @@ def process_transcript(transcript_path, meeting_id):
         identifier_slug = meeting_identifier.lower().replace(' ', '-')
         organized_filename = f"{note_date}-{identifier_slug}-{source}-transcript.txt"
 
-        log(f"Transcript filename: {organized_filename}", "DEBUG", context=ctx)
+        log(f"Transcript organization: original={transcript_path.name}, target={organized_filename}", "DEBUG", context=ctx)
+        log(f"Transcript file size: {os.path.getsize(transcript_path)} bytes", "DEBUG", context=ctx)
 
         # Create attachments directory (parent of Meetings folder)
         attachments_dir = meetings_folder.parent / "attachments"
@@ -975,9 +1065,10 @@ def process_transcript(transcript_path, meeting_id):
         organized_path = attachments_dir / organized_filename
         try:
             import shutil
-            log(f"Copying transcript to: {organized_path}", "DEBUG", context=ctx)
+            log(f"Copying transcript: {transcript_path} → {organized_path}", "DEBUG", context=ctx)
             shutil.copy2(transcript_path, organized_path)
-            log(f"✓ Organized transcript: {organized_filename}", "INFO", context=ctx)
+            final_size = os.path.getsize(organized_path)
+            log(f"✓ Organized transcript: {organized_filename} ({final_size} bytes)", "INFO", context=ctx)
             result["stages_completed"].append("transcript_organized")
         except Exception as e:
             log(f"Failed to organize transcript", "ERROR", exc_info=e, context=ctx)

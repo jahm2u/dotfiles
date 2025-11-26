@@ -14,6 +14,20 @@ VENV_PYTHON="$HOME/.config/sketchybar/venv/bin/python3"
 LOG_FILE="$HOME/.config/sketchybar/logs/krisp-daemon.log"
 CACHE_DIR="$HOME/.cache/sketchybar"
 
+# Logging function (defined early for console check)
+log() {
+    local level="$1"
+    shift
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*" | tee -a "$LOG_FILE"
+}
+
+# Check if user is logged into console (prevent running during sleep/wake when not logged in)
+CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "unknown")
+if [ "$CONSOLE_USER" = "root" ] || [ "$CONSOLE_USER" = "_windowserver" ] || [ "$CONSOLE_USER" = "unknown" ]; then
+    log "INFO" "User not logged into console (current: $CONSOLE_USER) - skipping daemon run to prevent errors during sleep/wake cycles"
+    exit 0
+fi
+
 # Load environment variables
 if [ -f "$HOME/repos/02_personal/dotfiles/.env" ]; then
     set -a
@@ -24,13 +38,6 @@ elif [ -f "$HOME/dotfiles/.env" ]; then
     source "$HOME/dotfiles/.env"
     set +a
 fi
-
-# Logging function
-log() {
-    local level="$1"
-    shift
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*" | tee -a "$LOG_FILE"
-}
 
 # Telegram notification function
 send_telegram() {

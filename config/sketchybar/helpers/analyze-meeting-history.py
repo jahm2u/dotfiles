@@ -287,6 +287,30 @@ Focus on actionable insights. If no information is available for a section, retu
         raise
 
 
+def load_meeting_config(person_folder: str) -> Dict[str, Any]:
+    """
+    Load person-specific meeting configuration from .meeting-config.json
+
+    Args:
+        person_folder: Path to person's folder (e.g., Business/People/IPMedia/Ron)
+
+    Returns: Dict with config or empty dict if not found
+    """
+    config_path = os.path.join(person_folder, ".meeting-config.json")
+
+    if not os.path.exists(config_path):
+        return {}
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        print(f"✓ Loaded meeting config: use_cross_meeting_context={config.get('use_cross_meeting_context', False)}", file=sys.stderr)
+        return config
+    except Exception as e:
+        print(f"Warning: Failed to load meeting config: {e}", file=sys.stderr)
+        return {}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze meeting history")
     parser.add_argument("--person-folder", required=True, help="Path to person folder")
@@ -301,6 +325,9 @@ def main():
 
         # Parse classification
         classification = json.loads(args.classification)
+
+        # Load meeting config (for executive meetings with cross-context)
+        meeting_config = load_meeting_config(args.person_folder)
 
         # Get meeting files
         meeting_files = get_meeting_files(args.person_folder, args.max_meetings)
@@ -327,6 +354,26 @@ def main():
 
         # Read meeting content
         meeting_content = read_meeting_content(meeting_files)
+
+        # Add cross-meeting context for executive meetings if enabled
+        if meeting_config.get('use_cross_meeting_context', False):
+            print("✓ Cross-meeting context enabled - loading recent company meetings", file=sys.stderr)
+
+            # Get vault path from OBSIDIAN_VAULT_PATH env var
+            vault_path = os.getenv('OBSIDIAN_VAULT_PATH')
+            if vault_path:
+                scope = meeting_config.get('context_scope', 'IPMedia')
+                lookback_days = meeting_config.get('context_lookback_days', 7)
+
+                cross_context = get_cross_meeting_context(vault_path, scope, lookback_days)
+
+                if cross_context:
+                    print(f"  → Added context from {scope} meetings (last {lookback_days} days)", file=sys.stderr)
+                    meeting_content += "\n\n" + cross_context
+                else:
+                    print(f"  → No cross-meeting context found for {scope}", file=sys.stderr)
+            else:
+                print("  → Warning: OBSIDIAN_VAULT_PATH not set, skipping cross-context", file=sys.stderr)
 
         # Analyze with OpenAI
         analysis = analyze_with_openai(meeting_content, classification)

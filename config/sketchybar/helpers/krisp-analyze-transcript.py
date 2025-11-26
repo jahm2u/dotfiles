@@ -79,18 +79,14 @@ def analyze_transcript_with_note(transcript_path, note_path, meeting_context, ma
 
     if is_executive:
         # Enhanced prompt for Ron/executive meetings
-        prompt = f"""You are analyzing an executive 1on1 meeting transcript between a CEO (Ron) and CTO (Jeff Hamersly).
+        # Note: Cross-meeting context happens in PREP (meeting-prep.sh), not here
+        # This just analyzes what was DISCUSSED in this meeting
+        prompt = f"""You are analyzing an executive 1on1 meeting transcript.
 
 **Meeting Context:**
-- CEO: {meeting_context['person_name']}
-- CTO: Jeff Hamersly
+- Participants: {meeting_context['person_name']}, Jeff Hamersly
 - Company: {meeting_context['company']}
 - Date: {meeting_context['date']}
-
-**Existing Meeting Note:**
-```
-{note_text}
-```
 
 **Meeting Transcript:**
 ```
@@ -98,9 +94,9 @@ def analyze_transcript_with_note(transcript_path, note_path, meeting_context, ma
 ```
 
 **Instructions:**
-This is a strategic executive meeting. Fill out ALL the post-meeting sections comprehensively based on the transcript:
+Analyze this executive meeting transcript and extract comprehensive post-meeting information:
 
-1. **Discussion Highlights** - Extract 5-8 key points covering all major topics discussed
+1. **Discussion Highlights** - Extract 5-8 key points covering ALL major topics discussed
 2. **Action Items** - All specific tasks with owners (use [[PersonName]] format)
 3. **Key Insights & Quotes** - 3-5 significant insights or memorable quotes from the discussion
 4. **Decisions Made** - Clear decisions reached during the meeting
@@ -132,8 +128,8 @@ IMPORTANT:
 - Avoid repetition - each point should cover a distinct topic
 - Be comprehensive - this is an important strategic meeting"""
     else:
-        # Standard prompt for regular 1on1s
-        prompt = f"""You are analyzing a meeting transcript to fill out the post-meeting sections of a meeting note.
+        # Standard prompt for regular 1on1s - comprehensive analysis
+        prompt = f"""You are analyzing a meeting transcript to create comprehensive post-meeting documentation.
 
 **Meeting Context:**
 - Participants: {meeting_context['person_name']}, Jeff Hamersly
@@ -141,48 +137,82 @@ IMPORTANT:
 - Meeting Type: {meeting_context['meeting_type']}
 - Date: {meeting_context['date']}
 
-**Existing Meeting Note:**
-```
-{note_text}
-```
-
 **Meeting Transcript:**
 ```
 {transcript_text}
 ```
 
 **Instructions:**
-The meeting note above has empty post-meeting sections that need to be filled out. Based on the transcript, please fill in:
+Analyze this meeting thoroughly. This was a meaningful conversation - capture ALL the substance, not just surface-level points.
 
-1. **Discussion Highlights** - 3-5 main points discussed
-2. **Action Items Captured** - Specific tasks with owners (use [[PersonName]] format for Obsidian wikilinks)
-3. **Topics to Review Next Time** - 2-4 follow-up topics for next meeting
-4. **Related Context** - Obsidian wikilinks to related projects/people mentioned (if any)
+Extract the following with DEPTH and DETAIL:
 
-Output ONLY a JSON object with these fields:
+1. **Discussion Highlights** - Extract 6-12 substantive points covering EVERY major topic discussed. Include:
+   - What was the issue/topic?
+   - What perspectives were shared?
+   - What was the conclusion or current state?
+
+2. **Action Items** - ALL specific tasks, commitments, or follow-ups mentioned (use [[PersonName]] format)
+   - Include both explicit commitments and implied next steps
+   - Be specific about what needs to be done
+
+3. **Key Insights & Quotes** - 3-6 significant insights, observations, or memorable quotes
+   - Include direct quotes when impactful
+   - Capture wisdom or realizations from the conversation
+
+4. **Decisions Made** - Any decisions reached, even tentative ones
+
+5. **Blockers Identified** - Obstacles, frustrations, challenges discussed
+
+6. **Topics to Review Next Time** - 3-6 follow-up topics for future meetings
+
+7. **Related Context** - Obsidian wikilinks to projects/people mentioned
+
+Output ONLY a JSON object:
 {{
-  "discussion_highlights": ["point 1", "point 2", "point 3"],
+  "discussion_highlights": ["detailed point 1 with context", "detailed point 2", ...],
   "action_items": {{
-    "[[PersonName]]": ["task 1", "task 2"],
+    "[[{meeting_context['person_name']}]]": ["specific task 1", "specific task 2"],
     "[[Jeff Hamersly]]": ["task 1"]
   }},
-  "topics_next_time": ["topic 1", "topic 2"],
+  "key_insights": ["insight or quote 1", "insight 2"],
+  "decisions": ["decision 1"],
+  "blockers": ["blocker with context"],
+  "topics_next_time": ["topic 1", "topic 2", "topic 3"],
   "related_context": ["[[Project/Name]]", "[[Person/Name]]"]
 }}
 
-Be specific and actionable. Extract actual commitments from the transcript."""
+IMPORTANT: Be THOROUGH. A 30-minute conversation has many discussion points - capture them all."""
 
     # Retry logic with exponential backoff (AC #4, #8)
     client = OpenAI(api_key=api_key)
 
+    # Dynamic token scaling based on transcript size
+    # Longer meetings = richer discussions = need more output tokens
+    transcript_chars = len(transcript_text)
+    transcript_kb = transcript_chars / 1024
+
+    if transcript_kb >= 60:       # 60KB+ = very long meeting (1+ hour)
+        base_tokens = 12000
+    elif transcript_kb >= 40:     # 40-60KB = long meeting (45+ min)
+        base_tokens = 10000
+    elif transcript_kb >= 25:     # 25-40KB = medium meeting (30+ min)
+        base_tokens = 8000
+    elif transcript_kb >= 15:     # 15-25KB = shorter meeting (15-30 min)
+        base_tokens = 6000
+    else:                         # <15KB = quick sync
+        base_tokens = 4000
+
+    # Executive meetings get 25% bonus for comprehensive strategic analysis
+    max_tokens = int(base_tokens * 1.25) if is_executive else base_tokens
+
+    log(f"Transcript size: {transcript_kb:.1f}KB → max_tokens={max_tokens} (executive={is_executive})")
+
     for attempt in range(max_retries):
         try:
-            timeout = 30 if attempt == 0 else 60  # Increase timeout on retries
+            timeout = 60 if transcript_kb < 40 else 120  # Longer timeout for big transcripts
 
             log(f"Calling OpenAI API (attempt {attempt + 1}/{max_retries})...")
-
-            # Executive meetings need more tokens for comprehensive analysis
-            max_tokens = 3000 if is_executive else 1500
 
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -207,12 +237,10 @@ Be specific and actionable. Extract actual commitments from the transcript."""
 
             analysis = json.loads(content)
 
-            # Validate structure based on meeting type
-            if is_executive:
-                required_fields = ['discussion_highlights', 'action_items', 'key_insights',
-                                 'decisions', 'blockers', 'growth_development', 'business_impact', 'topics_next_time']
-            else:
-                required_fields = ['discussion_highlights', 'action_items', 'topics_next_time']
+            # Validate structure - all meetings now get comprehensive analysis
+            required_fields = ['discussion_highlights', 'action_items', 'topics_next_time']
+            # Optional fields that enhance the analysis (don't fail if missing)
+            optional_fields = ['key_insights', 'decisions', 'blockers', 'growth_development', 'business_impact', 'related_context']
 
             if not all(field in analysis for field in required_fields):
                 raise ValueError(f"Missing required fields in analysis: {required_fields}")

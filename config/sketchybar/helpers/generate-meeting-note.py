@@ -73,6 +73,14 @@ def get_template_path(meeting_type: str, vault_path: str, person_folder: str = N
     2. Person-specific template from .meeting-config.json
     3. Global template by meeting type
 
+    Template mapping:
+    - ipmedia_executive → meeting-executive.md (Ron/CFO meetings)
+    - ipmedia_1on1 → meeting-1on1.md (standard direct reports)
+    - co_*_meeting → meeting-portfolio.md (portfolio companies)
+    - ipmedia_dev_*, ipmedia_marketing_*, ipmedia_team_* → meeting-team.md
+    - ipmedia_standup → meeting-standup.md
+    - external_* → meeting-external.md
+
     Args:
         meeting_type: Type from classification (ipmedia_1on1, co_*_meeting, etc.)
         vault_path: Path to Obsidian vault
@@ -97,13 +105,42 @@ def get_template_path(meeting_type: str, vault_path: str, person_folder: str = N
                 print(f"Using config-specified template: {custom_path}", file=sys.stderr)
                 return custom_path
 
-    # Default to global template based on meeting type
-    template_name = "1on1-template.md"
+    # Map meeting types to templates
+    # Order matters - more specific patterns first
+    template_mapping = [
+        # Executive (Ron/CFO)
+        ("ipmedia_executive", "meeting-executive.md"),
+        ("ipmedia_board", "meeting-executive.md"),
 
-    if "co_" in meeting_type and "_meeting" in meeting_type:
-        template_name = "company-meeting-template.md"
-    elif "team_" in meeting_type:
-        template_name = "meeting-team-template.md"  # Fixed: actual filename in vault
+        # Portfolio companies
+        ("co_", "meeting-portfolio.md"),  # Matches co_gone_meeting, co_dt_meeting, etc.
+
+        # Team meetings (dev squads, marketing teams)
+        ("ipmedia_dev_", "meeting-team.md"),
+        ("ipmedia_marketing_", "meeting-team.md"),
+        ("ipmedia_team_", "meeting-team.md"),
+        ("ipmedia_company_wide", "meeting-team.md"),
+
+        # Standups
+        ("ipmedia_standup", "meeting-standup.md"),
+
+        # External/personal
+        ("external_", "meeting-external.md"),
+
+        # Standard 1on1 (default for most IPMedia meetings)
+        ("ipmedia_1on1", "meeting-1on1.md"),
+        ("ipmedia_review", "meeting-1on1.md"),
+        ("ipmedia_onboarding", "meeting-1on1.md"),
+    ]
+
+    # Find matching template
+    template_name = "meeting-1on1.md"  # Default fallback
+    for pattern, template in template_mapping:
+        if pattern in meeting_type:
+            template_name = template
+            break
+
+    print(f"Meeting type '{meeting_type}' → template '{template_name}'", file=sys.stderr)
 
     # Try multiple template locations
     template_locations = [
@@ -172,24 +209,46 @@ def load_template(template_path: str) -> tuple[str, dict]:
             metadata, content = parse_template_frontmatter(full_content)
             return content, metadata
     except FileNotFoundError:
-        # Return basic default template (Employee-First format)
+        # Return basic default template matching meeting-1on1.md structure
         default_template = """# {{date}} 1on1 with {{participant}}
 
-## {{participant}}'s Agenda (Start here)
+**Date:** {{date}}
+**Participants:** [[Personal/Jeff|Jeff Hamersly]], [[Business/People/{{company}}/{{participant}}/{{participant}}|{{participant}}]]
+**Company:** {{company}}
+**Meeting Type:** 1on1
+
+---
+
+## Context
+**Last 1on1:** {{previous_meeting}}
+
+### Open Items from Last Time
+{{critical_items}}
+
+### From Their Team Meetings
+{{context}}
+
+---
+
+## {{participant}}'s Agenda
 
 ### What's on your mind today?
 
 
-### Where are you stuck? What support do you need from me?
+### Where are you stuck? What support do you need?
 {{predicted_blockers}}
+
+---
 
 ## Jeff's Agenda
 
-### Critical Follow-ups (Accountability)
-{{critical_items}}
-
-### Strategic Discussion
+### Follow-ups & Accountability
 {{questions}}
+
+### Topics to Discuss
+
+
+---
 
 ## Meeting Outcomes
 
@@ -198,61 +257,32 @@ def load_template(template_path: str) -> tuple[str, dict]:
 
 ### Action Items
 
+**[[{{participant}}]]:**
+- [ ]
 
-### Next Meeting Topics
+**[[Jeff Hamersly]]:**
+- [ ]
 
-
-
-
-
-
-
+### Blockers Identified
 
 
+### Key Insights
 
 
+---
+
+## Growth Notes
 
 
+---
 
+## Reference
+- [[Business/People/{{company}}/{{participant}}/{{participant}}|{{participant}} Profile]]
+- Previous: [[{{previous_meeting}}]]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## Post-Meeting Summary
-_This section will be auto-filled from meeting transcript_
-
-### Key Discussion Points
-
-### Commitments Tracking
-
-### Follow-up Required
-
+---
+**Transcript:**
+**Processed:**
 """
         return default_template, {}
 
@@ -411,6 +441,13 @@ def determine_save_path(classification: dict, person_folder: str, date: str, vau
         meetings_dir = os.path.join(person_folder, "Meetings")
         os.makedirs(meetings_dir, exist_ok=True)
         return os.path.join(meetings_dir, f"{date} 1on1 with {participant}.md")
+
+    elif meeting_type == "ipmedia_kpi":
+        # KPI: Business/IPMedia/Teams/Bi/Meetings/{date} Weekly KPI.md
+        # Both morning and afternoon KPI meetings use the same note
+        meetings_dir = os.path.join(vault_path, "Business", "IPMedia", "Teams", "Bi", "Meetings")
+        os.makedirs(meetings_dir, exist_ok=True)
+        return os.path.join(meetings_dir, f"{date} Weekly KPI.md")
 
     elif "co_" in meeting_type and "_meeting" in meeting_type:
         # Company: Business/CO/{Company}/Meetings/{date} {Company} Weekly.md

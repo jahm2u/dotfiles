@@ -296,46 +296,54 @@ def extract_participant_from_title(title, user_names=['jeff', 'hamersly']):
 def extract_team_from_title(title):
     """
     Extract specific team name from meeting title.
-    Returns team name string or None.
+    Returns tuple of (category, subcategory) or (category, None).
+
+    Categories:
+    - team: Regular team meetings (Leadership, Operations, etc.)
+    - marketing: Marketing sub-teams (traffic, social_pr, seo)
+    - dev: Development squads (growth, meumatch, slackbot, marcus)
     """
     title_lower = title.lower()
 
     # Team-specific patterns (order matters - most specific first)
     team_patterns = [
         # Leadership team (Internal Meeting is company-wide, not team)
-        (r'headquarters?\s+meeting|(?<!internal\s)leadership', 'Leadership'),
+        (r'headquarters?\s+meeting|(?<!internal\s)leadership', ('team', 'Leadership')),
 
         # BI team
-        (r'\bkpi\b|bi\s+meeting|reunião\s+de\s+kpi', 'BI'),
+        (r'bi\s+meeting', ('team', 'BI')),
 
         # SUPORTE team (Ops/Support team) - check before HR since "RH <> SUPORTE" should be SUPORTE
-        (r'suporte', 'Suporte'),
+        (r'suporte', ('team', 'Suporte')),
 
-        # HR team
-        (r'\bhr\b|recruitment|rh\b|slackbot', 'Hr'),
-
-        # Marketing team
-        (r'mkt\b|marketing|social\s+media|press|traffic\s+weekly', 'Marketing'),
-
-        # Product team
-        (r'product\s+team|growth\s+squad|meumatch|seo|meu\s+patrocinio', 'Product'),
+        # HR team (but not slackbot - that's a dev squad now)
+        (r'\bhr\b|recruitment|rh\b', ('team', 'Hr')),
 
         # Operations team
-        (r'ops\s+team|operations', 'Operations'),
+        (r'ops\s+team|operations', ('team', 'Operations')),
 
-        # Development team
-        (r'development|dev\s+team|engineering', 'Development'),
+        # Development squads (ipmedia_dev_*)
+        (r'growth\s+squad|growth\s+team|\bgrowth\b', ('dev', 'growth')),
+        (r'meumatch', ('dev', 'meumatch')),
+        (r'slackbot\s*weekly', ('dev', 'slackbot')),
+        (r'dev\s+squad|weekly\s+dev\s+squad', ('dev', 'marcus')),  # Generic dev squad = Marcus's squad
+
+        # Marketing sub-teams (ipmedia_marketing_*)
+        (r'traffic\s+weekly', ('marketing', 'traffic')),
+        (r'social\s+media.*press|press.*social|social\s+media.*headquarters', ('marketing', 'social_pr')),
+        (r'\bseo\b|meu\s+patrocinio.*seo|seo.*meu\s+patrocinio', ('marketing', 'seo')),
+        (r'mkt\b|marketing|mkt\s+headquarter', ('marketing', None)),  # Generic marketing
+
+        # Product team (general product, not squads)
+        (r'product\s+team|mp\s+product', ('team', 'Product')),
 
         # IT Infrastructure
-        (r'it[-\s]infrastructure|infrastructure', 'IT-Infrastructure'),
-
-        # Traffic team (though often maps to Marketing)
-        (r'traffic\s+(?!weekly)', 'Traffic'),
+        (r'it[-\s]infrastructure|infrastructure', ('team', 'IT-Infrastructure')),
     ]
 
-    for pattern, team_name in team_patterns:
+    for pattern, result in team_patterns:
         if re.search(pattern, title_lower):
-            return team_name
+            return result
 
     return None
 
@@ -354,7 +362,7 @@ def extract_portfolio_company(title):
         (r'\bpd\b|best\s+meeting\s+ever', 'PD'),
         (r'masstraffic|mt\s+weekly', 'MT'),
         (r'gone.*(?:weekly|sync)(?!.*standup)', 'Gone'),  # Gone company meetings (not standup)
-        (r'\[dt\]|danniiboy|danniboy', 'DT'),
+        (r'jeff\s+and\s+dboy|dboy|danniboy|danniiboy|\bdt\b', 'DT'),  # DT company with Daniel/DBoy
         (r'\[co\]|cross[-\s]org', 'CO'),
     ]
 
@@ -382,29 +390,93 @@ def classify_from_calendar_title(title):
     # EXCLUSION LIST: Skip non-meetings (lunch, breaks, focus time, etc.)
     exclusion_patterns = [
         r'\blunch\b', r'\bbreak\b', r'\bfocus time\b', r'\bblocked\b',
-        r'\bhold\b', r'\breserved\b', r'\bpersonal\b', r'\bOOO\b',
-        r'\bout of office\b', r'\bvacation\b', r'\bPTO\b'
+        r'\bhold\b', r'\breserved\b', r'\bOOO\b',
+        r'\bout of office\b', r'\bvacation\b', r'\bPTO\b',
+        r'remote\s+cowork'  # In-person cowork sessions
     ]
     if any(re.search(pattern, title, re.IGNORECASE) for pattern in exclusion_patterns):
         result['meeting_type'] = 'excluded'
         result['confidence'] = 1.0
         return result
 
-    # Check for Executive meetings (Ron meeting with special context loading)
-    if re.search(r'\bron\b.*\bweekly\b|\bweekly\b.*\bron\b', title, re.IGNORECASE):
+    # Check for Q4/Quarterly Reviews (person reviews - special handling)
+    review_match = re.search(r'(?:q4|quarterly|q[1-4])\s+review.*[-–]\s*(\w+)|review.*q[1-4].*[-–]\s*(\w+)', title, re.IGNORECASE)
+    if review_match:
+        person = review_match.group(1) or review_match.group(2)
+        result['meeting_type'] = 'ipmedia_review'
+        result['company'] = 'IPMedia'
+        result['participant'] = person
+        result['confidence'] = 0.95
+        return result
+
+    # Check for Onboarding/Welcome meetings
+    welcome_match = re.search(r'welcome\s+(?:by\s+jeff\s*>?\s*)?(\w+)|onboarding.*(\w+)', title, re.IGNORECASE)
+    if welcome_match:
+        person = welcome_match.group(1) or welcome_match.group(2)
+        result['meeting_type'] = 'ipmedia_onboarding'
+        result['company'] = 'IPMedia'
+        result['participant'] = person
+        result['confidence'] = 0.95
+        return result
+
+    # Check for Executive meetings (Ron - has special .meeting-config.json with cross-meeting context)
+    if re.search(r'\bron\b.*\bweekly\b|\bweekly\b.*\bron\b|jeff\s*/\s*ron', title, re.IGNORECASE):
         result['meeting_type'] = 'ipmedia_executive'
         result['company'] = 'IPMedia'
         result['participant'] = 'Ron'
         result['confidence'] = 0.95
         return result
 
-    # Check for team meetings FIRST (before 1-on-1) to catch cross-team meetings
-    # Example: "Weekly RH <> SUPORTE" should be team meeting, not 1-on-1
-    team_name = extract_team_from_title(title)
-    if team_name:
-        result['meeting_type'] = f'ipmedia_team_{team_name.lower()}'
+    # Check for Board meetings (monthly investor meetings)
+    if re.search(r'board\s+meeting|monthly\s+board', title, re.IGNORECASE):
+        result['meeting_type'] = 'ipmedia_board'
         result['company'] = 'IPMedia'
-        result['team'] = team_name
+        result['confidence'] = 0.95
+        return result
+
+    # Check for KPI meetings (company-wide product health reviews)
+    if re.search(r'\bkpi\b', title, re.IGNORECASE):
+        result['meeting_type'] = 'ipmedia_company_wide'  # KPI goes with company-wide
+        result['company'] = 'IPMedia'
+        result['confidence'] = 0.95
+        return result
+
+    # Check for portfolio company meetings BEFORE team extraction
+    portfolio_company = extract_portfolio_company(title)
+    if portfolio_company:
+        result['meeting_type'] = f'co_{portfolio_company.lower()}_meeting'
+        result['company'] = portfolio_company
+        result['confidence'] = 0.85
+        return result
+
+    # Check for external personal meetings (Vlad, etc.)
+    if re.search(r'vlad\s*&\s*jeff|vlad.*moving\s+forward', title, re.IGNORECASE):
+        result['meeting_type'] = 'external_personal'
+        result['company'] = 'External'
+        result['participant'] = 'Vlad'
+        result['confidence'] = 0.9
+        return result
+
+    # Check for team/squad/marketing meetings
+    team_result = extract_team_from_title(title)
+    if team_result:
+        category, subcategory = team_result
+
+        if category == 'team':
+            result['meeting_type'] = f'ipmedia_team_{subcategory.lower()}'
+            result['team'] = subcategory
+        elif category == 'dev':
+            result['meeting_type'] = f'ipmedia_dev_{subcategory}'
+            result['team'] = f'Dev-{subcategory.title()}'
+        elif category == 'marketing':
+            if subcategory:
+                result['meeting_type'] = f'ipmedia_marketing_{subcategory}'
+                result['team'] = f'Marketing-{subcategory.title()}'
+            else:
+                result['meeting_type'] = 'ipmedia_team_marketing'
+                result['team'] = 'Marketing'
+
+        result['company'] = 'IPMedia'
         result['confidence'] = 0.85
         return result
 
@@ -430,17 +502,9 @@ def classify_from_calendar_title(title):
         result['confidence'] = 0.9
         return result
 
-    # Check for portfolio company meetings
-    portfolio_company = extract_portfolio_company(title)
-    if portfolio_company:
-        result['meeting_type'] = f'co_{portfolio_company.lower()}_meeting'
-        result['company'] = portfolio_company
-        result['confidence'] = 0.85
-        return result
-
     # Check for company-wide meetings
-    # Includes: All Hands, Company-Wide, Internal Meeting, Board Meetings, Quarterly/Monthly meetings
-    if re.search(r'all\s+hands|company(?:\s+wide)?|internal\s+meeting|board\s+meeting|quarterly|monthly|overview.*novembro', title, re.IGNORECASE):
+    # Includes: All Hands, Company-Wide, Internal Meeting, Overview/Novembro
+    if re.search(r'all\s+hands|company(?:\s+wide)?|internal\s+meeting|overview.*\d{4}|overview.*(?:janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)', title, re.IGNORECASE):
         result['meeting_type'] = 'ipmedia_company_wide'
         result['company'] = 'IPMedia'
         result['confidence'] = 0.8

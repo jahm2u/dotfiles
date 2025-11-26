@@ -45,6 +45,97 @@ def log(message, level="INFO"):
     with open(LOG_FILE, "a") as f:
         f.write(log_line + "\n")
 
+
+def sanitize_filename(title, max_length=50):
+    """
+    Sanitize a meeting title for use in filename.
+
+    Rules:
+    - Lowercase all characters
+    - Replace spaces with hyphens
+    - Remove special characters except hyphens
+    - Truncate to max_length chars
+    """
+    import unicodedata
+
+    # Normalize unicode characters (é → e, etc.)
+    title = unicodedata.normalize('NFKD', title).encode('ASCII', 'ignore').decode('ASCII')
+
+    # Lowercase
+    title = title.lower()
+
+    # Replace spaces and underscores with hyphens
+    title = re.sub(r'[\s_]+', '-', title)
+
+    # Remove everything except alphanumeric and hyphens
+    title = re.sub(r'[^a-z0-9\-]', '', title)
+
+    # Collapse multiple hyphens
+    title = re.sub(r'-+', '-', title)
+
+    # Remove leading/trailing hyphens
+    title = title.strip('-')
+
+    # Truncate
+    if len(title) > max_length:
+        title = title[:max_length].rstrip('-')
+
+    return title or 'unknown'
+
+
+def send_telegram_notification(metadata):
+    """
+    Send Telegram notification with classification details for verification.
+    """
+    try:
+        bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        chat_id = os.getenv('TELEGRAM_CHAT_ID')
+
+        if not bot_token or not chat_id:
+            log("Telegram credentials not configured, skipping notification", "DEBUG")
+            return
+
+        # Build message
+        original_title = metadata.get('title', 'Unknown')
+        calendar_title = metadata.get('calendar_title', original_title)
+        meeting_type = metadata.get('meeting_type', 'unknown')
+        confidence = metadata.get('confidence', 0)
+        meeting_id = metadata.get('meeting_id', 'unknown')
+        date = metadata.get('date', 'unknown')
+
+        # Determine if calendar matched
+        calendar_matched = metadata.get('calendar_matched', False)
+        match_icon = "✓" if calendar_matched else "?"
+
+        message = f"""📝 Krisp Meeting Downloaded
+
+Original: {original_title}
+Resolved: {calendar_title} {match_icon}
+Type: {meeting_type}
+Confidence: {confidence}
+Date: {date}
+
+ID: {meeting_id[:12]}..."""
+
+        # Send via Telegram API
+        import urllib.request
+        import urllib.parse
+
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        data = urllib.parse.urlencode({
+            'chat_id': chat_id,
+            'text': message,
+            'parse_mode': 'HTML'
+        }).encode('utf-8')
+
+        req = urllib.request.Request(url, data=data)
+        urllib.request.urlopen(req, timeout=10)
+
+        log(f"Telegram notification sent for {meeting_id[:8]}...", "INFO")
+
+    except Exception as e:
+        log(f"Failed to send Telegram notification: {e}", "WARN")
+
 def parse_krisp_date(title):
     """
     Parse date and time from Krisp title format.
@@ -492,25 +583,40 @@ def main():
             if cache and meeting_id and cache.is_processed(meeting_id):
                 log(f"⊘ Already processed, skipping...", "INFO")
             elif status == 'success' and transcript_text:
-                # Save transcript
-                if meeting_id:
-                    transcript_path = TRANSCRIPTS_DIR / f"krisp-transcript-{meeting_id}.txt"
+                # Enrich metadata with calendar matching FIRST
+                metadata = enrich_with_calendar_match(title, meeting_id) if meeting_id else {}
 
-                    # Enrich metadata with calendar matching
-                    metadata = enrich_with_calendar_match(title, meeting_id)
+                # Build filename using new naming convention:
+                # {date}-{sanitized-calendar-title}-{meeting_id}.txt
+                if meeting_id:
+                    # Use calendar_title if available, else original title
+                    display_title = metadata.get('calendar_title') or title
+                    date_str = metadata.get('date') or datetime.now().strftime("%Y-%m-%d")
+                    sanitized_title = sanitize_filename(display_title)
+
+                    # New naming: date-title-id.txt
+                    base_filename = f"{date_str}-{sanitized_title}-{meeting_id}"
+                    transcript_path = TRANSCRIPTS_DIR / f"{base_filename}.txt"
+                    metadata_path = TRANSCRIPTS_DIR / f"{base_filename}.json"
+
+                    # Store the filename in metadata for reference
+                    metadata['filename'] = base_filename
 
                     # Save enriched metadata
-                    metadata_path = TRANSCRIPTS_DIR / f"krisp-transcript-{meeting_id}.json"
                     metadata_path.write_text(json.dumps(metadata, indent=2))
-                    log(f"✓ Saved enriched metadata to: {metadata_path}")
+                    log(f"✓ Saved metadata: {metadata_path.name}")
+
+                    # Send Telegram notification for verification
+                    send_telegram_notification(metadata)
                 else:
-                    # No meeting ID but we have transcript - use timestamp
+                    # No meeting ID - use timestamp fallback
                     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                    transcript_path = TRANSCRIPTS_DIR / f"krisp-transcript-{timestamp}.txt"
+                    transcript_path = TRANSCRIPTS_DIR / f"unknown-{timestamp}.txt"
 
                 transcript_path.write_text(transcript_text)
-                log(f"✓ Saved transcript to: {transcript_path}")
+                log(f"✓ Saved transcript: {transcript_path.name}")
                 log(f"✓ Transcript length: {len(transcript_text)} characters")
+                log(f"✓ Classification: {metadata.get('meeting_type', 'unknown')} (confidence: {metadata.get('confidence', 0)})")
                 success_count += 1
 
                 # Note: We don't mark as processed here - let krisp-process-transcript.py

@@ -166,13 +166,23 @@ determine_note_path() {
         # 1-on-1: {person_folder}/Meetings/{date} 1on1 with {Person}.md
         echo "${PERSON_FOLDER}/Meetings/${DATE} 1on1 with ${PARTICIPANT}.md"
 
+    elif [[ "$MEETING_TYPE" == "ipmedia_kpi" ]]; then
+        # KPI: Business/IPMedia/Teams/Bi/Meetings/{date} Weekly KPI.md
+        # Both morning and afternoon KPI meetings use the same note
+        echo "${OBSIDIAN_VAULT_PATH}/Business/IPMedia/Teams/Bi/Meetings/${DATE} Weekly KPI.md"
+
     elif [[ "$MEETING_TYPE" == co_*_meeting ]]; then
         # Company: Business/CO/{Company}/Meetings/{date} {Company} Weekly.md
         echo "${OBSIDIAN_VAULT_PATH}/Business/CO/${COMPANY}/Meetings/${DATE} ${COMPANY} Weekly.md"
 
     elif [[ "$MEETING_TYPE" == *"team_"* ]]; then
         # Team: Business/IPMedia/Teams/{Team}/Meetings/{date} {Team} Team Meeting.md
-        local TEAM_NAME=$(echo "$MEETING_TYPE" | sed 's/ipmedia_team_//g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')
+        # Use the 'team' field from classification if available (more reliable than parsing meeting_type)
+        local TEAM_NAME=$(echo "$CLASSIFICATION_JSON" | jq -r '.team // empty')
+        if [[ -z "$TEAM_NAME" ]]; then
+            # Fallback: extract from meeting_type
+            TEAM_NAME=$(echo "$MEETING_TYPE" | sed 's/ipmedia_team_//g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')
+        fi
         echo "${OBSIDIAN_VAULT_PATH}/Business/IPMedia/Teams/${TEAM_NAME}/Meetings/${DATE} ${TEAM_NAME} Team Meeting.md"
 
     else
@@ -238,18 +248,25 @@ main() {
     COMPANY=$(echo "$CLASSIFICATION" | jq -r '.company')
     MEETING_TYPE=$(echo "$CLASSIFICATION" | jq -r '.meeting_type')
 
-    # Step 2: Find person folder
-    log "INFO" "Step 2: Finding person folder for: $PERSON"
-    PERSON_FOLDER=$("${SCRIPT_DIR}/find-person-folder.sh" \
-        --person "$PERSON" \
-        --company "$COMPANY" 2>&1)
+    # Step 2: Find person folder (skip for team meetings and KPI meetings)
+    if [[ "$MEETING_TYPE" == *"team_"* ]] || [[ "$MEETING_TYPE" == "ipmedia_kpi" ]]; then
+        # Team and KPI meetings don't need person folders - they use team/BI-based paths
+        log "INFO" "Step 2: Skipping person folder lookup (team/KPI meeting)"
+        PERSON_FOLDER=""  # Placeholder - not used for team/KPI meetings
+    else
+        # Non-team meetings (1-on-1, executive, company) need person folders
+        log "INFO" "Step 2: Finding person folder for: $PERSON"
+        PERSON_FOLDER=$("${SCRIPT_DIR}/find-person-folder.sh" \
+            --person "$PERSON" \
+            --company "$COMPANY" 2>&1)
 
-    if [[ $? -ne 0 ]]; then
-        log "ERROR" "Person folder not found: $PERSON_FOLDER"
-        exit 1
+        if [[ $? -ne 0 ]]; then
+            log "ERROR" "Person folder not found: $PERSON_FOLDER"
+            exit 1
+        fi
+
+        log "INFO" "Person folder: $PERSON_FOLDER"
     fi
-
-    log "INFO" "Person folder: $PERSON_FOLDER"
 
     # Step 2.5: Check if note already exists (for past meetings)
     EXPECTED_NOTE_PATH=$(determine_note_path "$CLASSIFICATION" "$PERSON_FOLDER" "$MEETING_DATE")
