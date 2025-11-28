@@ -248,13 +248,25 @@ main() {
     COMPANY=$(echo "$CLASSIFICATION" | jq -r '.company')
     MEETING_TYPE=$(echo "$CLASSIFICATION" | jq -r '.meeting_type')
 
-    # Step 2: Find person folder (skip for team meetings and KPI meetings)
+    # Step 2: Find person/company folder based on meeting type
     if [[ "$MEETING_TYPE" == *"team_"* ]] || [[ "$MEETING_TYPE" == "ipmedia_kpi" ]]; then
         # Team and KPI meetings don't need person folders - they use team/BI-based paths
         log "INFO" "Step 2: Skipping person folder lookup (team/KPI meeting)"
         PERSON_FOLDER=""  # Placeholder - not used for team/KPI meetings
+
+    elif [[ "$MEETING_TYPE" == co_*_meeting ]]; then
+        # CO meetings use company folder for history (Business/CO/{Company})
+        log "INFO" "Step 2: Using CO company folder for: $COMPANY"
+        PERSON_FOLDER="${OBSIDIAN_VAULT_PATH}/Business/CO/${COMPANY}"
+
+        if [[ ! -d "$PERSON_FOLDER" ]]; then
+            log "ERROR" "CO company folder not found: $PERSON_FOLDER"
+            exit 1
+        fi
+
+        log "INFO" "CO company folder: $PERSON_FOLDER"
     else
-        # Non-team meetings (1-on-1, executive, company) need person folders
+        # Non-team meetings (1-on-1, executive) need person folders
         log "INFO" "Step 2: Finding person folder for: $PERSON"
         PERSON_FOLDER=$("${SCRIPT_DIR}/find-person-folder.sh" \
             --person "$PERSON" \

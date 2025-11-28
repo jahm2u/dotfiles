@@ -596,10 +596,10 @@ def process_transcript(transcript_path, meeting_id):
             log(f"✓ Team folder determined: {meetings_folder}", "INFO", context=ctx)
 
         elif meeting_type == "ipmedia_company_wide":
-            # Company-wide: Business/Company/IPMedia/Meetings/
+            # Company-wide: Business/IPMedia/Meetings/
             ctx = {"meeting_id": meeting_id, "meeting_type": "company_wide"}
 
-            meetings_folder = vault_path / "Business" / "Company" / "IPMedia" / "Meetings"
+            meetings_folder = vault_path / "Business" / "IPMedia" / "Meetings"
             log(f"Creating/using company-wide folder: {meetings_folder}", "DEBUG", context=ctx)
             meetings_folder.mkdir(parents=True, exist_ok=True)
 
@@ -609,11 +609,14 @@ def process_transcript(transcript_path, meeting_id):
             log(f"✓ Company-wide folder determined: {meetings_folder}", "INFO", context=ctx)
 
         elif meeting_type.startswith("co_"):
-            # Portfolio company: Business/Company/{Company}/Meetings/
+            # Portfolio company: Business/CO/{Company}/Meetings/
             company_code = meeting_type.replace("co_", "").replace("_meeting", "").upper()
+            # Special case: Gone uses title case in vault, not uppercase
+            if company_code == "GONE":
+                company_code = "Gone"
             ctx = {"meeting_id": meeting_id, "company": company_code, "meeting_type": meeting_type}
 
-            meetings_folder = vault_path / "Business" / "Company" / company_code / "Meetings"
+            meetings_folder = vault_path / "Business" / "CO" / company_code / "Meetings"
             log(f"Creating/using portfolio company folder: {meetings_folder}", "DEBUG", context=ctx)
             meetings_folder.mkdir(parents=True, exist_ok=True)
 
@@ -808,6 +811,9 @@ def process_transcript(transcript_path, meeting_id):
             elif meeting_type.startswith("co_"):
                 # Portfolio company template
                 company_code = meeting_type.replace("co_", "").replace("_meeting", "").upper()
+            # Special case: Gone uses title case in vault, not uppercase
+            if company_code == "GONE":
+                company_code = "Gone"
                 template = f"""# {note_date} {company_code} Meeting
 
 **Date:** {note_date}

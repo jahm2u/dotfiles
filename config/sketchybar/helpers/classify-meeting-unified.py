@@ -358,7 +358,7 @@ def extract_portfolio_company(title):
     # Portfolio company patterns
     company_patterns = [
         (r'\btp\b|thierry\s+paul|weekly\s+meeting\s+tp', 'TP'),
-        (r'excelsior|weekly\s+meeting\s+excelsior', 'Excelsior'),
+        (r'excelsior|weekly\s+meeting\s+excelsior|\bex\s+weekly\b', 'EX'),
         (r'\bpd\b|best\s+meeting\s+ever', 'PD'),
         (r'masstraffic|mt\s+weekly', 'MT'),
         (r'gone.*(?:weekly|sync)(?!.*standup)', 'Gone'),  # Gone company meetings (not standup)
@@ -447,6 +447,18 @@ def classify_from_calendar_title(title):
         result['meeting_type'] = f'co_{portfolio_company.lower()}_meeting'
         result['company'] = portfolio_company
         result['confidence'] = 0.85
+
+        # Map CO companies to their primary contact/lead
+        co_company_leads = {
+            'EX': 'Felipe',
+            'MT': 'Chris',
+            'DT': 'Danniboy',
+            'TP': 'Jeff',  # Jeff's own company
+            'PD': 'Caio',
+            'Gone': 'Caio',
+        }
+        result['participant'] = co_company_leads.get(portfolio_company, portfolio_company)
+
         return result
 
     # Check for external personal meetings (Vlad, etc.)
