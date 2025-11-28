@@ -157,18 +157,31 @@ main() {
                 BATCH_DETAILS=$(echo "$BATCH_JSON" | jq -c '.details // []' 2>/dev/null || echo "[]")
                 log "INFO" "Batch processing complete: $PROCESSED processed, $PROCESSING_FAILED failed, $SKIPPED skipped"
 
-                # Archive successfully processed transcripts
-                if [ "$PROCESSED" -gt 0 ]; then
-                    log "INFO" "Moving $PROCESSED processed transcripts to archive..."
-                    # Extract successfully processed file IDs and move them
-                    echo "$BATCH_DETAILS" | jq -r '.[] | select(.status == "success") | .meeting_id // empty' | while read -r meeting_id; do
+                # Archive successfully processed AND skipped transcripts (both should be moved out)
+                ARCHIVE_COUNT=$((PROCESSED + SKIPPED))
+                if [ "$ARCHIVE_COUNT" -gt 0 ]; then
+                    log "INFO" "Moving $ARCHIVE_COUNT transcripts to archive ($PROCESSED processed, $SKIPPED skipped)..."
+                    # Extract successfully processed AND skipped file IDs and move them
+                    echo "$BATCH_DETAILS" | jq -r '.[] | select(.status == "success" or .status == "skipped") | .meeting_id // empty' | while read -r meeting_id; do
                         if [ -n "$meeting_id" ]; then
                             # Move both .txt and .json files if they exist
+                            # Support both naming conventions:
+                            # - Old: krisp-transcript-{meeting_id}.{ext}
+                            # - New: {date}-{title}-{meeting_id}.{ext}
                             for ext in txt json; do
+                                # Try old format first
                                 SOURCE_FILE="$HOME/.config/sketchybar/krisp-transcripts/krisp-transcript-${meeting_id}.${ext}"
                                 if [ -f "$SOURCE_FILE" ]; then
                                     mv "$SOURCE_FILE" "$ARCHIVE_DIR/" 2>/dev/null && \
                                         log "INFO" "  Archived: krisp-transcript-${meeting_id}.${ext}"
+                                else
+                                    # Try new format: find files ending with -{meeting_id}.{ext}
+                                    for new_file in "$HOME/.config/sketchybar/krisp-transcripts/"*"-${meeting_id}.${ext}"; do
+                                        if [ -f "$new_file" ]; then
+                                            mv "$new_file" "$ARCHIVE_DIR/" 2>/dev/null && \
+                                                log "INFO" "  Archived: $(basename "$new_file")"
+                                        fi
+                                    done
                                 fi
                             done
                         fi

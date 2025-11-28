@@ -124,10 +124,26 @@ def call_calendar_matching(title, date, time_str=None):
 
 
 def extract_meeting_id(transcript_path):
-    """Extract meeting ID from transcript filename"""
-    filename = transcript_path.name
-    meeting_id = filename.replace("krisp-transcript-", "").replace(".txt", "")
-    return meeting_id
+    """
+    Extract meeting ID from transcript filename.
+    Supports both old and new naming conventions:
+    - Old: krisp-transcript-{meeting_id}.txt → {meeting_id}
+    - New: {date}-{sanitized-title}-{meeting_id}.txt → {meeting_id}
+    """
+    filename = transcript_path.stem  # filename without extension
+
+    # Old format: krisp-transcript-{meeting_id}
+    if filename.startswith("krisp-transcript-"):
+        return filename.replace("krisp-transcript-", "")
+
+    # New format: {date}-{title}-{meeting_id}
+    # Meeting ID is a 32-char hex string at the end
+    match = re.search(r'([0-9a-f]{32})$', filename)
+    if match:
+        return match.group(1)
+
+    # Fallback: use full filename as ID
+    return filename
 
 
 def get_transcript_metadata(transcript_path):
@@ -138,19 +154,27 @@ def get_transcript_metadata(transcript_path):
     """
     meeting_id = extract_meeting_id(transcript_path)
 
-    # Try to read companion metadata file
-    metadata_path = transcript_path.parent / f"krisp-transcript-{meeting_id}.json"
+    # Try to read companion metadata file (check both naming conventions)
+    metadata_path = transcript_path.with_suffix('.json')  # Same name, .json extension
+    old_metadata_path = transcript_path.parent / f"krisp-transcript-{meeting_id}.json"
 
+    krisp_meta = {}
+    title = 'Unknown Meeting'
+
+    # Try new format first (same basename with .json)
     if metadata_path.exists():
         try:
             krisp_meta = json.loads(metadata_path.read_text())
             title = krisp_meta.get('title', 'Unknown Meeting')
         except:
-            title = 'Unknown Meeting'
-            krisp_meta = {}
-    else:
-        title = 'Unknown Meeting'
-        krisp_meta = {}
+            pass
+    # Fall back to old format
+    elif old_metadata_path.exists():
+        try:
+            krisp_meta = json.loads(old_metadata_path.read_text())
+            title = krisp_meta.get('title', 'Unknown Meeting')
+        except:
+            pass
 
     log(f"Processing: {title}")
 
@@ -240,8 +264,21 @@ def extract_participant_from_title(title):
 def main():
     log("=== Enhanced Queue Creator Starting ===")
 
-    # Find all downloaded transcripts
-    transcripts = list(TRANSCRIPTS_DIR.glob("krisp-transcript-*.txt"))
+    # Find all downloaded transcripts (both old and new naming conventions)
+    # Old: krisp-transcript-{meeting_id}.txt
+    # New: {date}-{sanitized-title}-{meeting_id}.txt
+    all_txt_files = list(TRANSCRIPTS_DIR.glob("*.txt"))
+
+    # Filter to only include files with corresponding .json metadata OR old-format files
+    transcripts = []
+    for txt_file in all_txt_files:
+        json_file = txt_file.with_suffix('.json')
+        if json_file.exists():
+            transcripts.append(txt_file)
+        elif txt_file.name.startswith("krisp-transcript-"):
+            # Old format without JSON - include for backwards compatibility
+            transcripts.append(txt_file)
+
     log(f"Found {len(transcripts)} transcript files")
 
     if not transcripts:

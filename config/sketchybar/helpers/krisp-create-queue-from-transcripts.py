@@ -57,10 +57,26 @@ def parse_krisp_date(title):
     return None, None
 
 def extract_meeting_id(transcript_path):
-    """Extract meeting ID from transcript filename"""
-    filename = transcript_path.name
-    meeting_id = filename.replace("krisp-transcript-", "").replace(".txt", "")
-    return meeting_id
+    """
+    Extract meeting ID from transcript filename.
+    Supports both old and new naming conventions:
+    - Old: krisp-transcript-{meeting_id}.txt → {meeting_id}
+    - New: {date}-{sanitized-title}-{meeting_id}.txt → {meeting_id}
+    """
+    filename = transcript_path.stem  # filename without extension
+
+    # Old format: krisp-transcript-{meeting_id}
+    if filename.startswith("krisp-transcript-"):
+        return filename.replace("krisp-transcript-", "")
+
+    # New format: {date}-{title}-{meeting_id}
+    # Meeting ID is a 32-char hex string at the end
+    match = re.search(r'([0-9a-f]{32})$', filename)
+    if match:
+        return match.group(1)
+
+    # Fallback: use full filename as ID
+    return filename
 
 def parse_transcript_for_metadata(transcript_path):
     """
@@ -68,13 +84,21 @@ def parse_transcript_for_metadata(transcript_path):
     First tries to read companion .json metadata file, falls back to parsing transcript
     Returns: dict with date_text, title from Krisp
     """
-    # Try to read metadata JSON file first
+    # Try to read metadata JSON file first (check both naming conventions)
     meeting_id = extract_meeting_id(transcript_path)
-    metadata_path = transcript_path.parent / f"krisp-transcript-{meeting_id}.json"
+    metadata_path = transcript_path.with_suffix('.json')  # Same name, .json extension
+    old_metadata_path = transcript_path.parent / f"krisp-transcript-{meeting_id}.json"
 
+    # Try new format first, then old format
+    actual_metadata_path = None
     if metadata_path.exists():
+        actual_metadata_path = metadata_path
+    elif old_metadata_path.exists():
+        actual_metadata_path = old_metadata_path
+
+    if actual_metadata_path:
         try:
-            metadata = json.loads(metadata_path.read_text())
+            metadata = json.loads(actual_metadata_path.read_text())
             title = metadata.get('title', 'Unknown Meeting')
 
             # Try to parse date from Krisp title first (e.g., "04:30 PM - Slack meeting November 4")
@@ -128,7 +152,18 @@ def parse_transcript_for_metadata(transcript_path):
 
 def main():
     """Create queue file from downloaded transcripts"""
-    transcripts = list(TRANSCRIPTS_DIR.glob("krisp-transcript-*.txt"))
+    # Find all transcripts (both old and new naming conventions)
+    all_txt_files = list(TRANSCRIPTS_DIR.glob("*.txt"))
+
+    # Filter to only include files with corresponding .json metadata OR old-format files
+    transcripts = []
+    for txt_file in all_txt_files:
+        json_file = txt_file.with_suffix('.json')
+        if json_file.exists():
+            transcripts.append(txt_file)
+        elif txt_file.name.startswith("krisp-transcript-"):
+            # Old format without JSON - include for backwards compatibility
+            transcripts.append(txt_file)
 
     if not transcripts:
         print("No transcripts found")
