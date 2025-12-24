@@ -216,7 +216,15 @@ for i in "${!CALENDAR_URLS[@]}"; do
     log "INFO" "URL validated for $cal_name"
 
     # Create calendar directory dynamically
+    # CRITICAL: Wipe existing directory first to prevent unbounded growth
+    # khal import only adds events - it never removes old ones
     CAL_DIR="$HOME/.local/share/khal/calendars/$cal_name"
+    if [[ -d "$CAL_DIR" ]]; then
+        log "INFO" "Wiping existing calendar data for $cal_name..."
+        rm -rf "$CAL_DIR" 2>/dev/null || {
+            log "WARN" "Could not fully wipe $CAL_DIR, attempting to continue"
+        }
+    fi
     if mkdir -p "$CAL_DIR" 2>/dev/null; then
         log "INFO" "Calendar directory ready: $cal_name"
     else
