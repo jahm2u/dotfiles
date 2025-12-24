@@ -811,9 +811,9 @@ def process_transcript(transcript_path, meeting_id):
             elif meeting_type.startswith("co_"):
                 # Portfolio company template
                 company_code = meeting_type.replace("co_", "").replace("_meeting", "").upper()
-            # Special case: Gone uses title case in vault, not uppercase
-            if company_code == "GONE":
-                company_code = "Gone"
+                # Special case: Gone uses title case in vault, not uppercase
+                if company_code == "GONE":
+                    company_code = "Gone"
                 template = f"""# {note_date} {company_code} Meeting
 
 **Date:** {note_date}

@@ -287,6 +287,37 @@ def load_cache_module():
         log(f"Failed to load cache module: {str(e)}", "ERROR")
         return None
 
+
+def is_transcript_already_downloaded(meeting_id):
+    """
+    Check if a transcript already exists for this meeting ID.
+    Checks both active folder and archive folders (processed/, processed/failed/).
+    """
+    if not meeting_id:
+        return False
+
+    # Folders to check
+    folders_to_check = [
+        TRANSCRIPTS_DIR,
+        TRANSCRIPTS_DIR / "processed",
+        TRANSCRIPTS_DIR / "processed" / "failed",
+    ]
+
+    for folder in folders_to_check:
+        if not folder.exists():
+            continue
+
+        # Check old format: krisp-transcript-{meeting_id}.txt
+        old_format = folder / f"krisp-transcript-{meeting_id}.txt"
+        if old_format.exists():
+            return True
+
+        # Check new format: *-{meeting_id}.txt
+        for f in folder.glob(f"*-{meeting_id}.txt"):
+            return True
+
+    return False
+
 def load_env():
     """Load environment variables from dotfiles .env"""
     env_paths = [
@@ -547,6 +578,7 @@ def main():
         success_count = 0
         not_ready_count = 0
         error_count = 0
+        skipped_count = 0
 
         for i in range(meetings_to_process):
             log(f"\n--- Processing meeting {i+1}/{meetings_to_process} ---")
@@ -579,9 +611,14 @@ def main():
             # Try to download transcript
             status, transcript_text, meeting_id = download_transcript_from_current_page(page)
 
-            # Skip if already processed
-            if cache and meeting_id and cache.is_processed(meeting_id):
+            # Skip if already downloaded (check files in active + archive folders)
+            if meeting_id and is_transcript_already_downloaded(meeting_id):
+                log(f"⊘ Already downloaded, skipping...", "INFO")
+                skipped_count += 1
+            # Skip if already processed (check cache)
+            elif cache and meeting_id and cache.is_processed(meeting_id):
                 log(f"⊘ Already processed, skipping...", "INFO")
+                skipped_count += 1
             elif status == 'success' and transcript_text:
                 # Enrich metadata with calendar matching FIRST
                 metadata = enrich_with_calendar_match(title, meeting_id) if meeting_id else {}
@@ -657,6 +694,7 @@ def main():
         progress = {
             "last_run": datetime.now().isoformat(),
             "downloaded": success_count,
+            "skipped": skipped_count,
             "not_ready": not_ready_count,
             "errors": error_count,
             "total_processed": meetings_to_process,
@@ -667,6 +705,7 @@ def main():
 
         log(f"\n=== Summary ===")
         log(f"✓ Successfully downloaded: {success_count}/{meetings_to_process}")
+        log(f"⊘ Skipped (already downloaded): {skipped_count}/{meetings_to_process}")
         log(f"⏳ Not ready: {not_ready_count}/{meetings_to_process}")
         log(f"✗ Errors: {error_count}/{meetings_to_process}")
         log(f"Success rate: {progress['success_rate']}%")

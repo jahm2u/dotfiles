@@ -146,24 +146,38 @@ main() {
 
     if [ "$QUEUE_COUNT" -gt 0 ]; then
         log "INFO" "Phase 3: Processing $QUEUE_COUNT queued meetings..."
-        if BATCH_OUTPUT=$("$VENV_PYTHON" "$SCRIPT_DIR/krisp-batch-process.py" 2>&1); then
-            # Extract JSON output (from first { to end of file)
-            BATCH_JSON=$(echo "$BATCH_OUTPUT" | sed -n '/^{$/,$p')
+        # Capture output regardless of exit code (batch processor returns 1 if any failures)
+        BATCH_OUTPUT=$("$VENV_PYTHON" "$SCRIPT_DIR/krisp-batch-process.py" 2>&1) || true
 
-            if [ -n "$BATCH_JSON" ]; then
-                PROCESSED=$(echo "$BATCH_JSON" | jq -r '.success // 0' 2>/dev/null || echo 0)
-                PROCESSING_FAILED=$(echo "$BATCH_JSON" | jq -r '.failed // 0' 2>/dev/null || echo 0)
-                SKIPPED=$(echo "$BATCH_JSON" | jq -r '.skipped // 0' 2>/dev/null || echo 0)
-                BATCH_DETAILS=$(echo "$BATCH_JSON" | jq -c '.details // []' 2>/dev/null || echo "[]")
-                log "INFO" "Batch processing complete: $PROCESSED processed, $PROCESSING_FAILED failed, $SKIPPED skipped"
+        # Extract JSON output (from first { to end of file)
+        BATCH_JSON=$(echo "$BATCH_OUTPUT" | sed -n '/^{$/,$p')
 
-                # Archive successfully processed AND skipped transcripts (both should be moved out)
-                ARCHIVE_COUNT=$((PROCESSED + SKIPPED))
+        if [ -n "$BATCH_JSON" ]; then
+            PROCESSED=$(echo "$BATCH_JSON" | jq -r '.success // 0' 2>/dev/null || echo 0)
+            PROCESSING_FAILED=$(echo "$BATCH_JSON" | jq -r '.failed // 0' 2>/dev/null || echo 0)
+            SKIPPED=$(echo "$BATCH_JSON" | jq -r '.skipped // 0' 2>/dev/null || echo 0)
+            BATCH_DETAILS=$(echo "$BATCH_JSON" | jq -c '.details // []' 2>/dev/null || echo "[]")
+            log "INFO" "Batch processing complete: $PROCESSED processed, $PROCESSING_FAILED failed, $SKIPPED skipped"
+
+                # Archive ALL processed transcripts (success, skipped, AND failed) to stop re-processing
+                ARCHIVE_COUNT=$((PROCESSED + SKIPPED + PROCESSING_FAILED))
                 if [ "$ARCHIVE_COUNT" -gt 0 ]; then
-                    log "INFO" "Moving $ARCHIVE_COUNT transcripts to archive ($PROCESSED processed, $SKIPPED skipped)..."
-                    # Extract successfully processed AND skipped file IDs and move them
-                    echo "$BATCH_DETAILS" | jq -r '.[] | select(.status == "success" or .status == "skipped") | .meeting_id // empty' | while read -r meeting_id; do
+                    log "INFO" "Moving $ARCHIVE_COUNT transcripts to archive ($PROCESSED processed, $SKIPPED skipped, $PROCESSING_FAILED failed)..."
+
+                    # Create failed subdirectory for failed transcripts
+                    FAILED_ARCHIVE_DIR="$ARCHIVE_DIR/failed"
+                    mkdir -p "$FAILED_ARCHIVE_DIR"
+
+                    # Extract ALL processed file IDs (success, skipped, AND failed) and move them
+                    echo "$BATCH_DETAILS" | jq -r '.[] | "\(.status)|\(.meeting_id // empty)"' | while IFS='|' read -r status meeting_id; do
                         if [ -n "$meeting_id" ]; then
+                            # Determine destination based on status
+                            if [ "$status" = "failed" ]; then
+                                DEST_DIR="$FAILED_ARCHIVE_DIR"
+                            else
+                                DEST_DIR="$ARCHIVE_DIR"
+                            fi
+
                             # Move both .txt and .json files if they exist
                             # Support both naming conventions:
                             # - Old: krisp-transcript-{meeting_id}.{ext}
@@ -172,14 +186,14 @@ main() {
                                 # Try old format first
                                 SOURCE_FILE="$HOME/.config/sketchybar/krisp-transcripts/krisp-transcript-${meeting_id}.${ext}"
                                 if [ -f "$SOURCE_FILE" ]; then
-                                    mv "$SOURCE_FILE" "$ARCHIVE_DIR/" 2>/dev/null && \
-                                        log "INFO" "  Archived: krisp-transcript-${meeting_id}.${ext}"
+                                    mv "$SOURCE_FILE" "$DEST_DIR/" 2>/dev/null && \
+                                        log "INFO" "  Archived: krisp-transcript-${meeting_id}.${ext} → $(basename "$DEST_DIR")/"
                                 else
                                     # Try new format: find files ending with -{meeting_id}.{ext}
                                     for new_file in "$HOME/.config/sketchybar/krisp-transcripts/"*"-${meeting_id}.${ext}"; do
                                         if [ -f "$new_file" ]; then
-                                            mv "$new_file" "$ARCHIVE_DIR/" 2>/dev/null && \
-                                                log "INFO" "  Archived: $(basename "$new_file")"
+                                            mv "$new_file" "$DEST_DIR/" 2>/dev/null && \
+                                                log "INFO" "  Archived: $(basename "$new_file") → $(basename "$DEST_DIR")/"
                                         fi
                                     done
                                 fi
@@ -187,12 +201,8 @@ main() {
                         fi
                     done
                 fi
-            else
-                log "WARN" "Could not parse batch processing output"
-            fi
         else
-            log "ERROR" "Batch processing failed (non-zero exit), continuing anyway..."
-            # Don't exit - processing failures shouldn't break the daemon
+            log "WARN" "Could not parse batch processing output"
         fi
     else
         log "INFO" "No pending transcripts to process (batch phase skipped)"

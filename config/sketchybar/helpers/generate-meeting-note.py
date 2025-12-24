@@ -196,18 +196,24 @@ def parse_template_frontmatter(template_content: str) -> tuple[dict, str]:
         return {}, template_content
 
 
-def load_template(template_path: str) -> tuple[str, dict]:
+def load_template(template_path: str) -> tuple[str, dict, str]:
     """
     Load template content and parse metadata.
 
     Returns:
-        (template_content, template_metadata)
+        (template_content, template_metadata, raw_frontmatter)
     """
     try:
         with open(template_path, 'r', encoding='utf-8') as f:
             full_content = f.read()
             metadata, content = parse_template_frontmatter(full_content)
-            return content, metadata
+            # Extract raw frontmatter string for variable replacement
+            raw_frontmatter = ""
+            if full_content.startswith('---\n'):
+                parts = full_content.split('---\n', 2)
+                if len(parts) >= 3:
+                    raw_frontmatter = f"---\n{parts[1]}---\n"
+            return content, metadata, raw_frontmatter
     except FileNotFoundError:
         # Return basic default template matching meeting-1on1.md structure
         default_template = """# {{date}} 1on1 with {{participant}}
@@ -284,7 +290,7 @@ def load_template(template_path: str) -> tuple[str, dict]:
 **Transcript:**
 **Processed:**
 """
-        return default_template, {}
+        return default_template, {}, ""
 
 
 def generate_meeting_prep_content(continuity: dict, classification: dict, template_content: str, cross_context: str = "") -> dict:
@@ -511,7 +517,7 @@ def main():
 
         # Load template and person config
         template_path = get_template_path(classification["meeting_type"], vault_path, args.person_folder)
-        template_content, template_metadata = load_template(template_path)
+        template_content, template_metadata, raw_frontmatter = load_template(template_path)
 
         person_config = load_meeting_config(args.person_folder)
 
@@ -640,6 +646,14 @@ def main():
         note_content = note_content.replace("{{critical_items}}", ensure_string(prep_content.get("critical_items", "")))
         note_content = note_content.replace("{{questions}}", ensure_string(prep_content.get("questions", "")))
         note_content = note_content.replace("{{context}}", ensure_string(prep_content.get("context", "")))
+
+        # Prepend frontmatter with variable replacement if present
+        if raw_frontmatter:
+            frontmatter = raw_frontmatter.replace("{{date}}", meeting_date)
+            frontmatter = frontmatter.replace("{{participant}}", participant)
+            frontmatter = frontmatter.replace("{{company}}", classification.get("company", ""))
+            frontmatter = frontmatter.replace("{{previous_meeting}}", previous_meeting or "")
+            note_content = frontmatter + "\n" + note_content
 
         # Write file (save_path already determined earlier)
         with open(save_path, 'w', encoding='utf-8') as f:
