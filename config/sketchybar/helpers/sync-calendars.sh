@@ -78,9 +78,11 @@ rotate_logs() {
 
     if [[ "$archive_count" -gt 10 ]]; then
         # Delete oldest archived logs, keeping only 10 most recent
+        # Note: BSD head doesn't support -n -10, so calculate count to delete
+        local delete_count=$((archive_count - 10))
         find "$LOG_DIR" -name "calendar-sync-*.log" -type f 2>/dev/null | \
             sort | \
-            head -n -10 | \
+            head -n "$delete_count" | \
             xargs rm -f
     fi
 }
