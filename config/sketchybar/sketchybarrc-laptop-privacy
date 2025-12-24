@@ -256,6 +256,16 @@ sketchybar --add item memory right \
     popup.background.shadow.distance=15 \
     popup.background.shadow.angle=90
 
+sketchybar --add item disk right \
+    --set disk \
+    icon="HD" \
+    icon.color=$GREEN \
+    icon.font="$FONT_FACE:Bold:10.0" \
+    icon.y_offset=0 \
+    label.drawing=true \
+    update_freq=30 \
+    script="$PLUGIN_SHARED_DIR/disk.sh"
+
 # System stats popup items - top 10 consumers
 # CPU top 10 processes
 for i in {1..10}; do
