@@ -2,8 +2,9 @@
 
 source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
-# Get disk usage percentage for root filesystem
-DISK_USAGE=$(df -h / | awk 'NR==2 {gsub(/%/,""); print $5}')
+# Get disk usage percentage for Data volume (actual user data on macOS)
+# /System/Volumes/Data is where user files live, not the read-only system volume
+DISK_USAGE=$(df -h /System/Volumes/Data | awk 'NR==2 {gsub(/%/,""); print $5}')
 
 # Handle empty value
 DISK_USAGE=${DISK_USAGE:-0}
