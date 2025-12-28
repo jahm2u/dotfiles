@@ -10,7 +10,6 @@ This script provides consistent meeting classification by:
 
 Used by:
 - meeting-prep.sh (when clicking meeting icon)
-- krisp processing pipeline (for downloaded transcripts)
 - any other script needing meeting classification
 
 Author: Claude (unifying John's work)
@@ -375,7 +374,7 @@ def extract_portfolio_company(title):
 
 def classify_from_calendar_title(title):
     """
-    Classify a meeting based on calendar title (more reliable than Krisp titles).
+    Classify a meeting based on calendar title (most reliable source).
     Returns dict with meeting_type, company, participant, team.
     """
     title_lower = title.lower()
@@ -527,9 +526,9 @@ def classify_from_calendar_title(title):
     return result
 
 
-def classify_from_krisp_title(title):
+def classify_from_title_platform(title):
     """
-    Fallback classification from Krisp title alone (less accurate).
+    Fallback classification from title platform hints (less accurate).
     """
     title_lower = title.lower()
     result = {
@@ -563,7 +562,7 @@ def classify_from_krisp_title(title):
 
 def main():
     parser = argparse.ArgumentParser(description='Unified meeting classification')
-    parser.add_argument('--title', required=True, help='Meeting title (from Krisp or calendar)')
+    parser.add_argument('--title', required=True, help='Meeting title (from calendar or other source)')
     parser.add_argument('--date', help='Meeting date (YYYY-MM-DD)')
     parser.add_argument('--time', help='Meeting time (HH:MM AM/PM)')
     parser.add_argument('--participants', help='Comma-separated participant emails')
@@ -607,11 +606,11 @@ def main():
             result['source'] = 'title_pattern'
             log(f"Using title pattern classification: {result['meeting_type']}", "INFO")
         else:
-            # Fall back to Krisp title classification
-            classification = classify_from_krisp_title(args.title)
+            # Fall back to platform-based classification
+            classification = classify_from_title_platform(args.title)
             result.update(classification)
-            result['source'] = 'krisp_pattern'
-            log(f"Using Krisp pattern classification: {result['meeting_type']}", "INFO")
+            result['source'] = 'platform_pattern'
+            log(f"Using platform pattern classification: {result['meeting_type']}", "INFO")
 
     # Step 3: Apply email mapping if we have participants
     if args.participants:

@@ -33,7 +33,7 @@ The installation script (`scripts/install.sh`) uses a **four-phase declarative a
 - **Idempotent**: Safe to run multiple times
 - **Graceful degradation**: Non-critical failures don't stop installation
 - **Automatic backups**: Timestamped backups before changes
-- **Python venv setup**: Auto-creates venv for meeting-prep and Krisp automation
+- **Python venv setup**: Auto-creates venv for meeting-prep automation
 - **Cache clearing**: Clears stale caches for fresh sync on new machines
 
 ## Core Tools & Configurations
@@ -87,7 +87,6 @@ components → cache/API → event trigger → widget update
 | **Calendar** | 15 min | `sync-calendars.sh` | Sync iCal → khal → meeting widget | `meeting.sh`, LaunchAgent: `calendar-sync` |
 | **Todoist** | 30 sec | `todoist-precache.sh` | Precache tasks → instant popup | `todoist_popup.sh`, `todoist.sh`, LaunchAgent: `todoist-precache` |
 | **Meeting Prep** | On-click | `meeting-prep.sh` | AI-powered meeting note generation | `classify-meeting.py`, `analyze-meeting-history.py`, `generate-meeting-note.py` |
-| **Krisp** | 60 min | `krisp-hourly-daemon.sh` | Transcript download → AI processing → Obsidian | `krisp-download-transcripts-simple.py`, LaunchAgent: `krisp-daemon` |
 
 ### Component Details
 
@@ -109,15 +108,9 @@ components → cache/API → event trigger → widget update
 - **Config**: `.env`: `OBSIDIAN_VAULT_PATH="/path/to/vault"`, `OPENAI_API_KEY="sk-..."`
 - **Performance**: 15-45s total, ~$0.010 per prep
 
-#### Krisp Automation
-- **Workflow**: LaunchAgent → discover meetings → download transcripts → process with GPT-4o-mini → update Obsidian notes
-- **Components**: `krisp-download-transcripts-simple.py` (API fetch) | `krisp-process-transcript.py` (AI analysis) | `krisp-update-note.py` (note enrichment)
-- **Config**: `krisp-auth.json` (credentials) | `.env`: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (optional)
-- **Performance**: 1-5 min per run, ~$0.005 per transcript
-
 ### LaunchAgent Operations
 
-**Service Names:** `calendar-sync` | `todoist-precache` | `krisp-daemon`
+**Service Names:** `calendar-sync` | `todoist-precache`
 
 ```bash
 # Check status (replace {SERVICE} with service name)
@@ -233,7 +226,7 @@ The `scripts/install.sh` script creates these symlinks:
 # Obsidian Integration (required for meeting prep)
 OBSIDIAN_VAULT_PATH="/Users/username/Library/Mobile Documents/iCloud~md~obsidian/Documents/VaultName"
 
-# OpenAI API (required for AI features: meeting prep, Krisp processing)
+# OpenAI API (required for AI features: meeting prep)
 OPENAI_API_KEY="sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 # Calendar Sync (required for calendar widget)
@@ -241,10 +234,6 @@ ICAL_URLS="https://calendar-url-1.ics,https://calendar-url-2.ics"
 
 # Todoist Integration (required for task widget)
 TODOIST_API_TOKEN="your-todoist-api-token-here"
-
-# Telegram Notifications (optional for Krisp automation health monitoring)
-TELEGRAM_BOT_TOKEN="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
-TELEGRAM_CHAT_ID="123456789"
 ```
 
 **Setup:** `cp ~/dotfiles/.env.example ~/dotfiles/.env` then edit with your values
@@ -262,9 +251,6 @@ TELEGRAM_CHAT_ID="123456789"
 **Dependencies:** `openai==1.12.0`, `python-dotenv==1.0.0`, `pyyaml==6.0.1`, `requests`, `python-dateutil`
 
 ```bash
-# Recreate venv if needed
-bash ~/dotfiles/scripts/setup-krisp-venv.sh
-
 # Verify dependencies
 ~/.config/sketchybar/venv/bin/pip list
 
@@ -336,7 +322,6 @@ tail -f ~/.config/sketchybar/logs/*.log
 # Calendar: bash ~/.config/sketchybar/helpers/sync-calendars.sh
 # Todoist: bash ~/.config/sketchybar/helpers/todoist-precache.sh
 # Meeting: bash ~/.config/sketchybar/helpers/meeting-prep.sh
-# Krisp: bash ~/.config/sketchybar/helpers/krisp-hourly-daemon.sh
 
 # Check caches
 ls -lh ~/.cache/sketchybar/
@@ -361,7 +346,7 @@ curl -H "Authorization: Bearer $TODOIST_API_TOKEN" https://api.todoist.com/rest/
 | **API auth fails** | 401/403 errors | Check token in `.env`, test with curl |
 | **Network errors** | Curl exit codes 6/7/28 | DNS=6, refused=7, timeout=28 - check connectivity |
 | **Widget stale** | Shows old data | Trigger manual sync for service |
-| **Python fails** | ModuleNotFoundError | `bash ~/dotfiles/scripts/setup-krisp-venv.sh` |
+| **Python fails** | ModuleNotFoundError | Reinstall venv: `python3 -m venv ~/.config/sketchybar/venv && ~/.config/sketchybar/venv/bin/pip install -r ~/.config/sketchybar/requirements.txt` |
 | **khal not found** | Exit code 127 | Check LaunchAgent PATH configuration (see above) |
 | **Permissions denied** | Can't write logs | Check directory permissions |
 
@@ -372,12 +357,6 @@ rm -rf ~/.cache/sketchybar/ ~/.local/share/khal/calendars/google
 launchctl load -w ~/Library/LaunchAgents/com.user.calendar-sync.plist
 bash ~/.config/sketchybar/helpers/sync-calendars.sh
 brew services restart sketchybar
-```
-
-**Multi-Computer Sync:**
-```bash
-cd ~/dotfiles && bash scripts/krisp-update-fix.sh
-# Performs: git pull → LaunchAgent reload → health check
 ```
 
 ### Log & Cache Locations
@@ -394,7 +373,6 @@ cd ~/dotfiles && bash scripts/krisp-update-fix.sh
 - `todoist_tasks_cache` - Todoist tasks
 - `todoist_working_task` - Current focus
 - `last_meeting_prep_result.json` - Meeting prep result
-- `krisp_processing_queue.json` - Krisp queue
 
 ## Contact & Support
 Repository: https://github.com/jahm2u/dotfiles

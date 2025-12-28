@@ -195,10 +195,6 @@ else
     ICON_PADDING_RIGHT=3
     ICON=󰔊
     ;;
-"krisp")
-    ICON_PADDING_RIGHT=3
-    ICON=󰕿
-    ;;
 "stable")
     ICON_PADDING_RIGHT=3
     ICON=󰐃

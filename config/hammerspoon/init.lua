@@ -667,7 +667,6 @@ function getAudioDevices()
     local seen = {}
     for line in output:gmatch("[^\r\n]+") do
         if not line:find("Microsoft Teams") and
-           not line:find("krisp") and
            not line:find("Jump Desktop") and
            not seen[line] then
             table.insert(devices, line)

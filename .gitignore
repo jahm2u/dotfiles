@@ -41,10 +41,6 @@ config/obsidian/Thumbs.db
 config/*/.env
 settings.local.json
 
-# Krisp authentication credentials (sensitive session data)
-config/sketchybar/krisp-auth.json
-config/sketchybar/krisp-auth.json.backup-*
-
 # Raycast - extensions may contain user-specific cache/data
 config/raycast/extensions/*/cache/
 config/raycast/extensions/*/data/
@@ -83,9 +79,13 @@ __pycache__/
 *.pyd
 .Python
 
-# Krisp automation artifacts
-config/sketchybar/krisp-transcripts/
+# Python virtual environment
 config/sketchybar/venv/
+
+# Krisp local data (credentials and transcripts - never commit)
+config/sketchybar/krisp-auth.json
+config/sketchybar/krisp-auth.json.backup-*
+config/sketchybar/krisp-transcripts/
 
 # Claude Code savepoints and drafts
 .claude/docs/savepoint_*.md

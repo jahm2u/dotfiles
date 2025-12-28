@@ -130,9 +130,7 @@ STATE_ENV_EXISTS=""
 STATE_ENV_HAS_CALENDAR=""
 STATE_ENV_HAS_OPENAI=""
 STATE_ENV_HAS_OBSIDIAN=""
-STATE_ENV_HAS_KRISP=""
 STATE_CALENDAR_LAUNCHAGENT_LOADED=""
-STATE_KRISP_LAUNCHAGENT_LOADED=""
 STATE_SYMLINKS_EXIST=()
 STATE_MISSING_DEPS=()
 
@@ -191,18 +189,11 @@ detect_system_state() {
             STATE_ENV_HAS_OBSIDIAN="false"
         fi
 
-        # Check for Krisp automation flag
-        if grep -q "KRISP_LAUNCHAGENT=TRUE" "$DOTFILES_DIR/.env" 2>/dev/null; then
-            STATE_ENV_HAS_KRISP="true"
-        else
-            STATE_ENV_HAS_KRISP="false"
-        fi
     else
         STATE_ENV_EXISTS="false"
         STATE_ENV_HAS_CALENDAR="false"
         STATE_ENV_HAS_OPENAI="false"
         STATE_ENV_HAS_OBSIDIAN="false"
-        STATE_ENV_HAS_KRISP="false"
     fi
 
     # Detect LaunchAgents
@@ -210,12 +201,6 @@ detect_system_state() {
         STATE_CALENDAR_LAUNCHAGENT_LOADED="true"
     else
         STATE_CALENDAR_LAUNCHAGENT_LOADED="false"
-    fi
-
-    if launchctl list 2>/dev/null | grep -q "com.user.krisp-transcript-download"; then
-        STATE_KRISP_LAUNCHAGENT_LOADED="true"
-    else
-        STATE_KRISP_LAUNCHAGENT_LOADED="false"
     fi
 
     # Detect existing symlinks
@@ -249,9 +234,7 @@ CONFIG_CREATE_ENV=""
 CONFIG_SETUP_CALENDAR=""
 CONFIG_SETUP_OPENAI=""
 CONFIG_SETUP_OBSIDIAN=""
-CONFIG_SETUP_KRISP=""
 CONFIG_INSTALL_CALENDAR_LAUNCHAGENT=""
-CONFIG_INSTALL_KRISP_LAUNCHAGENT=""
 CONFIG_OPENAI_API_KEY=""
 CONFIG_OBSIDIAN_VAULT_PATH=""
 CONFIG_CALENDAR_URL_NAME=""
@@ -453,32 +436,6 @@ gather_configuration() {
         fi
     fi
 
-    # Krisp automation
-    if [[ "$STATE_ENV_HAS_KRISP" == "true" ]]; then
-        if [[ "$STATE_KRISP_LAUNCHAGENT_LOADED" == "true" ]]; then
-            CONFIG_INSTALL_KRISP_LAUNCHAGENT="skip"
-        else
-            if ask_user "Install Krisp transcript download LaunchAgent?"; then
-                CONFIG_INSTALL_KRISP_LAUNCHAGENT="true"
-            else
-                CONFIG_INSTALL_KRISP_LAUNCHAGENT="false"
-            fi
-        fi
-    else
-        # Ask if they want to enable Krisp first
-        if ask_user "Enable Krisp transcript automation?"; then
-            CONFIG_SETUP_KRISP="true"
-            if ask_user "Install Krisp LaunchAgent?"; then
-                CONFIG_INSTALL_KRISP_LAUNCHAGENT="true"
-            else
-                CONFIG_INSTALL_KRISP_LAUNCHAGENT="false"
-            fi
-        else
-            CONFIG_SETUP_KRISP="false"
-            CONFIG_INSTALL_KRISP_LAUNCHAGENT="false"
-        fi
-    fi
-
     echo ""
     log "Configuration complete! Generating plan..."
     echo ""
@@ -534,11 +491,6 @@ generate_plan() {
         PLAN+=("$step_num|env_calendar|Configure calendar URL|${CONFIG_CALENDAR_URL_NAME}")
     fi
 
-    if [[ "$CONFIG_SETUP_KRISP" == "true" ]]; then
-        ((step_num++))
-        PLAN+=("$step_num|env_krisp|Enable Krisp automation|Transcript downloads")
-    fi
-
     # Calendar infrastructure
     ((step_num++))
     PLAN+=("$step_num|calendar_infra|Initialize calendar infrastructure|Directories and scripts")
@@ -552,16 +504,6 @@ generate_plan() {
     if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
         ((step_num++))
         PLAN+=("$step_num|launchagent_calendar|Install calendar sync LaunchAgent|Auto-sync every 15 min")
-    fi
-
-    # Krisp LaunchAgent - install or cleanup based on config
-    if [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
-        ((step_num++))
-        PLAN+=("$step_num|launchagent_krisp|Install Krisp LaunchAgent|Auto-download every hour")
-    elif [[ "$STATE_KRISP_LAUNCHAGENT_LOADED" == "true" ]]; then
-        # Cleanup: unload if disabled but currently running
-        ((step_num++))
-        PLAN+=("$step_num|cleanup_krisp_launchagent|Remove Krisp LaunchAgent|Disabled in config")
     fi
 
     # Restart services
@@ -755,14 +697,6 @@ execute_plan() {
                 fi
                 ;;
 
-            env_krisp)
-                if execute_env_krisp; then
-                    show_result 0
-                else
-                    show_result 2
-                fi
-                ;;
-
             calendar_infra)
                 if exec_quiet "Calendar infrastructure" initialize_calendar_infrastructure; then
                     show_result 0
@@ -781,22 +715,6 @@ execute_plan() {
 
             launchagent_calendar)
                 if exec_quiet "Calendar LaunchAgent" install_calendar_launchagent; then
-                    show_result 0
-                else
-                    show_result 1
-                fi
-                ;;
-
-            launchagent_krisp)
-                if exec_quiet "Krisp LaunchAgent" install_krisp_transcript_launchagent; then
-                    show_result 0
-                else
-                    show_result 1
-                fi
-                ;;
-
-            cleanup_krisp_launchagent)
-                if exec_quiet "Unload Krisp LaunchAgent" cleanup_krisp_launchagent; then
                     show_result 0
                 else
                     show_result 1
@@ -923,41 +841,6 @@ execute_env_calendar() {
     fi
 }
 
-execute_env_krisp() {
-    if ! grep -q "KRISP_LAUNCHAGENT" "$DOTFILES_DIR/.env" 2>/dev/null; then
-        echo "" >> "$DOTFILES_DIR/.env"
-        echo "# Krisp Automation" >> "$DOTFILES_DIR/.env"
-        echo "KRISP_LAUNCHAGENT=TRUE" >> "$DOTFILES_DIR/.env"
-    fi
-}
-
-cleanup_krisp_launchagent() {
-    local label="com.user.krisp-transcript-download"
-    local plist_path="$HOME/Library/LaunchAgents/$label.plist"
-
-    log "Removing Krisp LaunchAgent (disabled in config)"
-
-    # Unload if currently loaded
-    if launchctl list | grep -q "$label"; then
-        if launchctl unload "$plist_path" 2>/dev/null; then
-            log "✓ Unloaded $label"
-        else
-            warn "Failed to unload $label"
-        fi
-    fi
-
-    # Remove plist file
-    if [[ -f "$plist_path" ]]; then
-        if rm "$plist_path" 2>/dev/null; then
-            log "✓ Removed $plist_path"
-        else
-            warn "Failed to remove $plist_path"
-        fi
-    fi
-
-    return 0
-}
-
 install_custom_fonts() {
     log "Installing custom app icon fonts for Sketchybar"
 
@@ -1057,10 +940,6 @@ generate_report() {
 
         if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
             log "  • Monitor calendar sync: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
-        fi
-
-        if [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
-            log "  • Check Krisp setup: ~/.config/sketchybar/helpers/KRISP_DAEMON_SETUP.md"
         fi
     fi
 
@@ -1671,7 +1550,7 @@ initialize_calendar_infrastructure() {
         fi
     done
 
-    # Setup Python virtual environment for meeting-prep and Krisp automation
+    # Setup Python virtual environment for meeting-prep automation
     local venv_path="$HOME/.config/sketchybar/venv"
     local requirements_file="$HOME/.config/sketchybar/requirements.txt"
 
@@ -1681,7 +1560,7 @@ initialize_calendar_infrastructure() {
             log "✓ Created Python venv at $venv_path"
         else
             warn "Failed to create Python venv"
-            warn "Meeting-prep and Krisp automation may not work"
+            warn "Meeting-prep automation may not work"
             return 1
         fi
     else
@@ -1694,13 +1573,6 @@ initialize_calendar_infrastructure() {
         if "$venv_path/bin/pip" install --quiet --upgrade pip setuptools 2>&1 | tee -a "$EXEC_LOG_FILE" > /dev/null; then
             if "$venv_path/bin/pip" install --quiet -r "$requirements_file" 2>&1 | tee -a "$EXEC_LOG_FILE" > /dev/null; then
                 log "✓ Installed Python dependencies"
-
-                # Install Playwright browsers for Krisp automation
-                if "$venv_path/bin/playwright" install chromium 2>&1 | tee -a "$EXEC_LOG_FILE" > /dev/null; then
-                    log "✓ Installed Playwright browsers"
-                else
-                    warn "Playwright browser installation failed (non-critical)"
-                fi
             else
                 warn "Failed to install Python dependencies"
                 warn "Check log: $EXEC_LOG_FILE"
@@ -1909,152 +1781,6 @@ setup_core_env_variables() {
     return 0
 }
 
-setup_krisp_env_variables() {
-    log ""
-    log "Krisp automation setup"
-    echo ""
-
-    # Check if user wants to enable Krisp automation
-    if [[ "${KRISP_LAUNCHAGENT:-}" != "TRUE" ]]; then
-        log "Krisp automation is currently disabled."
-        if ask_user "Would you like to enable Krisp transcript downloads?"; then
-            # Add KRISP_LAUNCHAGENT=TRUE to .env
-            if [[ -f "$DOTFILES_DIR/.env" ]]; then
-                if ! grep -q "KRISP_LAUNCHAGENT" "$DOTFILES_DIR/.env"; then
-                    echo "" >> "$DOTFILES_DIR/.env"
-                    echo "# Krisp Automation (Story 4-2)" >> "$DOTFILES_DIR/.env"
-                    echo "KRISP_LAUNCHAGENT=TRUE" >> "$DOTFILES_DIR/.env"
-                    log "✓ Added KRISP_LAUNCHAGENT=TRUE to .env"
-                    export KRISP_LAUNCHAGENT=TRUE
-                else
-                    # Variable exists but is not TRUE - update it
-                    sed -i '' 's/^KRISP_LAUNCHAGENT=.*/KRISP_LAUNCHAGENT=TRUE/' "$DOTFILES_DIR/.env"
-                    log "✓ Updated KRISP_LAUNCHAGENT=TRUE in .env"
-                    export KRISP_LAUNCHAGENT=TRUE
-                fi
-            else
-                error ".env file not found - cannot enable Krisp automation"
-                return 1
-            fi
-        else
-            log "Skipping Krisp automation setup"
-            return 0
-        fi
-    fi
-
-    # Check for optional Telegram notification variables
-    if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]] || [[ -z "${TELEGRAM_CHAT_ID:-}" ]]; then
-        log ""
-        log "Telegram notifications are optional but recommended for monitoring."
-        if ask_user "Would you like to configure Telegram notifications?"; then
-
-            # Get bot token
-            if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-                log ""
-                log "To create a Telegram bot:"
-                log "  1. Message @BotFather on Telegram"
-                log "  2. Send /newbot and follow instructions"
-                log "  3. Copy the bot token provided"
-                echo ""
-                read -p "Enter your Telegram bot token (or press Enter to skip): " bot_token
-
-                if [[ -n "$bot_token" ]]; then
-                    if ! grep -q "TELEGRAM_BOT_TOKEN" "$DOTFILES_DIR/.env"; then
-                        echo "TELEGRAM_BOT_TOKEN=$bot_token" >> "$DOTFILES_DIR/.env"
-                        log "✓ Added TELEGRAM_BOT_TOKEN to .env"
-                        export TELEGRAM_BOT_TOKEN="$bot_token"
-                    fi
-                fi
-            fi
-
-            # Get chat ID
-            if [[ -z "${TELEGRAM_CHAT_ID:-}" ]] && [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-                log ""
-                log "To get your chat ID:"
-                log "  1. Message your bot on Telegram"
-                log "  2. Visit: https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates"
-                log "  3. Find 'chat' -> 'id' in the JSON response"
-                echo ""
-                read -p "Enter your Telegram chat ID (or press Enter to skip): " chat_id
-
-                if [[ -n "$chat_id" ]]; then
-                    if ! grep -q "TELEGRAM_CHAT_ID" "$DOTFILES_DIR/.env"; then
-                        echo "TELEGRAM_CHAT_ID=$chat_id" >> "$DOTFILES_DIR/.env"
-                        log "✓ Added TELEGRAM_CHAT_ID to .env"
-                        export TELEGRAM_CHAT_ID="$chat_id"
-                    fi
-                fi
-            fi
-        fi
-    fi
-
-    # Remind about Krisp auth file
-    log ""
-    log "NOTE: Krisp authentication file required at:"
-    log "  ~/.config/sketchybar/krisp-auth.json"
-    log ""
-    log "To create this file, run:"
-    log "  bash ~/.config/sketchybar/helpers/krisp-refresh-auth.sh"
-    log "  (See config/sketchybar/helpers/KRISP_AUTH_SETUP.md for details)"
-
-    return 0
-}
-
-install_krisp_transcript_launchagent() {
-    local label="com.user.krisp-transcript-download"
-    local plist_source="$DOTFILES_DIR/config/sketchybar/launchagents/$label.plist"
-    local plist_target="$HOME/Library/LaunchAgents/$label.plist"
-    local logs_dir="$HOME/.config/sketchybar/logs"
-
-    log "Installing Krisp transcript download LaunchAgent"
-
-    # Ensure logs directory exists
-    if [[ ! -d "$logs_dir" ]]; then
-        mkdir -p "$logs_dir"
-        log "Created logs directory: $logs_dir"
-    fi
-
-    # Check if plist source exists
-    if [[ ! -f "$plist_source" ]]; then
-        error "LaunchAgent plist not found at: $plist_source"
-        return 1
-    fi
-
-    # Unload existing LaunchAgent if loaded
-    if launchctl list | grep -q "$label"; then
-        warn "Unloading existing LaunchAgent: $label"
-        launchctl unload "$plist_target" 2>/dev/null || true
-    fi
-
-    # Backup existing plist if it exists
-    if [[ -f "$plist_target" ]]; then
-        backup_existing "$plist_target"
-    fi
-
-    # Copy plist and replace HOME_DIR placeholder
-    sed "s|HOME_DIR|$HOME|g" "$plist_source" > "$plist_target"
-
-    # Validate plist syntax
-    if ! plutil -lint "$plist_target" &>/dev/null; then
-        error "LaunchAgent plist validation failed"
-        rm "$plist_target"
-        return 1
-    fi
-
-    log "✓ LaunchAgent plist installed and validated"
-
-    # Load LaunchAgent
-    if launchctl load -w "$plist_target" 2>/dev/null; then
-        log "✓ LaunchAgent loaded successfully"
-        log "Krisp transcript download will run every hour"
-        log "Manual trigger: launchctl start $label"
-    else
-        warn "Failed to load LaunchAgent (non-blocking)"
-        warn "You can manually load it with: launchctl load -w $plist_target"
-        return 0  # Non-blocking failure per graceful degradation pattern
-    fi
-}
-
 main() {
     echo ""
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -2069,6 +1795,23 @@ main() {
         warn "Removing deprecated ~/.aerospace.toml"
         backup_existing "$HOME/.aerospace.toml"
     fi
+
+    # Clean up deprecated Krisp LaunchAgents (removed from dotfiles)
+    local krisp_agents=(
+        "com.user.krisp-daemon"
+        "com.user.krisp-transcript-download"
+    )
+    for agent in "${krisp_agents[@]}"; do
+        local plist="$HOME/Library/LaunchAgents/$agent.plist"
+        if launchctl list 2>/dev/null | grep -q "$agent"; then
+            warn "Stopping deprecated Krisp agent: $agent"
+            launchctl unload "$plist" 2>/dev/null || true
+        fi
+        if [[ -f "$plist" ]]; then
+            warn "Removing deprecated Krisp plist: $agent"
+            rm -f "$plist"
+        fi
+    done
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # PHASE 1: DETECT SYSTEM STATE

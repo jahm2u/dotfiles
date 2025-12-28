@@ -26,7 +26,7 @@ The dotfiles installation script has three primary issues:
 - Script location: `/Users/v/repos/02_personal/dotfiles/scripts/install.sh`
 - Size: 1136 lines of bash
 - Purpose: Creates symlinks for macOS dotfiles, installs dependencies, configures LaunchAgents
-- Features: Preflight checks, Homebrew bundle, calendar sync, Krisp automation, environment setup
+- Features: Preflight checks, Homebrew bundle, calendar sync, environment setup
 - Growth pattern: Started simple, features added organically over time
 - Current state: Works functionally but poor user experience
 
@@ -343,7 +343,7 @@ Combine solutions #6, #9, and #4 into unified redesign:
 11. Batch ALL questions in logical groups:
     - Group A: Dependencies (install missing? y/n)
     - Group B: Environment (.env setup? OpenAI key? Obsidian path? Calendar URLs?)
-    - Group C: Features (calendar LaunchAgent? Krisp automation?)
+    - Group C: Features (calendar LaunchAgent?)
 12. Store answers in config variables (arrays or serialized format)
 13. Test: Run gather, verify questions appear in order, nothing executes
 
@@ -356,7 +356,7 @@ Combine solutions #6, #9, and #4 into unified redesign:
     PLAN=(
       "CREATE_SYMLINKS:7:configs"
       "INSTALL_DEPS:3:khal,sketchybar,aerospace"
-      "SETUP_LAUNCHAGENT:2:calendar-sync,krisp"
+      "SETUP_LAUNCHAGENT:1:calendar-sync"
       "CONFIGURE_ENV:1:.env"
     )
     ```
