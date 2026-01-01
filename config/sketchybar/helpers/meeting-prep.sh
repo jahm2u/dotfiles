@@ -119,8 +119,9 @@ main() {
     PAYLOAD=$(jq -n --arg title "$MEETING_TITLE" '{meeting: $title}')
 
     # Call Jonas API - capture exit code properly
+    # 5 minute timeout for complex meeting preps
     log "INFO" "Calling Jonas API..."
-    RESPONSE=$(curl -s -m 120 -X POST "${JONAS_API_URL}/prep" \
+    RESPONSE=$(curl -s -m 300 -X POST "${JONAS_API_URL}/prep" \
         -H "Content-Type: application/json" \
         -d "$PAYLOAD")
     CURL_EXIT=$?
@@ -153,9 +154,22 @@ main() {
 
     # Extract and open obsidian URI
     OBSIDIAN_URI=$(echo "$RESPONSE" | jq -r '.obsidian_uri // empty')
+    NOTE_PATH=$(echo "$RESPONSE" | jq -r '.note_path // empty')
+
+    # Fallback: construct URI from note_path if obsidian_uri is missing
+    if [[ -z "$OBSIDIAN_URI" && -n "$NOTE_PATH" ]]; then
+        # Strip /vault/ prefix and URL-encode
+        RELATIVE_PATH="${NOTE_PATH#/vault/}"
+        ENCODED_PATH=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$RELATIVE_PATH'))")
+        OBSIDIAN_URI="obsidian://open?vault=U&file=$ENCODED_PATH"
+        log "INFO" "Constructed fallback URI from note_path"
+    fi
+
     if [[ -n "$OBSIDIAN_URI" ]]; then
         log "INFO" "Opening: $OBSIDIAN_URI"
         open "$OBSIDIAN_URI"
+    else
+        log "WARN" "No obsidian_uri or note_path in response - cannot open note"
     fi
 
     # Trigger calendar refresh

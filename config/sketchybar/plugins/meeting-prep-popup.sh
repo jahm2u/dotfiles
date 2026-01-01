@@ -10,15 +10,14 @@ update_status() {
 }
 
 run_workflow() {
-    update_status "🧠" "Jonas is preparing..."
+    update_status "🧠" "Jonas preparing..."
 
-    # Run the actual workflow (15-90 seconds)
     if "$HELPERS_DIR/meeting-prep.sh" >> ~/.config/sketchybar/logs/meeting-prep.log 2>&1; then
-        update_status "✅" "Note ready!"
-        sleep 2
+        update_status "✅" "Ready"
+        sleep 1
     else
-        update_status "❌" "Failed - check logs"
-        sleep 3
+        update_status "❌" "Failed"
+        sleep 2
     fi
 
     update_status "🤖" "Prep Meeting"
