@@ -931,16 +931,12 @@ generate_report() {
     # Next steps based on what was installed
     local has_next_steps=false
 
-    if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]] ||
-       [[ "$CONFIG_INSTALL_KRISP_LAUNCHAGENT" == "true" ]]; then
+    if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
         if [[ $has_next_steps == false ]]; then
             log "Next steps:"
             has_next_steps=true
         fi
-
-        if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
-            log "  • Monitor calendar sync: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
-        fi
+        log "  • Monitor calendar sync: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
     fi
 
     if [[ "$STATE_AEROSPACE_INSTALLED" == "true" ]] && pgrep -x "AeroSpace" >/dev/null; then

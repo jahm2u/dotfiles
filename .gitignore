@@ -54,6 +54,14 @@ config/claude/debug/
 config/claude/file-history/
 config/claude/history.jsonl*
 config/claude/*.backup
+config/claude/.credentials.json
+config/claude/.mcp.json
+config/claude/cache/
+config/claude/paste-cache/
+config/claude/plans/
+config/claude/plugins/
+config/claude/stats-cache.json
+config/claude/telemetry/
 config/logs/
 config/sketchybar/logs/
 
