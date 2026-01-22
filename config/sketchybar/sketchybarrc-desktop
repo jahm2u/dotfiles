@@ -27,6 +27,8 @@ sketchybar --bar \
 
 # Register custom events
 sketchybar --add event todoist_update
+sketchybar --add event calendar_synced
+sketchybar --add event system_woke
 
 # Alternatiive background colors
 # label.color=0xffffffff

@@ -3,27 +3,31 @@
 # Meeting Prep Item Click Handler
 # Triggers Jonas API prep for clicked meeting
 #
+# Arguments:
+#   $1 - Slot identifier (e.g., "prev_1", "next_2")
+#   $2 - Full item name (e.g., "meeting.popup.prev_1")
+#
 
-MEETING_INDEX="$1"
+SLOT_ID="$1"
 ITEM_NAME="$2"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HELPERS_DIR="${SCRIPT_DIR}/../helpers"
-CACHE_DIR="$HOME/.cache/sketchybar"
-MEETING_CACHE="$CACHE_DIR/meeting_click_${MEETING_INDEX}"
+
+# Load shared helpers for cache operations
+source "$HELPERS_DIR/meeting-helpers.sh"
 
 update_status() {
     sketchybar --set "$ITEM_NAME" icon="$1" label="$2"
 }
 
-# Read meeting info from cache
-if [[ ! -f "$MEETING_CACHE" ]]; then
+# Read meeting info from cache using shared helper
+MEETING_DATA=$(read_meeting_cache "$SLOT_ID")
+if [[ -z "$MEETING_DATA" ]]; then
     update_status "❌" "Meeting not found"
     sleep 2
     exit 1
 fi
-
-MEETING_DATA=$(cat "$MEETING_CACHE")
 MEETING_TITLE=$(echo "$MEETING_DATA" | cut -d'|' -f1)
 MEETING_TIME=$(echo "$MEETING_DATA" | cut -d'|' -f2)
 MEETING_DATE=$(echo "$MEETING_DATA" | cut -d'|' -f3)

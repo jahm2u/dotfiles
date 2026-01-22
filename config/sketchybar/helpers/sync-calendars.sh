@@ -356,10 +356,6 @@ SKETCHYBAR_BIN="/opt/homebrew/bin/sketchybar"
 if [[ -x "$SKETCHYBAR_BIN" ]]; then
     "$SKETCHYBAR_BIN" --trigger calendar_synced
     log "INFO" "Triggered calendar_synced event for Sketchybar"
-
-    # Force update the meeting widget (in case event trigger didn't work from LaunchAgent context)
-    "$SKETCHYBAR_BIN" --update meeting 2>/dev/null
-    log "INFO" "Forced meeting widget update"
 else
     log "WARN" "Sketchybar binary not found at $SKETCHYBAR_BIN"
 fi

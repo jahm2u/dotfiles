@@ -32,6 +32,9 @@ mkdir -p "$CACHE_DIR"
 # Load environment colors for icon blinking
 source "$HOME/.config/sketchybar/helpers/source-colors.sh"
 
+# Load shared meeting helpers (parse_event_timestamp, MAX_MEETING_SLOTS, etc.)
+source "$HOME/.config/sketchybar/helpers/meeting-helpers.sh"
+
 # ============================================================================
 # FAILSAFE MECHANISMS - Prevent runaway processes and fork bombs
 # ============================================================================
@@ -316,11 +319,8 @@ update_display_from_cache() {
         EVENT_TIME=$(echo "$event" | cut -d'|' -f2)
         EVENT_DATE=$(echo "$event" | cut -d'|' -f3)
 
-        # Calculate event timestamp
-        EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)
-        if [[ -z "$EVENT_TIMESTAMP" ]]; then
-            EVENT_TIMESTAMP=$(date -j -f "%Y-%m-%d %H:%M" "$EVENT_DATE $EVENT_TIME" "+%s" 2>/dev/null)
-        fi
+        # Calculate event timestamp using shared helper
+        EVENT_TIMESTAMP=$(parse_event_timestamp "$EVENT_DATE" "$EVENT_TIME")
 
         # Include events that haven't ended yet (within 10 minutes of start or future)
         if [[ -n "$EVENT_TIMESTAMP" ]] && [[ $((CURRENT_TIMESTAMP - EVENT_TIMESTAMP)) -le 600 ]]; then
@@ -362,10 +362,7 @@ update_display_from_cache() {
         TIME=$(echo "$NEXT_MEETING" | cut -d'|' -f2)
         DATE=$(echo "$NEXT_MEETING" | cut -d'|' -f3)
 
-        MEETING_TIMESTAMP=$(date -j -f "%Y-%m-%d %I:%M %p" "$DATE $TIME" "+%s" 2>/dev/null)
-        if [[ -z "$MEETING_TIMESTAMP" ]]; then
-            MEETING_TIMESTAMP=$(date -j -f "%Y-%m-%d %H:%M" "$DATE $TIME" "+%s" 2>/dev/null)
-        fi
+        MEETING_TIMESTAMP=$(parse_event_timestamp "$DATE" "$TIME")
 
         if [[ -n "$MEETING_TIMESTAMP" ]] && [[ "$MEETING_TIMESTAMP" -gt "$CURRENT_TIMESTAMP" ]]; then
             # Future meeting - show countdown
@@ -464,26 +461,24 @@ force_calendar_sync() {
     touch "$CALENDAR_HASH_FILE"
 }
 
-# Function to clean up stale popup items at day boundary
+# Function to reset popup items at day boundary
 # Runs automatically during calendar sync, only does work when day changes
+# Since we use pre-created slots (never --add), we just need to hide them
 cleanup_stale_popup_items() {
     local last_popup_date_file="$CACHE_DIR/last_popup_date"
     local current_date=$(date "+%Y-%m-%d")
 
     if [[ ! -f "$last_popup_date_file" ]] || [[ "$(cat "$last_popup_date_file" 2>/dev/null)" != "$current_date" ]]; then
-        # Day changed - clean up all old popup items to prevent stale data
-        for i in {1..5}; do
-            sketchybar --remove meeting.popup.prev_$i 2>/dev/null
-            sketchybar --remove meeting.popup.next_$i 2>/dev/null
-            sketchybar --remove meeting.popup.prev_${i}_note 2>/dev/null
-            sketchybar --remove meeting.popup.next_${i}_note 2>/dev/null
+        # Day changed - hide all popup slots and clear cached click data
+        for i in $(seq 1 $MAX_MEETING_SLOTS); do
+            sketchybar --set meeting.popup.prev_$i drawing=off 2>/dev/null
+            sketchybar --set meeting.popup.next_$i drawing=off 2>/dev/null
         done
-        sketchybar --remove meeting.popup.divider 2>/dev/null
+        sketchybar --set meeting.popup.divider drawing=off 2>/dev/null
+        sketchybar --set meeting.popup.action_notes drawing=off 2>/dev/null
 
-        # Remove potentially stale item_* entries from previous days (0-50 covers realistic day)
-        for i in {0..50}; do
-            sketchybar --remove meeting.popup.item_$i 2>/dev/null
-        done
+        # Clear cached click data using shared helper
+        clear_meeting_caches
 
         # Update the date cache
         echo "$current_date" > "$last_popup_date_file"
