@@ -1,10 +1,11 @@
 {
   "workflow_version": "1.2.0",
   "timestamps": {
-    "started": "2025-10-27T00:00:00.000Z",
-    "last_updated": "2025-10-27T19:30:00.000Z"
+    "started": "2026-01-13T10:45:00.000Z",
+    "last_updated": "2026-01-13T11:15:00.000Z",
+    "completed": "2026-01-13T11:15:00.000Z"
   },
-  "mode": "initial_scan",
+  "mode": "full_rescan",
   "scan_level": "exhaustive",
   "project_root": "/Users/v/repos/02_personal/dotfiles",
   "output_folder": "/Users/v/repos/02_personal/dotfiles/docs",
@@ -12,35 +13,111 @@
     {
       "step": "step_1",
       "status": "completed",
-      "timestamp": "2025-10-27T19:30:00.000Z",
-      "summary": "Classified as monolith with 1 part: Infrastructure/Configuration Management"
+      "timestamp": "2026-01-13T10:45:00.000Z",
+      "summary": "Classified as monolith - Infrastructure/Configuration Management (dotfiles)"
     },
     {
       "step": "step_2",
       "status": "completed",
-      "timestamp": "2025-10-27T19:31:00.000Z",
-      "summary": "Found 6 existing docs, user context: none (yolo mode)"
+      "timestamp": "2026-01-13T10:50:00.000Z",
+      "summary": "Discovered existing documentation: README.md, CLAUDE.md, 6 generated docs"
+    },
+    {
+      "step": "step_3",
+      "status": "completed",
+      "timestamp": "2026-01-13T10:55:00.000Z",
+      "summary": "Analyzed technology stack: Bash, Lua, Python, TOML, JSON, YAML"
+    },
+    {
+      "step": "step_4",
+      "status": "completed",
+      "timestamp": "2026-01-13T11:00:00.000Z",
+      "summary": "Conditional analysis for infra type completed"
+    },
+    {
+      "step": "step_5",
+      "status": "completed",
+      "timestamp": "2026-01-13T11:05:00.000Z",
+      "summary": "Updated source-tree-analysis.md"
+    },
+    {
+      "step": "step_6",
+      "status": "completed",
+      "timestamp": "2026-01-13T11:08:00.000Z",
+      "summary": "Updated development-guide.md"
+    },
+    {
+      "step": "step_8",
+      "status": "completed",
+      "timestamp": "2026-01-13T11:10:00.000Z",
+      "summary": "Updated architecture.md"
+    },
+    {
+      "step": "step_9",
+      "status": "completed",
+      "timestamp": "2026-01-13T11:12:00.000Z",
+      "summary": "Updated project-overview.md"
+    },
+    {
+      "step": "step_10",
+      "status": "completed",
+      "timestamp": "2026-01-13T11:14:00.000Z",
+      "summary": "Updated bmm-index.md master index"
+    },
+    {
+      "step": "step_11",
+      "status": "completed",
+      "timestamp": "2026-01-13T11:14:30.000Z",
+      "summary": "Validated all documentation files"
+    },
+    {
+      "step": "step_12",
+      "status": "completed",
+      "timestamp": "2026-01-13T11:15:00.000Z",
+      "summary": "Workflow finalized successfully"
     }
   ],
   "current_step": "completed",
   "findings": {
     "project_classification": "Monolith - Infrastructure/Configuration Management (dotfiles)",
-    "existing_docs_count": 6
+    "repository_type": "monolith",
+    "primary_tech": "Shell/Python/Lua",
+    "components_detected": [
+      "AeroSpace (tiling window manager)",
+      "Sketchybar (status bar with 35+ plugins)",
+      "Hammerspoon (macOS automation)",
+      "Karabiner-Elements (keyboard remapping)",
+      "Claude (AI assistant hooks)",
+      "Raycast (launcher)",
+      "Obsidian (note-taking)",
+      "khal (calendar)"
+    ],
+    "automation_features": [
+      "Calendar sync via LaunchAgents (15 min)",
+      "Todoist precache (30 sec)",
+      "Meeting prep with Jonas API",
+      "Translation (English-Portuguese)"
+    ],
+    "changes_since_last_scan": [
+      "Jonas API integration (replaced OpenAI for meeting prep)",
+      "Krisp transcript processing removed",
+      "Meeting prep workflow simplified"
+    ]
   },
   "project_types": [
     {
       "part_id": "main",
       "project_type_id": "infra",
-      "display_name": "Infrastructure/DevOps"
+      "display_name": "Infrastructure/DevOps - macOS Dotfiles"
     }
   ],
   "outputs_generated": [
     "project-scan-report.json",
-    "source-tree-analysis.md",
-    "development-guide.md",
-    "architecture.md",
-    "project-overview.md",
-    "bmm-index.md"
+    "source-tree-analysis.md (updated)",
+    "development-guide.md (updated)",
+    "architecture.md (updated)",
+    "project-overview.md (updated)",
+    "bmm-index.md (updated)"
   ],
-  "resume_instructions": "Continue from step 2 - Discover existing documentation"
+  "resume_instructions": "Workflow completed successfully. Run again to rescan."
 }

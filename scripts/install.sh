@@ -131,6 +131,7 @@ STATE_ENV_HAS_CALENDAR=""
 STATE_ENV_HAS_OPENAI=""
 STATE_ENV_HAS_OBSIDIAN=""
 STATE_CALENDAR_LAUNCHAGENT_LOADED=""
+STATE_TM_CLEANUP_LAUNCHAGENT_LOADED=""
 STATE_SYMLINKS_EXIST=()
 STATE_MISSING_DEPS=()
 
@@ -203,6 +204,12 @@ detect_system_state() {
         STATE_CALENDAR_LAUNCHAGENT_LOADED="false"
     fi
 
+    if launchctl list 2>/dev/null | grep -q "com.user.tm-snapshot-cleanup"; then
+        STATE_TM_CLEANUP_LAUNCHAGENT_LOADED="true"
+    else
+        STATE_TM_CLEANUP_LAUNCHAGENT_LOADED="false"
+    fi
+
     # Detect existing symlinks
     local symlink_paths=(
         "$HOME/.config/aerospace"
@@ -235,6 +242,7 @@ CONFIG_SETUP_CALENDAR=""
 CONFIG_SETUP_OPENAI=""
 CONFIG_SETUP_OBSIDIAN=""
 CONFIG_INSTALL_CALENDAR_LAUNCHAGENT=""
+CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT=""
 CONFIG_OPENAI_API_KEY=""
 CONFIG_OBSIDIAN_VAULT_PATH=""
 CONFIG_CALENDAR_URL_NAME=""
@@ -436,6 +444,17 @@ gather_configuration() {
         fi
     fi
 
+    # TM Snapshot Cleanup LaunchAgent
+    if [[ "$STATE_TM_CLEANUP_LAUNCHAGENT_LOADED" == "true" ]]; then
+        CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="skip"
+    else
+        if ask_user "Install Time Machine snapshot cleanup LaunchAgent (auto-cleans after backups)?"; then
+            CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="true"
+        else
+            CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="false"
+        fi
+    fi
+
     echo ""
     log "Configuration complete! Generating plan..."
     echo ""
@@ -504,6 +523,12 @@ generate_plan() {
     if [[ "$CONFIG_INSTALL_CALENDAR_LAUNCHAGENT" == "true" ]]; then
         ((step_num++))
         PLAN+=("$step_num|launchagent_calendar|Install calendar sync LaunchAgent|Auto-sync every 15 min")
+    fi
+
+    # TM Snapshot Cleanup LaunchAgent
+    if [[ "$CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|launchagent_tm_cleanup|Install TM snapshot cleanup LaunchAgent|Auto-clean after backups")
     fi
 
     # Restart services
@@ -715,6 +740,14 @@ execute_plan() {
 
             launchagent_calendar)
                 if exec_quiet "Calendar LaunchAgent" install_calendar_launchagent; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
+            launchagent_tm_cleanup)
+                if exec_quiet "TM Cleanup LaunchAgent" install_tm_cleanup_launchagent; then
                     show_result 0
                 else
                     show_result 1
@@ -1662,6 +1695,59 @@ install_calendar_launchagent() {
         warn "Failed to load LaunchAgent (non-blocking)"
         warn "You can manually load it with: launchctl load -w $plist_target"
         return 0  # Non-blocking failure per graceful degradation pattern
+    fi
+}
+
+install_tm_cleanup_launchagent() {
+    local label="com.user.tm-snapshot-cleanup"
+    local plist_source="$DOTFILES_DIR/config/sketchybar/launchagents/$label.plist"
+    local plist_target="$HOME/Library/LaunchAgents/$label.plist"
+    local logs_dir="$HOME/.config/sketchybar/logs"
+
+    log "Installing Time Machine snapshot cleanup LaunchAgent"
+
+    # Ensure logs directory exists
+    if [[ ! -d "$logs_dir" ]]; then
+        mkdir -p "$logs_dir"
+    fi
+
+    # Check if plist source exists
+    if [[ ! -f "$plist_source" ]]; then
+        error "LaunchAgent plist not found at: $plist_source"
+        return 1
+    fi
+
+    # Unload existing LaunchAgent if loaded
+    if launchctl list | grep -q "$label"; then
+        warn "Unloading existing LaunchAgent: $label"
+        launchctl unload "$plist_target" 2>/dev/null || true
+    fi
+
+    # Backup existing plist if it exists
+    if [[ -f "$plist_target" ]]; then
+        backup_existing "$plist_target"
+    fi
+
+    # Copy plist and replace HOME_DIR placeholder
+    sed "s|HOME_DIR|$HOME|g" "$plist_source" > "$plist_target"
+
+    # Validate plist syntax
+    if ! plutil -lint "$plist_target" &>/dev/null; then
+        error "LaunchAgent plist validation failed"
+        rm "$plist_target"
+        return 1
+    fi
+
+    log "✓ LaunchAgent plist installed and validated"
+
+    # Load LaunchAgent
+    if launchctl load -w "$plist_target" 2>/dev/null; then
+        log "✓ LaunchAgent loaded successfully"
+        log "Snapshot cleanup will run after each Time Machine backup"
+        log "Manual trigger: launchctl start $label"
+    else
+        warn "Failed to load LaunchAgent (non-blocking)"
+        return 0
     fi
 }
 

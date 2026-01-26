@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.tm-snapshot-cleanup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>HOME_DIR/.config/sketchybar/helpers/cleanup-tm-snapshots.sh</string>
+    </array>
+
+    <key>WatchPaths</key>
+    <array>
+        <!-- Triggers when Time Machine completes a backup -->
+        <string>/var/db/.TimeMachine.Results.plist</string>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>HOME_DIR/.config/sketchybar/logs/tm-cleanup-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>HOME_DIR/.config/sketchybar/logs/tm-cleanup-stderr.log</string>
+</dict>
+</plist>
