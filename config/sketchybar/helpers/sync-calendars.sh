@@ -351,16 +351,8 @@ else
     log "INFO" "Calendar sync completed SUCCESSFULLY"
 fi
 
-# Trigger Sketchybar event to update meeting widget immediately
-SKETCHYBAR_BIN="/opt/homebrew/bin/sketchybar"
-if [[ -x "$SKETCHYBAR_BIN" ]]; then
-    "$SKETCHYBAR_BIN" --trigger calendar_synced
-    log "INFO" "Triggered calendar_synced event for Sketchybar"
-else
-    log "WARN" "Sketchybar binary not found at $SKETCHYBAR_BIN"
-fi
-
-# Write sync status to cache for meeting widget
+# Write sync status to cache BEFORE triggering event (avoids race condition
+# where the meeting widget reads stale status from the previous sync)
 SYNC_STATUS_FILE="$HOME/.cache/sketchybar/last_sync_status"
 mkdir -p "$(dirname "$SYNC_STATUS_FILE")"
 # Use restrictive permissions (600) for cache files
@@ -371,5 +363,14 @@ mkdir -p "$(dirname "$SYNC_STATUS_FILE")"
     echo "successful_imports=$SUCCESSFUL_IMPORTS" >> "$SYNC_STATUS_FILE"
     echo "failed_imports=$FAILED_IMPORTS" >> "$SYNC_STATUS_FILE"
 )
+
+# Trigger Sketchybar event to update meeting widget immediately
+SKETCHYBAR_BIN="/opt/homebrew/bin/sketchybar"
+if [[ -x "$SKETCHYBAR_BIN" ]]; then
+    "$SKETCHYBAR_BIN" --trigger calendar_synced
+    log "INFO" "Triggered calendar_synced event for Sketchybar"
+else
+    log "WARN" "Sketchybar binary not found at $SKETCHYBAR_BIN"
+fi
 
 exit $SYNC_EXIT_CODE

@@ -141,8 +141,8 @@ fi
 # - system_woke event (computer woke from sleep)
 should_fetch_data() {
     case "$SENDER" in
-        calendar_synced|system_woke)
-            return 0  # Always fetch on these events
+        calendar_synced|system_woke|forced)
+            return 0  # Always fetch on these events (forced = sketchybar restart)
             ;;
         *)
             # For all other triggers (routine display updates), NEVER fetch

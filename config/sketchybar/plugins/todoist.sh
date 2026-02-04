@@ -95,7 +95,7 @@ fi
 if [[ "$SENDER" == "routine" ]]; then
     # Check if task still exists in Todoist
     HTTP_CODE=$(curl -s -w "%{http_code}" -o /dev/null -X GET \
-        "https://api.todoist.com/rest/v2/tasks/${TASK_ID}" \
+        "https://api.todoist.com/api/v1/tasks/${TASK_ID}" \
         -H "Authorization: Bearer $TODOIST_API_TOKEN")
 
     if [[ "$HTTP_CODE" == "404" ]]; then

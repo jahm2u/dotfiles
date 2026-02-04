@@ -42,9 +42,10 @@ if [[ -z "$TODOIST_API_TOKEN" ]]; then
     exit 2
 fi
 
-# Fetch tasks with timeout
-RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 30 -X GET \
-    "https://api.todoist.com/rest/v2/tasks?filter=today%20%7C%20overdue" \
+# Fetch tasks with timeout (using Todoist API v1)
+RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 30 -G \
+    "https://api.todoist.com/api/v1/tasks/filter" \
+    --data-urlencode "query=today | overdue" \
     -H "Authorization: Bearer $TODOIST_API_TOKEN" 2>&1)
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
@@ -56,7 +57,7 @@ if [[ "$HTTP_CODE" != "200" ]]; then
     exit 1
 fi
 
-if [[ -z "$RESPONSE_BODY" ]] || [[ "$RESPONSE_BODY" == "[]" ]]; then
+if [[ -z "$RESPONSE_BODY" ]] || [[ "$RESPONSE_BODY" == "[]" ]] || [[ "$RESPONSE_BODY" == '{"results":[],"next_cursor":null}' ]]; then
     log "INFO" "No tasks found (all completed)"
     echo "SYNC_STATUS=success" > "$TASKS_CACHE"
     echo "TASKS_START" >> "$TASKS_CACHE"
@@ -69,7 +70,9 @@ TASKS=$(echo "$RESPONSE_BODY" | python3 -c "
 import sys, json
 
 try:
-    tasks = json.load(sys.stdin)
+    data = json.load(sys.stdin)
+    # API v1 wraps results in { results: [...], next_cursor: ... }
+    tasks = data.get('results', data) if isinstance(data, dict) else data
     if not tasks:
         sys.exit(0)
 
@@ -81,7 +84,6 @@ try:
         task_id = task.get('id', '')
         content = task.get('content', 'No task')
         priority = task.get('priority', 1)
-        url = task.get('url', '')
         project_id = task.get('project_id', '')
 
         # Don't truncate - we'll make the popup wider
@@ -103,7 +105,7 @@ try:
             icon = '○'  # Unfilled circle for P4 (normal priority)
             color = 'OVERLAY0'
 
-        print(f'{task_id}|{icon}|{color}|{content}|{url}|{project_id}')
+        print(f'{task_id}|{icon}|{color}|{content}||{project_id}')
 
 except Exception as e:
     print(f'error|○|OVERLAY0|Error parsing tasks||', file=sys.stderr)

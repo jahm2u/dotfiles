@@ -42,7 +42,7 @@ fi
 
 # Call Todoist API to close/complete the task
 HTTP_CODE=$(curl -s -w "%{http_code}" -o /dev/null -X POST \
-    "https://api.todoist.com/rest/v2/tasks/${TASK_ID}/close" \
+    "https://api.todoist.com/api/v1/tasks/${TASK_ID}/close" \
     -H "Authorization: Bearer $TODOIST_API_TOKEN")
 
 if [[ "$HTTP_CODE" == "204" ]] || [[ "$HTTP_CODE" == "200" ]]; then

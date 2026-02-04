@@ -795,3 +795,19 @@ hs.hotkey.bind({"ctrl", "alt", "cmd"}, "]", cycleAudioForward)
 -- Bind Ctrl+Option+Cmd+[ for backward cycling
 hs.hotkey.bind({"ctrl", "alt", "cmd"}, "[", cycleAudioBackward)
 
+-- Restart SketchyBar when display configuration changes (monitor swap between computers)
+local sketchybarRestartTimer = nil
+local screenWatcher = hs.screen.watcher.new(function()
+    -- Cancel any pending restart to debounce rapid display changes
+    if sketchybarRestartTimer then
+        sketchybarRestartTimer:stop()
+        sketchybarRestartTimer = nil
+    end
+    -- Wait for displays to settle before restarting
+    sketchybarRestartTimer = hs.timer.doAfter(3, function()
+        sketchybarRestartTimer = nil
+        hs.execute("/opt/homebrew/bin/brew services restart sketchybar", true)
+    end)
+end)
+screenWatcher:start()
+
