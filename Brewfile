@@ -45,6 +45,7 @@ brew "khal"                        # Calendar application
 
 # System utilities
 brew "coreutils"                   # GNU core utilities (includes gtimeout)
+brew "mole"                        # Mac cleaner and optimizer
 
 # Fonts (required for sketchybar and terminal apps)
 cask "font-jetbrains-mono-nerd-font"  # JetBrains Mono with Nerd Font icons
