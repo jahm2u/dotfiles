@@ -216,7 +216,6 @@ detect_system_state() {
         "$HOME/.config/sketchybar"
         "$HOME/.config/karabiner"
         "$HOME/.hammerspoon"
-        "$HOME/.claude"
         "$HOME/.config/raycast"
         "$HOME/.config/khal"
     )
@@ -787,7 +786,6 @@ execute_symlinks() {
     create_symlink "$DOTFILES_DIR/config/sketchybar" "$HOME/.config/sketchybar" "Sketchybar"
     create_symlink "$DOTFILES_DIR/config/karabiner" "$HOME/.config/karabiner" "Karabiner"
     create_symlink "$DOTFILES_DIR/config/hammerspoon" "$HOME/.hammerspoon" "Hammerspoon"
-    create_symlink "$DOTFILES_DIR/config/claude" "$HOME/.claude" "Claude"
     create_symlink "$DOTFILES_DIR/config/raycast" "$HOME/.config/raycast" "Raycast"
     create_symlink "$DOTFILES_DIR/config/khal" "$HOME/.config/khal" "Khal"
 }
@@ -1083,7 +1081,6 @@ preflight_checks() {
         "$HOME/.config/sketchybar:Sketchybar"
         "$HOME/.config/karabiner:Karabiner"
         "$HOME/.hammerspoon:Hammerspoon"
-        "$HOME/.claude:Claude"
         "$HOME/.config/raycast:Raycast"
         "$HOME/.config/khal:Khal"
     )
@@ -1266,7 +1263,6 @@ validate_installation() {
         "$HOME/.config/sketchybar|$DOTFILES_DIR/config/sketchybar|Sketchybar"
         "$HOME/.config/karabiner|$DOTFILES_DIR/config/karabiner|Karabiner"
         "$HOME/.hammerspoon|$DOTFILES_DIR/config/hammerspoon|Hammerspoon"
-        "$HOME/.claude|$DOTFILES_DIR/config/claude|Claude"
         "$HOME/.config/raycast|$DOTFILES_DIR/config/raycast|Raycast"
         "$HOME/.config/khal|$DOTFILES_DIR/config/khal|Khal"
     )

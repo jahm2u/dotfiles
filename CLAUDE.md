@@ -213,7 +213,6 @@ The `scripts/install.sh` script creates these symlinks:
 - `~/dotfiles/config/sketchybar` → `~/.config/sketchybar`
 - `~/dotfiles/config/karabiner` → `~/.config/karabiner`
 - `~/dotfiles/config/hammerspoon` → `~/.hammerspoon`
-- `~/dotfiles/config/claude` → `~/.claude`
 - `~/dotfiles/config/raycast` → `~/.config/raycast`
 - `~/dotfiles/config/obsidian` → `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/T/.obsidian`
 - `~/dotfiles/config/khal` → `~/.config/khal`
