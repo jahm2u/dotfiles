@@ -643,157 +643,241 @@ hs.hotkey.bind({"ctrl", "alt", "cmd"}, "p", toggleSketchybarPrivacy)
 -- Removed Hammerspoon calendar sync (Story 2.1)
 -- Calendar sync is now handled via LaunchAgent calling sync-calendars.sh helper
 
--- Audio output and volume cycling functionality
+-- Audio output and volume cycling with dual LG display support
+-- Uses UIDs to distinguish identical-name LG UltraFine displays
+-- Tracks state internally (not re-detected from system) for reliable cycling
+-- Syncs input mic to match the active output display
 local volumeLevels = {0, 33, 66, 100}
-local audioDeviceStates = {}  -- Store state for each device
-local currentDeviceIndex = 1
-local audioDevices = {}
-
--- Initialize SwitchAudioSource path
 local sasPath = "/opt/homebrew/bin/SwitchAudioSource"
+local audioCycleIndex = 0     -- current position in audioDevices (0 = not initialized)
+local audioCycleVolume = 1    -- current position in volumeLevels
+local audioDevices = {}       -- built once at init, rebuilt on display changes
 
--- Function to get clean list of output devices
-function getAudioDevices()
+-- Build the device list using UIDs to distinguish identical-name LG displays
+local function buildAudioDeviceList()
     if not hs.fs.attributes(sasPath) then
-        hs.alert.show("Installing SwitchAudioSource...")
-        hs.execute("brew install switchaudio-osx")
-        hs.timer.usleep(2000000)
+        hs.alert.show("SwitchAudioSource not found")
+        return
     end
 
-    local devices = {}
-    local output = hs.execute(sasPath .. " -a -t output")
+    audioDevices = {}
 
-    -- Parse output devices, skip duplicates and non-speakers
-    local seen = {}
-    for line in output:gmatch("[^\r\n]+") do
-        if not line:find("Microsoft Teams") and
-           not line:find("Jump Desktop") and
-           not seen[line] then
-            table.insert(devices, line)
-            seen[line] = true
-            -- Initialize state for this device if not exists
-            if not audioDeviceStates[line] then
-                audioDeviceStates[line] = 1  -- Start at 0%
+    local jsonOutput = hs.execute(sasPath .. " -a -t output -f json")
+    local currentJson = hs.execute(sasPath .. " -c -t output -f json")
+    local currentOutputUid = currentJson:match('"uid"%s*:%s*"([^"]+)"')
+
+    -- The main (right) display is whichever LG is the current default output
+    local mainSerial = nil
+    if currentOutputUid and currentOutputUid:find("LG UltraFine") then
+        mainSerial = currentOutputUid:match(":(%d+):%d+$")
+    end
+
+    local lgDevices = {}
+    local otherDevices = {}
+
+    for line in jsonOutput:gmatch("[^\r\n]+") do
+        local name = line:match('"name"%s*:%s*"([^"]+)"')
+        local uid = line:match('"uid"%s*:%s*"([^"]+)"')
+
+        if name and uid then
+            if not name:find("Microsoft Teams") and
+               not name:find("Jump Desktop") and
+               not name:find("krisp") then
+
+                if name:find("LG UltraFine") and
+                   not name:find("Multi%-Output") and
+                   not name:find("Aggregate") then
+                    local serial = uid:match(":(%d+):%d+$")
+                    local inputUid = uid:gsub(":%d+$", ":1")
+                    table.insert(lgDevices, {
+                        label = (mainSerial and serial == mainSerial) and "LG Right" or "LG Left",
+                        outputUid = uid,
+                        inputUid = inputUid,
+                        serial = serial
+                    })
+                elseif not name:find("Multi%-Output") and
+                       not name:find("Aggregate") then
+                    table.insert(otherDevices, {
+                        label = name,
+                        outputUid = uid
+                    })
+                end
             end
         end
     end
 
-    return devices
+    -- Fallback if current output isn't LG
+    if not mainSerial and #lgDevices == 2 then
+        lgDevices[1].label = "LG Left"
+        lgDevices[2].label = "LG Right"
+    end
+
+    -- Sort: Left first, then Right
+    table.sort(lgDevices, function(a, b) return a.label < b.label end)
+
+    -- 1) Individual LG devices
+    for _, dev in ipairs(lgDevices) do
+        table.insert(audioDevices, dev)
+    end
+
+    -- 2) Dual mode (if 2 LG displays)
+    if #lgDevices == 2 then
+        local rightLg, leftLg
+        for _, lg in ipairs(lgDevices) do
+            if lg.label == "LG Right" then rightLg = lg else leftLg = lg end
+        end
+        if rightLg and leftLg then
+            -- Check for existing Multi-Output / Aggregate device
+            local multiUid = nil
+            for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
+                local n = dev:name()
+                if n:find("Multi%-Output") or n:find("Aggregate") or n:find("LG Dual") then
+                    multiUid = dev:uid()
+                    break
+                end
+            end
+            table.insert(audioDevices, {
+                label = "LG Dual",
+                isDual = true,
+                outputUids = {leftLg.outputUid, rightLg.outputUid},
+                multiOutputUid = multiUid,
+                primaryOutputUid = rightLg.outputUid,
+                inputUid = rightLg.inputUid
+            })
+        end
+    end
+
+    -- 3) Other devices (Mac mini Speakers, etc.)
+    for _, dev in ipairs(otherDevices) do
+        table.insert(audioDevices, dev)
+    end
 end
 
--- Function to get current device index
-function getCurrentDeviceIndex()
-    local currentDevice = hs.execute(sasPath .. " -c"):gsub("\n", "")
+-- One-time init: match audioCycleIndex to current system output
+local function initAudioCycleIndex()
+    local current = hs.audiodevice.defaultOutputDevice()
+    if not current then
+        audioCycleIndex = 1
+        audioCycleVolume = 1
+        return
+    end
+    local currentUid = current:uid()
+
+    -- Try non-dual devices first
     for i, device in ipairs(audioDevices) do
-        if device == currentDevice then
-            return i
+        if not device.isDual and device.outputUid == currentUid then
+            audioCycleIndex = i
+            local vol = current:volume()
+            if vol then
+                audioCycleVolume = 1
+                for vi = #volumeLevels, 1, -1 do
+                    if vol >= volumeLevels[vi] - 5 then
+                        audioCycleVolume = vi
+                        break
+                    end
+                end
+            end
+            return
         end
     end
-    return 1
+
+    -- Check Multi-Output device (dual mode)
+    for i, device in ipairs(audioDevices) do
+        if device.isDual and device.multiOutputUid == currentUid then
+            audioCycleIndex = i
+            audioCycleVolume = 1
+            return
+        end
+    end
+
+    audioCycleIndex = 1
+    audioCycleVolume = 1
 end
 
--- Function to set volume for a specific device name
-function setDeviceVolume(deviceName, volume)
-    -- Special handling for Multi-Output/Aggregate devices
-    if deviceName:find("Multi%-Output") or deviceName:find("Aggregate") or deviceName:find("LG Dual") then
-        -- Set volume on all LG devices instead
-        local lgCount = 0
-        for _, device in ipairs(hs.audiodevice.allOutputDevices()) do
-            if device:name():find("LG") and not device:name():find("Multi%-Output") and not device:name():find("Aggregate") then
-                device:setVolume(volume)
-                lgCount = lgCount + 1
-            end
+-- Push current internal state to the system
+local function applyAudioState()
+    local device = audioDevices[audioCycleIndex]
+    if not device then return end
+    local volume = volumeLevels[audioCycleVolume]
+
+    -- Set output device
+    if device.isDual then
+        if device.multiOutputUid then
+            local multiDev = hs.audiodevice.findDeviceByUID(device.multiOutputUid)
+            if multiDev then multiDev:setDefaultOutputDevice() end
+        else
+            local rightDev = hs.audiodevice.findDeviceByUID(device.primaryOutputUid)
+            if rightDev then rightDev:setDefaultOutputDevice() end
         end
-        return lgCount > 0
+        -- Set volume on both LG monitors
+        for _, uid in ipairs(device.outputUids) do
+            local dev = hs.audiodevice.findDeviceByUID(uid)
+            if dev then dev:setVolume(volume) end
+        end
     else
-        -- Normal device - set volume directly
-        for _, device in ipairs(hs.audiodevice.allOutputDevices()) do
-            if device:name() == deviceName then
-                device:setVolume(volume)
-                return true
-            end
+        local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+        if dev then
+            dev:setDefaultOutputDevice()
+            dev:setVolume(volume)
         end
     end
-    return false
+
+    -- Sync input mic to match output display
+    if device.inputUid then
+        local inputDev = hs.audiodevice.findDeviceByUID(device.inputUid)
+        if inputDev then inputDev:setDefaultInputDevice() end
+    end
+
+    hs.alert.show(device.label .. " \u{2192} " .. volume .. "%")
 end
 
--- Function to cycle audio (direction: 1 for forward, -1 for backward)
-function cycleAudio(direction)
-    -- Refresh device list
-    audioDevices = getAudioDevices()
+-- Cycle audio: direction 1=forward (]), -1=backward ([)
+local function cycleAudio(direction)
+    if #audioDevices == 0 then
+        buildAudioDeviceList()
+        initAudioCycleIndex()
+    end
     if #audioDevices == 0 then
         hs.alert.show("No audio devices found")
         return
     end
 
-    -- Get current device
-    currentDeviceIndex = getCurrentDeviceIndex()
-    local currentDevice = audioDevices[currentDeviceIndex]
-    local currentVolumeIndex = audioDeviceStates[currentDevice] or 1
+    local nextVol = audioCycleVolume + direction
 
-    -- Calculate next state
-    local nextVolumeIndex = currentVolumeIndex + direction
-
-    if nextVolumeIndex > #volumeLevels then
-        -- Move to next device
-        currentDeviceIndex = currentDeviceIndex % #audioDevices + 1
-        local nextDevice = audioDevices[currentDeviceIndex]
-        audioDeviceStates[nextDevice] = 1  -- Reset to 0%
-
-        -- Set volume before switching
-        setDeviceVolume(nextDevice, volumeLevels[1])
-        hs.timer.doAfter(0.1, function()
-            hs.execute(sasPath .. " -s '" .. nextDevice .. "'")
-            hs.alert.show("🔊 " .. nextDevice .. " → " .. volumeLevels[1] .. "%")
-        end)
-    elseif nextVolumeIndex < 1 then
-        -- Move to previous device
-        currentDeviceIndex = currentDeviceIndex - 1
-        if currentDeviceIndex < 1 then
-            currentDeviceIndex = #audioDevices
-        end
-        local nextDevice = audioDevices[currentDeviceIndex]
-        audioDeviceStates[nextDevice] = #volumeLevels  -- Set to 100%
-
-        -- Set volume before switching
-        setDeviceVolume(nextDevice, volumeLevels[#volumeLevels])
-        hs.timer.doAfter(0.1, function()
-            hs.execute(sasPath .. " -s '" .. nextDevice .. "'")
-            hs.alert.show("🔊 " .. nextDevice .. " → " .. volumeLevels[#volumeLevels] .. "%")
-        end)
+    if nextVol > #volumeLevels then
+        -- Past max volume -> next device at 0%
+        audioCycleIndex = audioCycleIndex % #audioDevices + 1
+        audioCycleVolume = 1
+    elseif nextVol < 1 then
+        -- Below min volume -> previous device at 100%
+        audioCycleIndex = audioCycleIndex - 1
+        if audioCycleIndex < 1 then audioCycleIndex = #audioDevices end
+        audioCycleVolume = #volumeLevels
     else
-        -- Just change volume on current device
-        audioDeviceStates[currentDevice] = nextVolumeIndex
-        local newVolume = volumeLevels[nextVolumeIndex]
-        setDeviceVolume(currentDevice, newVolume)
-
-        -- Special message for Multi-Output devices
-        if currentDevice:find("Multi%-Output") or currentDevice:find("Aggregate") or currentDevice:find("LG Dual") then
-            hs.alert.show("🔊 Both LG Monitors → " .. newVolume .. "%")
-        else
-            hs.alert.show("🔊 " .. currentDevice .. " → " .. newVolume .. "%")
-        end
+        audioCycleVolume = nextVol
     end
+
+    applyAudioState()
 end
 
--- Forward cycle with ]
-function cycleAudioForward()
-    cycleAudio(1)
-end
+-- Initialize device list and state
+buildAudioDeviceList()
+initAudioCycleIndex()
 
--- Backward cycle with [
-function cycleAudioBackward()
-    cycleAudio(-1)
-end
-
--- Initialize devices on load
-audioDevices = getAudioDevices()
+-- Rebuild device list when displays change
+local audioScreenWatcher = hs.screen.watcher.new(function()
+    hs.timer.doAfter(2, function()
+        buildAudioDeviceList()
+        initAudioCycleIndex()
+    end)
+end)
+audioScreenWatcher:start()
 
 -- Bind Ctrl+Option+Cmd+] for forward cycling
-hs.hotkey.bind({"ctrl", "alt", "cmd"}, "]", cycleAudioForward)
+hs.hotkey.bind({"ctrl", "alt", "cmd"}, "]", function() cycleAudio(1) end)
 
 -- Bind Ctrl+Option+Cmd+[ for backward cycling
-hs.hotkey.bind({"ctrl", "alt", "cmd"}, "[", cycleAudioBackward)
+hs.hotkey.bind({"ctrl", "alt", "cmd"}, "[", function() cycleAudio(-1) end)
 
 -- Restart SketchyBar when display configuration changes (monitor swap between computers)
 local sketchybarRestartTimer = nil

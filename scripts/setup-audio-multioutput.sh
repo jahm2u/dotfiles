@@ -1,32 +1,29 @@
 #!/bin/bash
+# Creates a Multi-Output Device (LG Dual) from connected LG UltraFine displays
+# Uses CoreAudio API via Swift - no manual Audio MIDI Setup needed
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "Setting up Multi-Output Device for LG monitors..."
-echo ""
-echo "This script will guide you through creating a Multi-Output Device in Audio MIDI Setup."
-echo ""
-echo "MANUAL SETUP REQUIRED:"
-echo "======================"
-echo "1. Opening Audio MIDI Setup..."
-open -a "Audio MIDI Setup"
 
-echo ""
-echo "2. In Audio MIDI Setup, please:"
-echo "   a) Click the '+' button at the bottom left"
-echo "   b) Select 'Create Multi-Output Device'"
-echo "   c) In the right panel, check both 'LG UltraFine Display Audio' devices"
-echo "   d) Optionally rename it to 'LG Dual Output' (right-click > Rename)"
-echo ""
-echo "3. Once done, close Audio MIDI Setup"
-echo ""
-echo "Press Enter when you've completed the setup..."
-read -r
+# Check if already exists
+if /opt/homebrew/bin/SwitchAudioSource -a -t output | grep -q "LG Dual"; then
+    echo "LG Dual device already exists."
+    exit 0
+fi
 
-echo ""
-echo "Verifying setup..."
-if /opt/homebrew/bin/SwitchAudioSource -a | grep -E "(Multi-Output Device|LG Dual Output)" > /dev/null; then
-    echo "✅ Multi-Output Device found!"
+# Create via CoreAudio
+swift "$SCRIPT_DIR/create-multi-output.swift"
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 0 ]; then
     echo ""
-    echo "You can now use Ctrl+Option+Cmd+[ in Hammerspoon to toggle audio output."
+    echo "You can now cycle to 'LG Dual' with Ctrl+Option+Cmd+] or ["
 else
-    echo "⚠️  Multi-Output Device not found. Please try the manual setup again."
+    echo ""
+    echo "Failed to create Multi-Output device. You can create one manually:"
+    echo "  1. Open Audio MIDI Setup"
+    echo "  2. Click '+' > Create Multi-Output Device"
+    echo "  3. Check both LG UltraFine displays"
+    echo "  4. Rename to 'LG Dual'"
 fi
