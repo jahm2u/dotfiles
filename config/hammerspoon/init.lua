@@ -690,7 +690,7 @@ local function buildAudioDeviceList()
                     local serial = uid:match(":(%d+):%d+$")
                     local inputUid = uid:gsub(":%d+$", ":1")
                     table.insert(lgDevices, {
-                        label = (mainSerial and serial == mainSerial) and "LG Right" or "LG Left",
+                        label = (mainSerial and serial == mainSerial) and "LG Left" or "LG Right",
                         outputUid = uid,
                         inputUid = inputUid,
                         serial = serial
