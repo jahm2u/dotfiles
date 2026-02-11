@@ -152,24 +152,57 @@ main() {
     # Cache result for debugging
     echo "$RESPONSE" > "$CACHE_DIR/last_meeting_prep_result.json"
 
-    # Extract and open obsidian URI
-    OBSIDIAN_URI=$(echo "$RESPONSE" | jq -r '.obsidian_uri // empty')
+    # Resolve relative path from note_path or obsidian_uri
+    VAULT_NAME="kb"
+    VAULT_BASE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/$VAULT_NAME"
     NOTE_PATH=$(echo "$RESPONSE" | jq -r '.note_path // empty')
+    OBSIDIAN_URI=$(echo "$RESPONSE" | jq -r '.obsidian_uri // empty')
 
-    # Fallback: construct URI from note_path if obsidian_uri is missing
-    if [[ -z "$OBSIDIAN_URI" && -n "$NOTE_PATH" ]]; then
-        # Strip /vault/ prefix and URL-encode
+    RELATIVE_PATH=""
+    if [[ -n "$NOTE_PATH" ]]; then
+        # Preferred: strip Docker /vault/ prefix
         RELATIVE_PATH="${NOTE_PATH#/vault/}"
-        ENCODED_PATH=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$RELATIVE_PATH'))")
-        OBSIDIAN_URI="obsidian://open?vault=U&file=$ENCODED_PATH"
-        log "INFO" "Constructed fallback URI from note_path"
+        log "INFO" "Relative path from note_path: $RELATIVE_PATH"
+    elif [[ -n "$OBSIDIAN_URI" ]]; then
+        # Fallback: extract file= param from obsidian_uri
+        FILE_PARAM=$(echo "$OBSIDIAN_URI" | sed -n 's/.*file=\([^&]*\).*/\1/p')
+        if [[ -n "$FILE_PARAM" ]]; then
+            RELATIVE_PATH=$(python3 -c "import urllib.parse, sys; print(urllib.parse.unquote(sys.argv[1]))" "$FILE_PARAM")
+            log "INFO" "Relative path from obsidian_uri: $RELATIVE_PATH"
+        fi
     fi
 
-    if [[ -n "$OBSIDIAN_URI" ]]; then
+    if [[ -z "$RELATIVE_PATH" ]]; then
+        log "WARN" "No note_path or obsidian_uri in response - cannot open note"
+    else
+        FULL_PATH="$VAULT_BASE/$RELATIVE_PATH"
+
+        # Wait for file to exist on disk (Docker → iCloud sync delay)
+        log "INFO" "Waiting for file: $FULL_PATH"
+        WAITED=0
+        while [[ ! -f "$FULL_PATH" ]] && [[ $WAITED -lt 20 ]]; do
+            sleep 0.5
+            WAITED=$((WAITED + 1))
+        done
+        if [[ -f "$FULL_PATH" ]]; then
+            log "INFO" "File appeared after ~$((WAITED / 2))s"
+        else
+            log "ERROR" "File not found after 10s: $FULL_PATH"
+            exit 1
+        fi
+
+        # Ensure Obsidian is running before opening the URI
+        if ! pgrep -x Obsidian >/dev/null 2>&1; then
+            log "INFO" "Launching Obsidian..."
+            open -a Obsidian
+            sleep 3
+        fi
+
+        # Always construct URI with correct vault name
+        ENCODED_PATH=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$RELATIVE_PATH")
+        OBSIDIAN_URI="obsidian://open?vault=${VAULT_NAME}&file=${ENCODED_PATH}"
         log "INFO" "Opening: $OBSIDIAN_URI"
         open "$OBSIDIAN_URI"
-    else
-        log "WARN" "No obsidian_uri or note_path in response - cannot open note"
     fi
 
     # Trigger calendar refresh

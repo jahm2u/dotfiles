@@ -736,6 +736,21 @@ local function buildAudioDeviceList()
                     break
                 end
             end
+            -- Recreate Multi-Output device if destroyed (e.g. by display change)
+            if not multiUid then
+                local scriptPath = os.getenv("HOME") .. "/repos/02_personal/dotfiles/scripts/create-multi-output.swift"
+                if hs.fs.attributes(scriptPath) then
+                    hs.execute("/usr/bin/swift " .. scriptPath)
+                    -- Re-scan for the newly created device
+                    for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
+                        local n = dev:name()
+                        if n:find("Multi%-Output") or n:find("Aggregate") or n:find("LG Dual") then
+                            multiUid = dev:uid()
+                            break
+                        end
+                    end
+                end
+            end
             table.insert(audioDevices, {
                 label = "LG Dual",
                 isDual = true,
@@ -800,8 +815,14 @@ local function applyAudioState()
     if not device then return end
     local volume = volumeLevels[audioCycleVolume]
 
-    -- Set output device
+    -- Set volume BEFORE switching output to prevent blaring at old volume
     if device.isDual then
+        -- Pre-set volume on both LG monitors before switching
+        for _, uid in ipairs(device.outputUids) do
+            local dev = hs.audiodevice.findDeviceByUID(uid)
+            if dev then dev:setVolume(volume) end
+        end
+        -- Now switch output device
         if device.multiOutputUid then
             local multiDev = hs.audiodevice.findDeviceByUID(device.multiOutputUid)
             if multiDev then multiDev:setDefaultOutputDevice() end
@@ -809,16 +830,11 @@ local function applyAudioState()
             local rightDev = hs.audiodevice.findDeviceByUID(device.primaryOutputUid)
             if rightDev then rightDev:setDefaultOutputDevice() end
         end
-        -- Set volume on both LG monitors
-        for _, uid in ipairs(device.outputUids) do
-            local dev = hs.audiodevice.findDeviceByUID(uid)
-            if dev then dev:setVolume(volume) end
-        end
     else
         local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
         if dev then
-            dev:setDefaultOutputDevice()
             dev:setVolume(volume)
+            dev:setDefaultOutputDevice()
         end
     end
 
@@ -864,32 +880,29 @@ end
 buildAudioDeviceList()
 initAudioCycleIndex()
 
--- Rebuild device list when displays change
-local audioScreenWatcher = hs.screen.watcher.new(function()
-    hs.timer.doAfter(2, function()
-        buildAudioDeviceList()
-        initAudioCycleIndex()
-    end)
-end)
-audioScreenWatcher:start()
-
 -- Bind Ctrl+Option+Cmd+] for forward cycling
 hs.hotkey.bind({"ctrl", "alt", "cmd"}, "]", function() cycleAudio(1) end)
 
 -- Bind Ctrl+Option+Cmd+[ for backward cycling
 hs.hotkey.bind({"ctrl", "alt", "cmd"}, "[", function() cycleAudio(-1) end)
 
--- Restart SketchyBar when display configuration changes (monitor swap between computers)
-local sketchybarRestartTimer = nil
+-- Single screen watcher: rebuild audio, sync mic, restart sketchybar
+local screenChangeTimer = nil
 local screenWatcher = hs.screen.watcher.new(function()
-    -- Cancel any pending restart to debounce rapid display changes
-    if sketchybarRestartTimer then
-        sketchybarRestartTimer:stop()
-        sketchybarRestartTimer = nil
+    -- Debounce rapid display changes
+    if screenChangeTimer then
+        screenChangeTimer:stop()
+        screenChangeTimer = nil
     end
-    -- Wait for displays to settle before restarting
-    sketchybarRestartTimer = hs.timer.doAfter(3, function()
-        sketchybarRestartTimer = nil
+    screenChangeTimer = hs.timer.doAfter(3, function()
+        screenChangeTimer = nil
+        -- 1) Rebuild audio devices (includes Multi-Output recreation)
+        buildAudioDeviceList()
+        -- 2) Re-detect current output position
+        initAudioCycleIndex()
+        -- 3) Sync mic and output to match detected state
+        applyAudioState()
+        -- 4) Restart sketchybar for display changes
         hs.execute("/opt/homebrew/bin/brew services restart sketchybar", true)
     end)
 end)
