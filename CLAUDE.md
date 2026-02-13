@@ -60,6 +60,8 @@ The installation script (`scripts/install.sh`) uses a **four-phase declarative a
 ### 4. Hammerspoon (Automation)
 - **Config**: `config/hammerspoon/`
 - **Symlink**: Goes to `~/.hammerspoon` (not ~/.config/)
+- **Audio Switching**: Two-phase device/volume picker with visual preview (see Audio Architecture below)
+- **Reload**: `open -g hammerspoon://reload` or auto-reloads on `init.lua` save
 
 ### 5. Claude AI Assistant
 - **Config**: `config/claude/`
@@ -102,11 +104,14 @@ components → cache/API → event trigger → widget update
 - **Events**: `todoist_focus_changed` when task clicked | Widget updates reactively
 - **Performance**: <100ms popup open, <1s sync
 
-#### Meeting Prep Automation
-- **Workflow**: Icon click → classify meeting → find person folder → analyze history (GPT-4o-mini) → generate note → open Obsidian
-- **Components**: `classify-meeting.py` (regex patterns) | `find-person-folder.sh` (vault search) | `analyze-meeting-history.py` (AI extraction) | `generate-meeting-note.py` (AI generation)
-- **Config**: `.env`: `OBSIDIAN_VAULT_PATH="/path/to/vault"`, `OPENAI_API_KEY="sk-..."`
-- **Performance**: 15-45s total, ~$0.010 per prep
+#### Meeting Prep Automation (Jonas API)
+- **Workflow**: Icon click → POST to Jonas API (`/prep`) → wait for note file on disk → ensure Obsidian running → open note via URI
+- **API**: `https://jonas.ilovejeff.co/prep` — returns `note_path` (Docker path) and `obsidian_uri`
+- **File sync**: Docker creates note at `/vault/...` which maps to host vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/kb/`
+- **URI construction**: Script builds URI from `note_path` (preferred) or `obsidian_uri` `file=` param, always using `vault=kb`
+- **Safeguards**: Polls for file existence (0.5s intervals, 10s max), launches Obsidian if not running, exits with error if file never appears
+- **Config**: `.env`: `JONAS_API_URL` (optional, defaults to production)
+- **Performance**: 7-90s total (API call dominates)
 
 ### LaunchAgent Operations
 
@@ -298,6 +303,49 @@ TODOIST_API_TOKEN="your-todoist-api-token-here"
 - Cmd + Ctrl + Alt + Shift + Arrows: Window movement
 - Cmd + Ctrl + Alt + Shift + Numbers: Move to workspace
 
+## Audio Architecture (Hammerspoon)
+
+### Overview
+Dual LG UltraFine display audio management with visual preview picker, volume control, and automatic mic pinning. Managed in `config/hammerspoon/init.lua`.
+
+### Hardware Setup
+- **LG Left**: Secondary monitor (physically left)
+- **LG Right**: Main monitor (physically right) — mic always pinned here
+- **LG Dual**: Aggregate device playing through both monitors simultaneously
+- **Mac mini Speakers**: Built-in fallback
+
+### Device Identification
+Two identical "LG UltraFine Display Audio" devices are distinguished by UID serial numbers. The main (current default) output at init time is labeled "LG Left" (physically left). The `SwitchAudioSource` CLI (`/opt/homebrew/bin/SwitchAudioSource`) is used for reliable device switching between identical-model displays.
+
+### Key Bindings
+- **Ctrl+Option+Cmd+]**: Next device / increase volume
+- **Ctrl+Option+Cmd+[**: Previous device / decrease volume
+- **System volume keys**: Intercepted when on LG Dual (aggregate devices block native volume control)
+
+### Two-Phase Interaction
+1. **Device mode** (default): `]`/`[` browse devices with visual overlay (`▶` = selection, `●` = current active). Auto-applies after 2 seconds of no input.
+2. **Volume mode** (after device applies): Same keys cycle volume levels (0%, 25%, 50%, 75%, 100%) with overlay. Auto-applies after 2 seconds. Resets to device mode after 8 seconds of inactivity.
+
+### System Volume Key Interception
+When on LG Dual, native macOS volume keys are disabled (aggregate device limitation). Hammerspoon intercepts `SOUND_UP`, `SOUND_DOWN`, and `MUTE` system key events and applies volume changes to both LG sub-devices in sync (~6.25% per step).
+
+### Key Behaviors
+- **Volume matching**: When switching devices, volume is copied from current device to target to prevent blaring
+- **Volume set before AND after switch**: LG displays may ignore volume changes when not the active output (firmware-controlled)
+- **Mic pinning**: Input mic always stays on LG Right (main monitor) regardless of output selection
+- **System alert sounds**: Follow the active output device via `setDefaultSystemDevice()`
+- **Multi-Output recreation**: If the LG Dual aggregate device is destroyed by a display change, `scripts/create-multi-output.swift` auto-recreates it
+
+### Display Change Handling
+Single debounced screen watcher (3-second delay) handles monitor plug/unplug:
+1. Rebuilds audio device list (includes Multi-Output recreation if needed)
+2. Re-detects current output device
+3. Pins mic to right monitor
+4. Restarts sketchybar
+
+### Device Filtering
+The following devices are excluded from the picker: Microsoft Teams Audio, Jump Desktop Audio, krisp speaker, and any Multi-Output/Aggregate/LG Dual system devices (the manual "LG Dual" entry is constructed separately).
+
 ## Development & Troubleshooting
 
 ### Common Commands
@@ -305,6 +353,7 @@ TODOIST_API_TOKEN="your-todoist-api-token-here"
 # Reload configs
 aerospace reload-config
 brew services restart sketchybar
+open -g hammerspoon://reload   # Reload Hammerspoon
 
 # Check symlinks
 ls -la ~/.config/* | grep "^l"
@@ -313,6 +362,10 @@ ls -la ~/.config/* | grep "^l"
 launchctl list | grep "com.user"
 ls -lh ~/.config/sketchybar/logs/
 tail -f ~/.config/sketchybar/logs/*.log
+
+# Audio debugging
+/opt/homebrew/bin/SwitchAudioSource -a -t output -f json  # List all output devices
+/opt/homebrew/bin/SwitchAudioSource -c -t output -f json  # Current output device
 ```
 
 ### Testing Components
@@ -348,6 +401,12 @@ curl -H "Authorization: Bearer $TODOIST_API_TOKEN" https://api.todoist.com/rest/
 | **Python fails** | ModuleNotFoundError | Reinstall venv: `python3 -m venv ~/.config/sketchybar/venv && ~/.config/sketchybar/venv/bin/pip install -r ~/.config/sketchybar/requirements.txt` |
 | **khal not found** | Exit code 127 | Check LaunchAgent PATH configuration (see above) |
 | **Permissions denied** | Can't write logs | Check directory permissions |
+| **Audio blaring on switch** | Volume spike when changing output | Verify `setVolume()` runs before AND after `setDefaultOutputDevice()` in `applyAudioSelection()` |
+| **LG Dual missing** | Only individual LG devices show | Check `scripts/create-multi-output.swift` runs; verify with `SwitchAudioSource -a -t output -f json` |
+| **Duplicate LG Dual** | Two dual entries in picker | Ensure "LG Dual" name is filtered in `buildAudioDeviceList()` device enumeration |
+| **Volume keys disabled** | No-volume icon on LG Dual | `dualVolumeTap` eventtap must be running; check Hammerspoon console for errors |
+| **Meeting prep no file** | "File not found after 10s" in log | Jonas API not writing to Docker volume; check Docker mount and Jonas logs |
+| **Meeting prep wrong vault** | Obsidian "file not found" error | Verify `VAULT_NAME="kb"` in `meeting-prep.sh` matches actual vault folder name |
 
 **Force Complete Resync (Calendar Example):**
 ```bash

@@ -643,15 +643,34 @@ hs.hotkey.bind({"ctrl", "alt", "cmd"}, "p", toggleSketchybarPrivacy)
 -- Removed Hammerspoon calendar sync (Story 2.1)
 -- Calendar sync is now handled via LaunchAgent calling sync-calendars.sh helper
 
--- Audio output and volume cycling with dual LG display support
--- Uses UIDs to distinguish identical-name LG UltraFine displays
--- Tracks state internally (not re-detected from system) for reliable cycling
--- Syncs input mic to match the active output display
-local volumeLevels = {0, 33, 66, 100}
+-- Audio output switching with visual preview and volume control
+-- Phase 1: ] and [ browse devices; auto-applies after 2s
+-- Phase 2: after device applies, ] and [ adjust volume; auto-applies after 2s
+-- Mic always pinned to right (main) monitor
 local sasPath = "/opt/homebrew/bin/SwitchAudioSource"
-local audioCycleIndex = 0     -- current position in audioDevices (0 = not initialized)
-local audioCycleVolume = 1    -- current position in volumeLevels
-local audioDevices = {}       -- built once at init, rebuilt on display changes
+local audioCycleIndex = 0       -- current ACTIVE device in audioDevices
+local audioDevices = {}         -- built at init, rebuilt on display changes
+local rightMonitorInputUid = nil -- mic always on right monitor
+
+-- Preview state
+local audioPreviewIndex = 0     -- device being previewed (0 = no preview active)
+local audioPreviewTimer = nil   -- auto-apply timer
+
+-- Volume state
+local volumeLevels = {0, 25, 50, 75, 100}
+local audioVolumeIndex = 3      -- current position in volumeLevels (default 50%)
+
+-- Glass overlay (hs.canvas) for audio controls
+local audioCanvas = nil
+local audioHideTimer = nil
+
+local function hideAudioOverlay()
+    if audioHideTimer then audioHideTimer:stop(); audioHideTimer = nil end
+    if audioCanvas then
+        audioCanvas:delete()
+        audioCanvas = nil
+    end
+end
 
 -- Build the device list using UIDs to distinguish identical-name LG displays
 local function buildAudioDeviceList()
@@ -661,12 +680,13 @@ local function buildAudioDeviceList()
     end
 
     audioDevices = {}
+    rightMonitorInputUid = nil
 
     local jsonOutput = hs.execute(sasPath .. " -a -t output -f json")
     local currentJson = hs.execute(sasPath .. " -c -t output -f json")
     local currentOutputUid = currentJson:match('"uid"%s*:%s*"([^"]+)"')
 
-    -- The main (right) display is whichever LG is the current default output
+    -- The main display is whichever LG is the current default output
     local mainSerial = nil
     if currentOutputUid and currentOutputUid:find("LG UltraFine") then
         mainSerial = currentOutputUid:match(":(%d+):%d+$")
@@ -682,21 +702,21 @@ local function buildAudioDeviceList()
         if name and uid then
             if not name:find("Microsoft Teams") and
                not name:find("Jump Desktop") and
-               not name:find("krisp") then
+               not name:find("krisp") and
+               not name:find("LG Dual") and
+               not name:find("Multi%-Output") and
+               not name:find("Aggregate") then
 
-                if name:find("LG UltraFine") and
-                   not name:find("Multi%-Output") and
-                   not name:find("Aggregate") then
+                if name:find("LG UltraFine") then
                     local serial = uid:match(":(%d+):%d+$")
                     local inputUid = uid:gsub(":%d+$", ":1")
                     table.insert(lgDevices, {
-                        label = (mainSerial and serial == mainSerial) and "LG Left" or "LG Right",
+                        label = (mainSerial and serial == mainSerial) and "LG Right" or "LG Left",
                         outputUid = uid,
                         inputUid = inputUid,
                         serial = serial
                     })
-                elseif not name:find("Multi%-Output") and
-                       not name:find("Aggregate") then
+                else
                     table.insert(otherDevices, {
                         label = name,
                         outputUid = uid
@@ -715,6 +735,14 @@ local function buildAudioDeviceList()
     -- Sort: Left first, then Right
     table.sort(lgDevices, function(a, b) return a.label < b.label end)
 
+    -- Capture right monitor input UID for mic pinning
+    for _, lg in ipairs(lgDevices) do
+        if lg.label == "LG Right" then
+            rightMonitorInputUid = lg.inputUid
+            break
+        end
+    end
+
     -- 1) Individual LG devices
     for _, dev in ipairs(lgDevices) do
         table.insert(audioDevices, dev)
@@ -727,7 +755,6 @@ local function buildAudioDeviceList()
             if lg.label == "LG Right" then rightLg = lg else leftLg = lg end
         end
         if rightLg and leftLg then
-            -- Check for existing Multi-Output / Aggregate device
             local multiUid = nil
             for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
                 local n = dev:name()
@@ -736,12 +763,10 @@ local function buildAudioDeviceList()
                     break
                 end
             end
-            -- Recreate Multi-Output device if destroyed (e.g. by display change)
             if not multiUid then
                 local scriptPath = os.getenv("HOME") .. "/repos/02_personal/dotfiles/scripts/create-multi-output.swift"
                 if hs.fs.attributes(scriptPath) then
                     hs.execute("/usr/bin/swift " .. scriptPath)
-                    -- Re-scan for the newly created device
                     for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
                         local n = dev:name()
                         if n:find("Multi%-Output") or n:find("Aggregate") or n:find("LG Dual") then
@@ -768,86 +793,394 @@ local function buildAudioDeviceList()
     end
 end
 
--- One-time init: match audioCycleIndex to current system output
+-- Detect current active device index from system state
 local function initAudioCycleIndex()
     local current = hs.audiodevice.defaultOutputDevice()
     if not current then
         audioCycleIndex = 1
-        audioCycleVolume = 1
         return
     end
     local currentUid = current:uid()
 
-    -- Try non-dual devices first
     for i, device in ipairs(audioDevices) do
         if not device.isDual and device.outputUid == currentUid then
             audioCycleIndex = i
-            local vol = current:volume()
-            if vol then
-                audioCycleVolume = 1
-                for vi = #volumeLevels, 1, -1 do
-                    if vol >= volumeLevels[vi] - 5 then
-                        audioCycleVolume = vi
-                        break
-                    end
-                end
-            end
             return
         end
     end
-
-    -- Check Multi-Output device (dual mode)
     for i, device in ipairs(audioDevices) do
         if device.isDual and device.multiOutputUid == currentUid then
             audioCycleIndex = i
-            audioCycleVolume = 1
             return
         end
     end
 
     audioCycleIndex = 1
-    audioCycleVolume = 1
 end
 
--- Push current internal state to the system
-local function applyAudioState()
+-- Snap audioVolumeIndex to nearest level from current system volume
+local function syncVolumeIndex()
+    local current = hs.audiodevice.defaultOutputDevice()
+    local vol = current and current:volume() or 50
+    audioVolumeIndex = 1
+    for vi = #volumeLevels, 1, -1 do
+        if vol >= volumeLevels[vi] - 10 then
+            audioVolumeIndex = vi
+            break
+        end
+    end
+end
+
+-- Show the device picker overlay (glass style)
+local function showDevicePreview()
+    hideAudioOverlay()
+
+    local W, H = 300, 72
+    local screen = hs.screen.mainScreen()
+    local sf = screen:frame()
+
+    audioCanvas = hs.canvas.new({
+        x = sf.x + (sf.w - W) / 2,
+        y = sf.y + sf.h - H - 120,
+        w = W, h = H,
+    })
+    audioCanvas:level(hs.canvas.windowLevels.overlay)
+    audioCanvas:behavior(hs.canvas.windowBehaviors.canJoinAllSpaces + hs.canvas.windowBehaviors.stationary)
+
+    -- Background
+    audioCanvas:appendElements({
+        type = "rectangle",
+        action = "strokeAndFill",
+        fillColor = {white = 0.12, alpha = 0.55},
+        strokeColor = {white = 0.5, alpha = 0.25},
+        strokeWidth = 0.5,
+        roundedRectRadii = {xRadius = 16, yRadius = 16},
+    })
+
+    -- Device name (centered)
+    local idx = audioPreviewIndex > 0 and audioPreviewIndex or audioCycleIndex
+    local device = audioDevices[idx]
+    local label = device and device.label or "Unknown"
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new(label, {
+            font = {name = ".AppleSystemUIFont", size = 16},
+            color = {white = 1, alpha = 0.95},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = 40, y = 14, w = W - 80, h = 24},
+    })
+
+    -- Left arrow hint
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new("\u{2039}", {
+            font = {name = ".AppleSystemUIFont-Light", size = 26},
+            color = {white = 0.45, alpha = 0.6},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = 10, y = 8, w = 24, h = 32},
+    })
+
+    -- Right arrow hint
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new("\u{203A}", {
+            font = {name = ".AppleSystemUIFont-Light", size = 26},
+            color = {white = 0.45, alpha = 0.6},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = W - 34, y = 8, w = 24, h = 32},
+    })
+
+    -- Position dots
+    local n = #audioDevices
+    local dotSpacing = 14
+    local totalDotsW = (n - 1) * dotSpacing
+    local startX = (W - totalDotsW) / 2
+    for i = 1, n do
+        local isPrev = (audioPreviewIndex > 0 and i == audioPreviewIndex)
+        local isAct = (i == audioCycleIndex)
+        local r = isPrev and 3.5 or 2.5
+        local cx = startX + (i - 1) * dotSpacing
+        local cy = H - 16
+        audioCanvas:appendElements({
+            type = "oval",
+            action = "fill",
+            fillColor = isPrev and {white = 1, alpha = 1}
+                        or isAct and {white = 0.6, alpha = 0.7}
+                        or {white = 0.3, alpha = 0.4},
+            frame = {x = cx - r, y = cy - r, w = r * 2, h = r * 2},
+        })
+    end
+
+    audioCanvas:show()
+end
+
+-- Show the volume slider overlay (glass style)
+local function showVolumePreview()
+    hideAudioOverlay()
+
+    local W, H = 300, 72
+    local screen = hs.screen.mainScreen()
+    local sf = screen:frame()
+
+    audioCanvas = hs.canvas.new({
+        x = sf.x + (sf.w - W) / 2,
+        y = sf.y + sf.h - H - 120,
+        w = W, h = H,
+    })
+    audioCanvas:level(hs.canvas.windowLevels.overlay)
+    audioCanvas:behavior(hs.canvas.windowBehaviors.canJoinAllSpaces + hs.canvas.windowBehaviors.stationary)
+
+    -- Background
+    audioCanvas:appendElements({
+        type = "rectangle",
+        action = "strokeAndFill",
+        fillColor = {white = 0.12, alpha = 0.55},
+        strokeColor = {white = 0.5, alpha = 0.25},
+        strokeWidth = 0.5,
+        roundedRectRadii = {xRadius = 16, yRadius = 16},
+    })
+
+    -- Device label
+    local device = audioDevices[audioCycleIndex]
+    local label = device and device.label or "Unknown"
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new(label, {
+            font = {name = ".AppleSystemUIFont", size = 13},
+            color = {white = 0.6, alpha = 0.8},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = 40, y = 8, w = W - 80, h = 20},
+    })
+
+    -- Speaker icon (low)
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new("\u{1F508}", {
+            font = {size = 13},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = 14, y = 35, w = 22, h = 20},
+    })
+
+    -- Slider track
+    local trackX, trackY, trackW, trackH = 42, 40, W - 84, 6
+    audioCanvas:appendElements({
+        type = "rectangle",
+        action = "fill",
+        fillColor = {white = 0.25, alpha = 0.5},
+        roundedRectRadii = {xRadius = 3, yRadius = 3},
+        frame = {x = trackX, y = trackY, w = trackW, h = trackH},
+    })
+
+    -- Slider fill
+    local vol = volumeLevels[audioVolumeIndex]
+    local fillW = math.max(0, trackW * vol / 100)
+    if fillW > 1 then
+        audioCanvas:appendElements({
+            type = "rectangle",
+            action = "fill",
+            fillColor = {white = 1, alpha = 0.9},
+            roundedRectRadii = {xRadius = 3, yRadius = 3},
+            frame = {x = trackX, y = trackY, w = fillW, h = trackH},
+        })
+    end
+
+    -- Speaker icon (high)
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new("\u{1F50A}", {
+            font = {size = 13},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = W - 36, y = 35, w = 22, h = 20},
+    })
+
+    -- Volume percentage
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new(vol .. "%", {
+            font = {name = ".AppleSystemUIFont", size = 11},
+            color = {white = 0.4, alpha = 0.6},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = 40, y = 52, w = W - 80, h = 16},
+    })
+
+    audioCanvas:show()
+end
+
+-- Show quick volume feedback (for hardware keys and apply confirmation)
+local function showQuickVolume(vol, label)
+    hideAudioOverlay()
+
+    local W, H = 300, 56
+    local screen = hs.screen.mainScreen()
+    local sf = screen:frame()
+
+    audioCanvas = hs.canvas.new({
+        x = sf.x + (sf.w - W) / 2,
+        y = sf.y + sf.h - H - 120,
+        w = W, h = H,
+    })
+    audioCanvas:level(hs.canvas.windowLevels.overlay)
+    audioCanvas:behavior(hs.canvas.windowBehaviors.canJoinAllSpaces + hs.canvas.windowBehaviors.stationary)
+
+    -- Background
+    audioCanvas:appendElements({
+        type = "rectangle",
+        action = "strokeAndFill",
+        fillColor = {white = 0.12, alpha = 0.55},
+        strokeColor = {white = 0.5, alpha = 0.25},
+        strokeWidth = 0.5,
+        roundedRectRadii = {xRadius = 14, yRadius = 14},
+    })
+
+    -- Label
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new(label or "Volume", {
+            font = {name = ".AppleSystemUIFont", size = 12},
+            color = {white = 0.55, alpha = 0.7},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = 40, y = 6, w = W - 80, h = 18},
+    })
+
+    -- Speaker icon (muted or low)
+    local leftIcon = (vol == 0) and "\u{1F507}" or "\u{1F508}"
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new(leftIcon, {
+            font = {size = 12},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = 14, y = 28, w = 22, h = 18},
+    })
+
+    -- Slider track
+    local trackX, trackY, trackW, trackH = 42, 32, W - 84, 6
+    audioCanvas:appendElements({
+        type = "rectangle",
+        action = "fill",
+        fillColor = {white = 0.25, alpha = 0.5},
+        roundedRectRadii = {xRadius = 3, yRadius = 3},
+        frame = {x = trackX, y = trackY, w = trackW, h = trackH},
+    })
+
+    -- Slider fill
+    local fillW = math.max(0, trackW * vol / 100)
+    if fillW > 1 then
+        audioCanvas:appendElements({
+            type = "rectangle",
+            action = "fill",
+            fillColor = {white = 1, alpha = 0.9},
+            roundedRectRadii = {xRadius = 3, yRadius = 3},
+            frame = {x = trackX, y = trackY, w = fillW, h = trackH},
+        })
+    end
+
+    -- Speaker icon (high)
+    audioCanvas:appendElements({
+        type = "text",
+        text = hs.styledtext.new("\u{1F50A}", {
+            font = {size = 12},
+            paragraphStyle = {alignment = "center"},
+        }),
+        frame = {x = W - 36, y = 28, w = 22, h = 18},
+    })
+
+    audioCanvas:show()
+
+    -- Auto-hide after 1 second
+    audioHideTimer = hs.timer.doAfter(1, function()
+        hideAudioOverlay()
+    end)
+end
+
+-- Set volume on the current active device
+local function applyVolume()
     local device = audioDevices[audioCycleIndex]
     if not device then return end
-    local volume = volumeLevels[audioCycleVolume]
+    local volume = volumeLevels[audioVolumeIndex]
 
-    -- Set volume BEFORE switching output to prevent blaring at old volume
     if device.isDual then
-        -- Pre-set volume on both LG monitors before switching
         for _, uid in ipairs(device.outputUids) do
             local dev = hs.audiodevice.findDeviceByUID(uid)
             if dev then dev:setVolume(volume) end
         end
-        -- Now switch output device
-        if device.multiOutputUid then
-            local multiDev = hs.audiodevice.findDeviceByUID(device.multiOutputUid)
-            if multiDev then multiDev:setDefaultOutputDevice() end
-        else
-            local rightDev = hs.audiodevice.findDeviceByUID(device.primaryOutputUid)
-            if rightDev then rightDev:setDefaultOutputDevice() end
-        end
     else
         local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
-        if dev then
-            dev:setVolume(volume)
-            dev:setDefaultOutputDevice()
-        end
+        if dev then dev:setVolume(volume) end
     end
 
-    -- Sync input mic to match output display
-    if device.inputUid then
-        local inputDev = hs.audiodevice.findDeviceByUID(device.inputUid)
-        if inputDev then inputDev:setDefaultInputDevice() end
-    end
-
-    hs.alert.show(device.label .. " \u{2192} " .. volume .. "%")
+    showQuickVolume(volume, device.label)
 end
 
--- Cycle audio: direction 1=forward (]), -1=backward ([)
+-- Switch output to the previewed device
+local function applyAudioSelection()
+    local device = audioDevices[audioPreviewIndex]
+    if not device then
+        hideAudioOverlay()
+        return
+    end
+
+    -- Match volume from current device to prevent blaring
+    local currentDev = hs.audiodevice.defaultOutputDevice()
+    local volume = (currentDev and currentDev:volume()) or 50
+
+    audioCycleIndex = audioPreviewIndex
+    audioPreviewIndex = 0
+
+    -- Hide device overlay IMMEDIATELY (before any switching)
+    hideAudioOverlay()
+
+    -- Post-switch actions (mic pinning, brief confirmation)
+    local function afterSwitch()
+        if rightMonitorInputUid then
+            local inputDev = hs.audiodevice.findDeviceByUID(rightMonitorInputUid)
+            if inputDev then inputDev:setDefaultInputDevice() end
+        end
+        showQuickVolume(math.floor(volume + 0.5), device.label)
+    end
+
+    if device.isDual then
+        for _, uid in ipairs(device.outputUids) do
+            local dev = hs.audiodevice.findDeviceByUID(uid)
+            if dev then dev:setVolume(volume) end
+        end
+        local devToSet = device.multiOutputUid and hs.audiodevice.findDeviceByUID(device.multiOutputUid)
+                         or hs.audiodevice.findDeviceByUID(device.primaryOutputUid)
+        if devToSet then
+            devToSet:setDefaultOutputDevice()
+            devToSet:setDefaultSystemDevice()
+        end
+        for _, uid in ipairs(device.outputUids) do
+            local dev = hs.audiodevice.findDeviceByUID(uid)
+            if dev then dev:setVolume(volume) end
+        end
+        afterSwitch()
+    else
+        -- Use hs.task (async, no shell quoting) for SwitchAudioSource
+        local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+        if dev then dev:setVolume(volume) end
+        local task = hs.task.new(sasPath, function(exitCode, stdOut, stdErr)
+            local switched = hs.audiodevice.findDeviceByUID(device.outputUid)
+            if switched then
+                switched:setVolume(volume)
+                switched:setDefaultSystemDevice()
+            end
+            afterSwitch()
+        end, {"-t", "output", "-u", device.outputUid})
+        task:start()
+    end
+end
+
+-- Main handler: direction 1=forward (]), -1=backward ([)
+-- Always cycles devices; volume is handled by hardware volume keys
 local function cycleAudio(direction)
     if #audioDevices == 0 then
         buildAudioDeviceList()
@@ -858,51 +1191,117 @@ local function cycleAudio(direction)
         return
     end
 
-    local nextVol = audioCycleVolume + direction
-
-    if nextVol > #volumeLevels then
-        -- Past max volume -> next device at 0%
-        audioCycleIndex = audioCycleIndex % #audioDevices + 1
-        audioCycleVolume = 1
-    elseif nextVol < 1 then
-        -- Below min volume -> previous device at 100%
-        audioCycleIndex = audioCycleIndex - 1
-        if audioCycleIndex < 1 then audioCycleIndex = #audioDevices end
-        audioCycleVolume = #volumeLevels
-    else
-        audioCycleVolume = nextVol
+    if audioPreviewIndex == 0 then
+        audioPreviewIndex = audioCycleIndex
     end
 
-    applyAudioState()
+    audioPreviewIndex = audioPreviewIndex + direction
+    if audioPreviewIndex > #audioDevices then audioPreviewIndex = 1 end
+    if audioPreviewIndex < 1 then audioPreviewIndex = #audioDevices end
+
+    showDevicePreview()
+
+    if audioPreviewTimer then audioPreviewTimer:stop() end
+    audioPreviewTimer = hs.timer.doAfter(2, function()
+        audioPreviewTimer = nil
+        applyAudioSelection()
+    end)
 end
 
 -- Initialize device list and state
 buildAudioDeviceList()
 initAudioCycleIndex()
+syncVolumeIndex()
 
--- Bind Ctrl+Option+Cmd+] for forward cycling
+-- Bind Ctrl+Option+Cmd+] for forward
 hs.hotkey.bind({"ctrl", "alt", "cmd"}, "]", function() cycleAudio(1) end)
 
--- Bind Ctrl+Option+Cmd+[ for backward cycling
+-- Bind Ctrl+Option+Cmd+[ for backward
 hs.hotkey.bind({"ctrl", "alt", "cmd"}, "[", function() cycleAudio(-1) end)
+
+-- Intercept system volume keys for all devices (glass overlay instead of native HUD)
+local VOLUME_STEP = 6.25  -- ~16 steps like native macOS
+local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, function(event)
+    local data = event:systemKey()
+    if not data then return false end
+
+    local device = audioDevices[audioCycleIndex]
+    if not device then return false end
+    local label = device.label or "Unknown"
+
+    if data.key == "SOUND_UP" and data.down then
+        if device.isDual then
+            for _, uid in ipairs(device.outputUids) do
+                local dev = hs.audiodevice.findDeviceByUID(uid)
+                if dev then dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP)) end
+            end
+            local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+            showQuickVolume(sample and math.floor(sample:volume() + 0.5) or 0, label)
+        else
+            local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+            if dev then
+                dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP))
+                showQuickVolume(math.floor(dev:volume() + 0.5), label)
+            end
+        end
+        return true
+    elseif data.key == "SOUND_DOWN" and data.down then
+        if device.isDual then
+            for _, uid in ipairs(device.outputUids) do
+                local dev = hs.audiodevice.findDeviceByUID(uid)
+                if dev then dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP)) end
+            end
+            local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+            showQuickVolume(sample and math.floor(sample:volume() + 0.5) or 0, label)
+        else
+            local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+            if dev then
+                dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP))
+                showQuickVolume(math.floor(dev:volume() + 0.5), label)
+            end
+        end
+        return true
+    elseif data.key == "MUTE" and data.down and not data["repeat"] then
+        if device.isDual then
+            for _, uid in ipairs(device.outputUids) do
+                local dev = hs.audiodevice.findDeviceByUID(uid)
+                if dev then dev:setMuted(not dev:muted()) end
+            end
+            local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+            local muted = sample and sample:muted()
+            local vol = muted and 0 or (sample and math.floor(sample:volume() + 0.5) or 50)
+            showQuickVolume(vol, muted and label .. " \u{00B7} Muted" or label)
+        else
+            local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+            if dev then
+                dev:setMuted(not dev:muted())
+                local muted = dev:muted()
+                local vol = muted and 0 or math.floor(dev:volume() + 0.5)
+                showQuickVolume(vol, muted and label .. " \u{00B7} Muted" or label)
+            end
+        end
+        return true
+    end
+
+    return false
+end)
+volumeKeyTap:start()
 
 -- Single screen watcher: rebuild audio, sync mic, restart sketchybar
 local screenChangeTimer = nil
 local screenWatcher = hs.screen.watcher.new(function()
-    -- Debounce rapid display changes
     if screenChangeTimer then
         screenChangeTimer:stop()
         screenChangeTimer = nil
     end
     screenChangeTimer = hs.timer.doAfter(3, function()
         screenChangeTimer = nil
-        -- 1) Rebuild audio devices (includes Multi-Output recreation)
         buildAudioDeviceList()
-        -- 2) Re-detect current output position
         initAudioCycleIndex()
-        -- 3) Sync mic and output to match detected state
-        applyAudioState()
-        -- 4) Restart sketchybar for display changes
+        if rightMonitorInputUid then
+            local inputDev = hs.audiodevice.findDeviceByUID(rightMonitorInputUid)
+            if inputDev then inputDev:setDefaultInputDevice() end
+        end
         hs.execute("/opt/homebrew/bin/brew services restart sketchybar", true)
     end)
 end)
