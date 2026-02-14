@@ -660,6 +660,11 @@ local audioPreviewTimer = nil   -- auto-apply timer
 local volumeLevels = {0, 25, 50, 75, 100}
 local audioVolumeIndex = 3      -- current position in volumeLevels (default 50%)
 
+-- Balance offset for LG Dual mode (range: -20 to +20)
+-- Positive = boost left monitor, Negative = boost right monitor
+-- Adjust if one monitor sounds quieter in dual mode
+local DUAL_BALANCE_OFFSET = -20
+
 -- Glass overlay (hs.canvas) for audio controls
 local audioCanvas = nil
 local audioHideTimer = nil
@@ -831,12 +836,91 @@ local function syncVolumeIndex()
     end
 end
 
+-- Draw a flat geometric speaker icon on the canvas
+-- level: 0=muted, 1=low, 2=high
+local function drawSpeakerIcon(canvas, x, y, size, level, color)
+    local c = color or {white = 0.65, alpha = 0.8}
+    local s = size
+    -- Speaker body + cone
+    canvas:appendElements({
+        type = "segments",
+        action = "fill",
+        fillColor = c,
+        closed = true,
+        coordinates = {
+            {x = x,           y = y + s*0.35},
+            {x = x + s*0.28,  y = y + s*0.35},
+            {x = x + s*0.48,  y = y + s*0.15},
+            {x = x + s*0.48,  y = y + s*0.85},
+            {x = x + s*0.28,  y = y + s*0.65},
+            {x = x,           y = y + s*0.65},
+        },
+    })
+    if level == 0 then
+        -- Mute X
+        canvas:appendElements({
+            type = "segments", action = "stroke",
+            strokeColor = c, strokeWidth = 1.5,
+            coordinates = {
+                {x = x + s*0.56, y = y + s*0.35},
+                {x = x + s*0.78, y = y + s*0.65},
+            },
+        })
+        canvas:appendElements({
+            type = "segments", action = "stroke",
+            strokeColor = c, strokeWidth = 1.5,
+            coordinates = {
+                {x = x + s*0.56, y = y + s*0.65},
+                {x = x + s*0.78, y = y + s*0.35},
+            },
+        })
+    end
+    if level >= 1 then
+        -- Small wave
+        canvas:appendElements({
+            type = "segments", action = "stroke",
+            strokeColor = c, strokeWidth = 1.2,
+            coordinates = {
+                {x = x + s*0.58, y = y + s*0.33},
+                {x = x + s*0.58, y = y + s*0.67,
+                 c1x = x + s*0.74, c1y = y + s*0.33,
+                 c2x = x + s*0.74, c2y = y + s*0.67},
+            },
+        })
+    end
+    if level >= 2 then
+        -- Large wave
+        canvas:appendElements({
+            type = "segments", action = "stroke",
+            strokeColor = c, strokeWidth = 1.2,
+            coordinates = {
+                {x = x + s*0.70, y = y + s*0.20},
+                {x = x + s*0.70, y = y + s*0.80,
+                 c1x = x + s*0.92, c1y = y + s*0.20,
+                 c2x = x + s*0.92, c2y = y + s*0.80},
+            },
+        })
+    end
+end
+
+-- Set volume on dual LG displays with balance offset
+local function setDualVolume(device, baseVolume)
+    for i, uid in ipairs(device.outputUids) do
+        local dev = hs.audiodevice.findDeviceByUID(uid)
+        if dev then
+            -- outputUids: [1]=left, [2]=right (labels may not match physical)
+            local offset = (i == 1) and -DUAL_BALANCE_OFFSET or DUAL_BALANCE_OFFSET
+            dev:setVolume(math.max(0, math.min(100, baseVolume + offset)))
+        end
+    end
+end
+
 -- Show the device picker overlay (glass style)
 local function showDevicePreview()
     hideAudioOverlay()
 
     local W, H = 300, 72
-    local screen = hs.screen.mainScreen()
+    local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
     local sf = screen:frame()
 
     audioCanvas = hs.canvas.new({
@@ -851,7 +935,7 @@ local function showDevicePreview()
     audioCanvas:appendElements({
         type = "rectangle",
         action = "strokeAndFill",
-        fillColor = {white = 0.12, alpha = 0.55},
+        fillColor = {white = 0.12, alpha = 0.78},
         strokeColor = {white = 0.5, alpha = 0.25},
         strokeWidth = 0.5,
         roundedRectRadii = {xRadius = 16, yRadius = 16},
@@ -875,8 +959,8 @@ local function showDevicePreview()
     audioCanvas:appendElements({
         type = "text",
         text = hs.styledtext.new("\u{2039}", {
-            font = {name = ".AppleSystemUIFont-Light", size = 26},
-            color = {white = 0.45, alpha = 0.6},
+            font = {name = ".AppleSystemUIFont", size = 26},
+            color = {white = 0.6, alpha = 0.75},
             paragraphStyle = {alignment = "center"},
         }),
         frame = {x = 10, y = 8, w = 24, h = 32},
@@ -886,8 +970,8 @@ local function showDevicePreview()
     audioCanvas:appendElements({
         type = "text",
         text = hs.styledtext.new("\u{203A}", {
-            font = {name = ".AppleSystemUIFont-Light", size = 26},
-            color = {white = 0.45, alpha = 0.6},
+            font = {name = ".AppleSystemUIFont", size = 26},
+            color = {white = 0.6, alpha = 0.75},
             paragraphStyle = {alignment = "center"},
         }),
         frame = {x = W - 34, y = 8, w = 24, h = 32},
@@ -922,7 +1006,7 @@ local function showVolumePreview()
     hideAudioOverlay()
 
     local W, H = 300, 72
-    local screen = hs.screen.mainScreen()
+    local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
     local sf = screen:frame()
 
     audioCanvas = hs.canvas.new({
@@ -937,7 +1021,7 @@ local function showVolumePreview()
     audioCanvas:appendElements({
         type = "rectangle",
         action = "strokeAndFill",
-        fillColor = {white = 0.12, alpha = 0.55},
+        fillColor = {white = 0.12, alpha = 0.78},
         strokeColor = {white = 0.5, alpha = 0.25},
         strokeWidth = 0.5,
         roundedRectRadii = {xRadius = 16, yRadius = 16},
@@ -950,21 +1034,14 @@ local function showVolumePreview()
         type = "text",
         text = hs.styledtext.new(label, {
             font = {name = ".AppleSystemUIFont", size = 13},
-            color = {white = 0.6, alpha = 0.8},
+            color = {white = 0.9, alpha = 0.95},
             paragraphStyle = {alignment = "center"},
         }),
         frame = {x = 40, y = 8, w = W - 80, h = 20},
     })
 
     -- Speaker icon (low)
-    audioCanvas:appendElements({
-        type = "text",
-        text = hs.styledtext.new("\u{1F508}", {
-            font = {size = 13},
-            paragraphStyle = {alignment = "center"},
-        }),
-        frame = {x = 14, y = 35, w = 22, h = 20},
-    })
+    drawSpeakerIcon(audioCanvas, 14, 34, 18, 1, {white = 0.7, alpha = 0.9})
 
     -- Slider track
     local trackX, trackY, trackW, trackH = 42, 40, W - 84, 6
@@ -990,21 +1067,14 @@ local function showVolumePreview()
     end
 
     -- Speaker icon (high)
-    audioCanvas:appendElements({
-        type = "text",
-        text = hs.styledtext.new("\u{1F50A}", {
-            font = {size = 13},
-            paragraphStyle = {alignment = "center"},
-        }),
-        frame = {x = W - 36, y = 35, w = 22, h = 20},
-    })
+    drawSpeakerIcon(audioCanvas, W - 36, 34, 18, 2, {white = 0.7, alpha = 0.9})
 
     -- Volume percentage
     audioCanvas:appendElements({
         type = "text",
         text = hs.styledtext.new(vol .. "%", {
             font = {name = ".AppleSystemUIFont", size = 11},
-            color = {white = 0.4, alpha = 0.6},
+            color = {white = 0.65, alpha = 0.85},
             paragraphStyle = {alignment = "center"},
         }),
         frame = {x = 40, y = 52, w = W - 80, h = 16},
@@ -1018,7 +1088,7 @@ local function showQuickVolume(vol, label)
     hideAudioOverlay()
 
     local W, H = 300, 56
-    local screen = hs.screen.mainScreen()
+    local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
     local sf = screen:frame()
 
     audioCanvas = hs.canvas.new({
@@ -1033,7 +1103,7 @@ local function showQuickVolume(vol, label)
     audioCanvas:appendElements({
         type = "rectangle",
         action = "strokeAndFill",
-        fillColor = {white = 0.12, alpha = 0.55},
+        fillColor = {white = 0.12, alpha = 0.78},
         strokeColor = {white = 0.5, alpha = 0.25},
         strokeWidth = 0.5,
         roundedRectRadii = {xRadius = 14, yRadius = 14},
@@ -1044,22 +1114,14 @@ local function showQuickVolume(vol, label)
         type = "text",
         text = hs.styledtext.new(label or "Volume", {
             font = {name = ".AppleSystemUIFont", size = 12},
-            color = {white = 0.55, alpha = 0.7},
+            color = {white = 0.9, alpha = 0.95},
             paragraphStyle = {alignment = "center"},
         }),
         frame = {x = 40, y = 6, w = W - 80, h = 18},
     })
 
     -- Speaker icon (muted or low)
-    local leftIcon = (vol == 0) and "\u{1F507}" or "\u{1F508}"
-    audioCanvas:appendElements({
-        type = "text",
-        text = hs.styledtext.new(leftIcon, {
-            font = {size = 12},
-            paragraphStyle = {alignment = "center"},
-        }),
-        frame = {x = 14, y = 28, w = 22, h = 18},
-    })
+    drawSpeakerIcon(audioCanvas, 14, 27, 16, (vol == 0) and 0 or 1, {white = 0.7, alpha = 0.9})
 
     -- Slider track
     local trackX, trackY, trackW, trackH = 42, 32, W - 84, 6
@@ -1084,14 +1146,7 @@ local function showQuickVolume(vol, label)
     end
 
     -- Speaker icon (high)
-    audioCanvas:appendElements({
-        type = "text",
-        text = hs.styledtext.new("\u{1F50A}", {
-            font = {size = 12},
-            paragraphStyle = {alignment = "center"},
-        }),
-        frame = {x = W - 36, y = 28, w = 22, h = 18},
-    })
+    drawSpeakerIcon(audioCanvas, W - 36, 27, 16, 2, {white = 0.7, alpha = 0.9})
 
     audioCanvas:show()
 
@@ -1108,10 +1163,7 @@ local function applyVolume()
     local volume = volumeLevels[audioVolumeIndex]
 
     if device.isDual then
-        for _, uid in ipairs(device.outputUids) do
-            local dev = hs.audiodevice.findDeviceByUID(uid)
-            if dev then dev:setVolume(volume) end
-        end
+        setDualVolume(device, volume)
     else
         local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
         if dev then dev:setVolume(volume) end
@@ -1148,20 +1200,14 @@ local function applyAudioSelection()
     end
 
     if device.isDual then
-        for _, uid in ipairs(device.outputUids) do
-            local dev = hs.audiodevice.findDeviceByUID(uid)
-            if dev then dev:setVolume(volume) end
-        end
+        setDualVolume(device, volume)
         local devToSet = device.multiOutputUid and hs.audiodevice.findDeviceByUID(device.multiOutputUid)
                          or hs.audiodevice.findDeviceByUID(device.primaryOutputUid)
         if devToSet then
             devToSet:setDefaultOutputDevice()
-            devToSet:setDefaultSystemDevice()
+            pcall(function() devToSet:setDefaultSystemDevice() end)
         end
-        for _, uid in ipairs(device.outputUids) do
-            local dev = hs.audiodevice.findDeviceByUID(uid)
-            if dev then dev:setVolume(volume) end
-        end
+        setDualVolume(device, volume)
         afterSwitch()
     else
         -- Use hs.task (async, no shell quoting) for SwitchAudioSource
@@ -1225,8 +1271,28 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
     local data = event:systemKey()
     if not data then return false end
 
+    -- Ignore non-volume keys
+    if data.key ~= "SOUND_UP" and data.key ~= "SOUND_DOWN" and data.key ~= "MUTE" then
+        return false
+    end
+
+    -- Always consume volume keys to suppress native HUD
+    local mods = hs.eventtap.checkKeyboardModifiers()
+    local ctrlAlt = mods.ctrl and mods.alt and not mods.cmd
+
+    -- Ctrl+Option + Volume Up/Down = switch audio device
+    if ctrlAlt and data.down then
+        if data.key == "SOUND_UP" then
+            cycleAudio(1)
+        elseif data.key == "SOUND_DOWN" then
+            cycleAudio(-1)
+        end
+        return true
+    end
+
+    -- Plain volume keys = adjust volume
     local device = audioDevices[audioCycleIndex]
-    if not device then return false end
+    if not device then return true end
     local label = device.label or "Unknown"
 
     if data.key == "SOUND_UP" and data.down then
@@ -1244,7 +1310,6 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
                 showQuickVolume(math.floor(dev:volume() + 0.5), label)
             end
         end
-        return true
     elseif data.key == "SOUND_DOWN" and data.down then
         if device.isDual then
             for _, uid in ipairs(device.outputUids) do
@@ -1260,7 +1325,6 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
                 showQuickVolume(math.floor(dev:volume() + 0.5), label)
             end
         end
-        return true
     elseif data.key == "MUTE" and data.down and not data["repeat"] then
         if device.isDual then
             for _, uid in ipairs(device.outputUids) do
@@ -1280,10 +1344,9 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
                 showQuickVolume(vol, muted and label .. " \u{00B7} Muted" or label)
             end
         end
-        return true
     end
 
-    return false
+    return true
 end)
 volumeKeyTap:start()
 
