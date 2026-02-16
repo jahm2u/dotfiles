@@ -7,6 +7,7 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -220,13 +221,21 @@ def collect_mic() -> dict:
 
 
 def collect_brightness() -> dict:
-    """Get display brightness. Tries brightness CLI (Homebrew), falls back gracefully."""
+    """Get display brightness. Tries m1ddc (Apple Silicon external), falls back to brightness CLI."""
+    # m1ddc: works with external displays on Apple Silicon (Mac Mini, etc.)
+    try:
+        result = _run_as_user(["m1ddc", "get", "luminance"])
+        if result and result.returncode == 0:
+            val = int(result.stdout.strip())
+            return {"brightness": max(0, min(100, val))}
+    except (ValueError, AttributeError):
+        pass
+    # Fallback: brightness CLI (works with built-in displays / older Macs)
     try:
         result = _run_as_user(["brightness", "-l"])
         if result and result.returncode == 0:
             for line in result.stdout.splitlines():
                 if "brightness" in line.lower() and "display" in line.lower():
-                    # Format: "display 0: brightness X.XXXX"
                     val = float(line.split()[-1])
                     return {"brightness": round(val * 100)}
     except (ValueError, IndexError, AttributeError):
@@ -783,8 +792,13 @@ def handle_brightness(payload: str) -> None:
         logger.warning("Invalid brightness payload: %s", payload)
         return
     logger.info("Command: set brightness to %d%%", level)
-    brightness_float = level / 100.0
-    _popen_as_user(["brightness", str(brightness_float)])
+    # m1ddc: 0-100 integer for external displays on Apple Silicon
+    if shutil.which("m1ddc"):
+        _popen_as_user(["m1ddc", "set", "luminance", str(level)])
+    else:
+        # Fallback: brightness CLI uses 0.0-1.0 float
+        brightness_float = level / 100.0
+        _popen_as_user(["brightness", str(brightness_float)])
 
 
 def handle_shutdown(payload: str) -> None:
