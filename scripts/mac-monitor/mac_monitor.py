@@ -823,8 +823,9 @@ def handle_brightness(payload: str) -> None:
             pass
         if not display_ids:
             display_ids = ["1"]
+        # Set displays sequentially — DDC is serial, concurrent writes get dropped
         for did in display_ids:
-            _popen_as_user([m1ddc, "set", "luminance", str(level), "-d", did])
+            _run_as_user([m1ddc, "set", "luminance", str(level), "-d", did])
     else:
         # Fallback: brightness CLI uses 0.0-1.0 float
         brightness_cli = _find_tool("brightness")
