@@ -7,6 +7,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -24,8 +25,6 @@ from paho.mqtt.enums import CallbackAPIVersion
 # ---------------------------------------------------------------------------
 logger = logging.getLogger("mac-monitor")
 running = True
-caffeinate_proc: subprocess.Popen | None = None
-keep_awake_state = False
 
 
 def _console_uid() -> str | None:
@@ -109,7 +108,15 @@ def collect_cpu() -> dict:
 
 def collect_memory() -> dict:
     mem = psutil.virtual_memory()
-    return {"ram_percent": round(mem.percent, 1)}
+    # macOS: psutil.percent counts inactive/cached as used (inflated).
+    # Use active + wired for Activity Monitor-like "App Memory" value.
+    real_used = mem.active + mem.wired
+    real_pct = round(real_used / mem.total * 100, 1) if mem.total else 0.0
+    return {
+        "ram_percent": real_pct,
+        "ram_used_gb": round(real_used / (1024**3), 1),
+        "ram_total_gb": round(mem.total / (1024**3), 1),
+    }
 
 
 def collect_load() -> dict:
@@ -238,7 +245,8 @@ def collect_brightness() -> dict:
     m1ddc = _find_tool("m1ddc")
     if m1ddc:
         try:
-            result = _run_as_user([m1ddc, "get", "luminance"])
+            # Syntax: m1ddc display 1 get luminance (display selector before command)
+            result = _run_as_user([m1ddc, "display", "1", "get", "luminance"])
             if result and result.returncode == 0:
                 val = int(result.stdout.strip())
                 return {"brightness": max(0, min(100, val))}
@@ -388,24 +396,18 @@ def collect_all(cfg: dict) -> dict:
     if docker_data:
         data.update(docker_data)
 
-    # Keep-awake state — detect actual caffeinate process
-    global keep_awake_state, caffeinate_proc
-    if caffeinate_proc and caffeinate_proc.poll() is not None:
-        # Our caffeinate died unexpectedly
-        caffeinate_proc = None
-        keep_awake_state = False
-    if not keep_awake_state:
-        # Check if caffeinate is running externally (e.g. started by user)
-        try:
-            result = subprocess.run(
-                ["pgrep", "-x", "caffeinate"],
-                capture_output=True, text=True, timeout=3,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                keep_awake_state = True
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-    data["keep_awake"] = keep_awake_state
+    # Keep-awake state — query Amphetamine app via AppleScript
+    keep_awake = False
+    try:
+        result = _run_as_user([
+            "osascript", "-e",
+            'tell application "Amphetamine" to session is active',
+        ])
+        if result and result.returncode == 0:
+            keep_awake = result.stdout.strip().lower() == "true"
+    except Exception:
+        pass
+    data["keep_awake"] = keep_awake
 
     # Heartbeat
     data["heartbeat"] = datetime.now(timezone.utc).isoformat()
@@ -632,6 +634,19 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
             },
         ))
 
+    # Reload button — always available, restarts the daemon
+    discoveries.append((
+        f"homeassistant/button/{node}/reload/config",
+        {
+            "name": "Reload Agent",
+            "unique_id": f"{node}_reload",
+            "command_topic": f"{cmd_base}/reload",
+            "icon": "mdi:refresh",
+            "device": dev,
+            "availability": avail,
+        },
+    ))
+
     # Volume number
     if controls.get("volume", False):
         discoveries.append((
@@ -758,37 +773,19 @@ def handle_volume(payload: str) -> None:
 
 
 def handle_keep_awake(payload: str) -> None:
-    global caffeinate_proc, keep_awake_state
     desired = payload.strip().upper() in ("ON", "1", "TRUE")
     logger.info("Command: keep_awake %s", "ON" if desired else "OFF")
 
-    if desired and not keep_awake_state:
-        # Start caffeinate
-        try:
-            caffeinate_proc = subprocess.Popen(
-                ["caffeinate", "-dimsu"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            keep_awake_state = True
-            logger.info("caffeinate started (PID %d)", caffeinate_proc.pid)
-        except FileNotFoundError:
-            logger.error("caffeinate not found")
-    elif not desired and keep_awake_state:
-        # Stop caffeinate — kill our process or any external one
-        if caffeinate_proc and caffeinate_proc.poll() is None:
-            caffeinate_proc.terminate()
-            caffeinate_proc.wait(timeout=5)
-            logger.info("caffeinate stopped (our PID %d)", caffeinate_proc.pid)
-        else:
-            # Kill externally-started caffeinate processes
-            try:
-                subprocess.run(["pkill", "-x", "caffeinate"], timeout=5)
-                logger.info("caffeinate stopped (external)")
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass
-        caffeinate_proc = None
-        keep_awake_state = False
+    script = ('tell application "Amphetamine" to start new session with options {duration:0, interval:0, displaySleepAllowed:true}'
+              if desired else
+              'tell application "Amphetamine" to end session')
+    result = _run_as_user(["osascript", "-e", script])
+    if not result or result.returncode != 0:
+        logger.warning("Amphetamine command failed: rc=%s stderr=%r",
+                       getattr(result, "returncode", None),
+                       getattr(result, "stderr", "").strip() if result else "")
+        return
+    logger.info("Amphetamine session %s", "started" if desired else "ended")
 
 
 def handle_mic_mute(payload: str) -> None:
@@ -817,21 +814,30 @@ def handle_brightness(payload: str) -> None:
             result = _run_as_user([m1ddc, "display", "list"])
             if result and result.returncode == 0:
                 for line in result.stdout.splitlines():
-                    if line.strip().startswith("["):
-                        display_ids.append(line.split("]")[0].strip("["))
+                    m = re.match(r"\[(\d+)\]", line.strip())
+                    if m:
+                        display_ids.append(m.group(1))
         except Exception:
             pass
         if not display_ids:
             display_ids = ["1"]
         # Set displays sequentially — DDC is serial, concurrent writes get dropped
+        # Syntax: m1ddc display N set luminance X (display selector goes BEFORE command)
         for did in display_ids:
-            _run_as_user([m1ddc, "set", "luminance", str(level), "-d", did])
+            _run_as_user([m1ddc, "display", did, "set", "luminance", str(level)])
     else:
         # Fallback: brightness CLI uses 0.0-1.0 float
         brightness_cli = _find_tool("brightness")
         if brightness_cli:
             brightness_float = level / 100.0
             _popen_as_user([brightness_cli, str(brightness_float)])
+
+
+def handle_reload(payload: str) -> None:
+    """Restart the mac-monitor daemon. KeepAlive in LaunchDaemon auto-restarts."""
+    global running
+    logger.info("Command: reload — exiting for KeepAlive restart")
+    running = False
 
 
 def handle_shutdown(payload: str) -> None:
@@ -860,6 +866,7 @@ COMMAND_HANDLERS = {
     "keep_awake": handle_keep_awake,
     "mic_mute": handle_mic_mute,
     "brightness": handle_brightness,
+    "reload": handle_reload,
     "shutdown": handle_shutdown,
     "restart": handle_restart,
 }
@@ -912,7 +919,7 @@ def on_message(client: mqtt.Client, userdata: dict, msg: mqtt.MQTTMessage) -> No
 
     # Standard commands
     if cmd_path in COMMAND_HANDLERS:
-        if controls.get(cmd_path, False) or cmd_path in ("volume", "keep_awake"):
+        if controls.get(cmd_path, False) or cmd_path in ("volume", "keep_awake", "reload"):
             COMMAND_HANDLERS[cmd_path](payload)
         else:
             logger.warning("Command '%s' disabled in config", cmd_path)
@@ -1017,10 +1024,6 @@ def main() -> None:
     finally:
         # Graceful shutdown
         logger.info("Shutting down...")
-
-        # Stop caffeinate if running
-        if caffeinate_proc and caffeinate_proc.poll() is None:
-            caffeinate_proc.terminate()
 
         # Publish offline
         try:
