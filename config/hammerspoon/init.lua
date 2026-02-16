@@ -1394,17 +1394,27 @@ end)
 volumeKeyTap:start()
 
 -- Watch for system audio device changes (output switch, device add/remove)
--- Rebuilds device list on any change so hotplug works reliably
+-- dOut with same device count = normal switch → fast re-index
+-- Device count changed = hotplug → debounced full rebuild
+local lastKnownDeviceCount = #hs.audiodevice.allOutputDevices()
 local audioRebuildTimer = nil
 hs.audiodevice.watcher.setCallback(function(event)
-    -- Debounce: audio events often fire in bursts during hotplug
-    if audioRebuildTimer then audioRebuildTimer:stop() end
-    audioRebuildTimer = hs.timer.doAfter(1, function()
-        audioRebuildTimer = nil
-        buildAudioDeviceList()
+    local currentCount = #hs.audiodevice.allOutputDevices()
+    if currentCount ~= lastKnownDeviceCount then
+        -- Device added or removed (monitor hotplug)
+        lastKnownDeviceCount = currentCount
+        if audioRebuildTimer then audioRebuildTimer:stop() end
+        audioRebuildTimer = hs.timer.doAfter(2, function()
+            audioRebuildTimer = nil
+            buildAudioDeviceList()
+            initAudioCycleIndex()
+            syncVolumeIndex()
+        end)
+    elseif event == "dOut" then
+        -- Normal switch (menu bar, our picker) — just re-index
         initAudioCycleIndex()
         syncVolumeIndex()
-    end)
+    end
 end)
 hs.audiodevice.watcher.start()
 
