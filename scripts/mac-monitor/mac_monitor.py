@@ -16,6 +16,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import ctypes
+import ctypes.util
+
 import psutil
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
@@ -105,7 +108,9 @@ def load_config(path: str) -> dict:
 # Sensor collectors
 # ---------------------------------------------------------------------------
 def collect_cpu() -> dict:
-    return {"cpu_percent": psutil.cpu_percent(interval=1)}
+    # interval=None returns average since last call (~30s rolling window).
+    # Avoids the 1-second blocking snapshot that over-reports vs Activity Monitor.
+    return {"cpu_percent": psutil.cpu_percent(interval=None)}
 
 
 def collect_memory() -> dict:
@@ -135,13 +140,16 @@ def collect_disks(drives: list[dict]) -> dict:
     for drv in drives:
         name = drv["name"]
         path = drv["path"]
+        is_root = path == "/"
         # macOS APFS: "/" is a sealed snapshot (~4%). Use /System/Volumes/Data
         # for real usage, which shares the APFS container with the system volume.
-        if path == "/":
+        if is_root:
             data_vol = "/System/Volumes/Data"
             if os.path.isdir(data_vol):
                 path = data_vol
-        mounted = os.path.ismount(path) if path != "/" else True
+        # Root/Data volume is always available; ismount() returns False for
+        # /System/Volumes/Data on APFS, so skip the check for root drives.
+        mounted = True if is_root else os.path.ismount(path)
         data[f"drive_{name}_connected"] = mounted
         if mounted:
             try:
@@ -221,18 +229,56 @@ def collect_display_sleep() -> dict:
     return {"display_asleep": False}
 
 
+def _get_coreaudio():
+    """Load CoreAudio framework and return (lib, Addr class, default_input_device_id)."""
+    ca = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")
+
+    class Addr(ctypes.Structure):
+        _fields_ = [("sel", ctypes.c_uint32), ("scope", ctypes.c_uint32), ("elem", ctypes.c_uint32)]
+
+    glob = int.from_bytes(b"glob", "big")
+    addr = Addr(int.from_bytes(b"dIn ", "big"), glob, 0)
+    dev_id = ctypes.c_uint32(0)
+    sz = ctypes.c_uint32(4)
+    if ca.AudioObjectGetPropertyData(1, ctypes.byref(addr), 0, None, ctypes.byref(sz), ctypes.byref(dev_id)) != 0:
+        return None, None, None
+    return ca, Addr, dev_id.value
+
+
 def collect_mic() -> dict:
-    """Get microphone muted state via osascript (must run in user session)."""
+    """Get mic volume and mute state via CoreAudio HAL (works with USB/display mics)."""
     try:
-        result = _run_as_user(
-            ["osascript", "-e", "input volume of (get volume settings)"],
-        )
-        if result and result.returncode == 0:
-            input_vol = int(result.stdout.strip())
-            return {"mic_muted": input_vol == 0, "mic_volume": input_vol}
-    except (ValueError, AttributeError):
-        pass
-    return {"mic_muted": False, "mic_volume": 0}
+        ca, Addr, dev = _get_coreaudio()
+        if ca is None:
+            return {"mic_muted": False, "mic_volume": 0}
+        inp = int.from_bytes(b"inpt", "big")
+        volm = int.from_bytes(b"volm", "big")
+        addr = Addr(volm, inp, 1)  # channel 1
+        vol = ctypes.c_float(0.0)
+        sz = ctypes.c_uint32(4)
+        if ca.AudioObjectGetPropertyData(dev, ctypes.byref(addr), 0, None, ctypes.byref(sz), ctypes.byref(vol)) != 0:
+            return {"mic_muted": False, "mic_volume": 0}
+        pct = round(vol.value * 100)
+        return {"mic_muted": pct == 0, "mic_volume": pct}
+    except Exception:
+        return {"mic_muted": False, "mic_volume": 0}
+
+
+def collect_mic_in_use() -> dict:
+    """Check if any app is actively using the microphone via CoreAudio HAL."""
+    try:
+        ca, Addr, dev = _get_coreaudio()
+        if ca is None:
+            return {"mic_in_use": False}
+        glob = int.from_bytes(b"glob", "big")
+        addr = Addr(int.from_bytes(b"goin", "big"), glob, 0)
+        running_flag = ctypes.c_uint32(0)
+        sz = ctypes.c_uint32(4)
+        if ca.AudioObjectGetPropertyData(dev, ctypes.byref(addr), 0, None, ctypes.byref(sz), ctypes.byref(running_flag)) != 0:
+            return {"mic_in_use": False}
+        return {"mic_in_use": bool(running_flag.value)}
+    except Exception:
+        return {"mic_in_use": False}
 
 
 def _find_tool(name: str) -> str | None:
@@ -390,6 +436,7 @@ def collect_all(cfg: dict) -> dict:
     data.update(collect_active_interface())
     data.update(collect_time_machine())
     data.update(collect_mic())
+    data.update(collect_mic_in_use())
 
     brightness = collect_brightness()
     if brightness["brightness"] is not None:
@@ -459,7 +506,6 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
         ("active_interface", "Active Interface", None, "mdi:ethernet", None),
         ("heartbeat", "Heartbeat", None, "mdi:heart-pulse", "timestamp"),
         ("tm_last_backup", "TM Last Backup", None, "mdi:backup-restore", "timestamp"),
-        ("mic_volume", "Mic Volume", "%", "mdi:microphone", None),
     ]
 
     for key, name, unit, icon, dev_class in sensors:
@@ -520,6 +566,7 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
     bin_sensors = [
         ("display_asleep", "Display Asleep", "mdi:monitor-off", None),
         ("tm_backing_up", "Time Machine Backing Up", "mdi:backup-restore", None),
+        ("mic_in_use", "Microphone In Use", "mdi:microphone", None),
     ]
 
     for key, name, icon, dev_class in bin_sensors:
@@ -655,7 +702,7 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
         },
     ))
 
-    # Volume number
+    # Volume number + mute switch
     if controls.get("volume", False):
         discoveries.append((
             f"homeassistant/number/{node}/volume/config",
@@ -673,6 +720,19 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
                 "availability": avail,
             },
         ))
+        discoveries.append((
+            f"homeassistant/switch/{node}/volume_mute/config",
+            {
+                "name": "Volume Mute",
+                "unique_id": f"{node}_volume_mute",
+                "command_topic": f"{cmd_base}/volume_mute",
+                "state_topic": state_topic,
+                "value_template": "{{ 'ON' if value_json.volume_muted else 'OFF' }}",
+                "icon": "mdi:volume-off",
+                "device": dev,
+                "availability": avail,
+            },
+        ))
 
     # Mic Mute switch (always on)
     discoveries.append((
@@ -684,6 +744,24 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
             "state_topic": state_topic,
             "value_template": "{{ 'ON' if value_json.mic_muted else 'OFF' }}",
             "icon": "mdi:microphone-off",
+            "device": dev,
+            "availability": avail,
+        },
+    ))
+
+    # Mic Volume number (slider 0-100)
+    discoveries.append((
+        f"homeassistant/number/{node}/mic_volume/config",
+        {
+            "name": "Mic Volume",
+            "unique_id": f"{node}_mic_volume_ctrl",
+            "command_topic": f"{cmd_base}/mic_volume",
+            "state_topic": state_topic,
+            "value_template": "{{ value_json.mic_volume | default(50) }}",
+            "min": 0,
+            "max": 100,
+            "step": 5,
+            "icon": "mdi:microphone",
             "device": dev,
             "availability": avail,
         },
@@ -768,6 +846,15 @@ def handle_lock(payload: str) -> None:
     _popen_as_user([cgsession, "-suspend"])
 
 
+def handle_volume_mute(payload: str) -> None:
+    desired = payload.strip().upper() in ("ON", "1", "TRUE")
+    logger.info("Command: volume_mute %s", "ON (mute)" if desired else "OFF (unmute)")
+    mute_cmd = "set volume with output muted" if desired else "set volume without output muted"
+    _popen_as_user(["osascript", "-e", mute_cmd])
+    time.sleep(0.3)
+    _force_publish_state()
+
+
 def handle_volume(payload: str) -> None:
     try:
         vol = int(float(payload))
@@ -799,13 +886,41 @@ def handle_keep_awake(payload: str) -> None:
     _force_publish_state()
 
 
+def _set_mic_volume_coreaudio(pct: int) -> bool:
+    """Set mic input volume (0-100) via CoreAudio HAL. Returns True on success."""
+    try:
+        ca, Addr, dev = _get_coreaudio()
+        if ca is None:
+            return False
+        inp = int.from_bytes(b"inpt", "big")
+        volm = int.from_bytes(b"volm", "big")
+        addr = Addr(volm, inp, 1)  # channel 1
+        new_vol = ctypes.c_float(pct / 100.0)
+        return ca.AudioObjectSetPropertyData(dev, ctypes.byref(addr), 0, None, 4, ctypes.byref(new_vol)) == 0
+    except Exception:
+        logger.exception("CoreAudio set mic volume failed")
+        return False
+
+
 def handle_mic_mute(payload: str) -> None:
     desired = payload.strip().upper() in ("ON", "1", "TRUE")
     logger.info("Command: mic_mute %s", "ON (mute)" if desired else "OFF (unmute)")
-    if desired:
-        _popen_as_user(["osascript", "-e", "set volume input volume 0"])
-    else:
-        _popen_as_user(["osascript", "-e", "set volume input volume 75"])
+    _set_mic_volume_coreaudio(0 if desired else 75)
+    time.sleep(0.3)
+    _force_publish_state()
+
+
+def handle_mic_volume(payload: str) -> None:
+    try:
+        vol = int(float(payload))
+        vol = max(0, min(100, vol))
+    except (ValueError, TypeError):
+        logger.warning("Invalid mic_volume payload: %s", payload)
+        return
+    logger.info("Command: set mic volume to %d", vol)
+    _set_mic_volume_coreaudio(vol)
+    time.sleep(0.3)
+    _force_publish_state()
 
 
 def handle_brightness(payload: str) -> None:
@@ -874,8 +989,10 @@ COMMAND_HANDLERS = {
     "sleep_display": handle_sleep_display,
     "lock": handle_lock,
     "volume": handle_volume,
+    "volume_mute": handle_volume_mute,
     "keep_awake": handle_keep_awake,
     "mic_mute": handle_mic_mute,
+    "mic_volume": handle_mic_volume,
     "brightness": handle_brightness,
     "reload": handle_reload,
     "shutdown": handle_shutdown,
@@ -930,7 +1047,7 @@ def on_message(client: mqtt.Client, userdata: dict, msg: mqtt.MQTTMessage) -> No
 
     # Standard commands
     if cmd_path in COMMAND_HANDLERS:
-        if controls.get(cmd_path, False) or cmd_path in ("volume", "keep_awake", "reload"):
+        if controls.get(cmd_path, False) or cmd_path in ("volume", "volume_mute", "keep_awake", "reload", "mic_mute", "mic_volume"):
             COMMAND_HANDLERS[cmd_path](payload)
         else:
             logger.warning("Command '%s' disabled in config", cmd_path)
@@ -948,6 +1065,7 @@ def _force_publish_state() -> None:
     try:
         data = collect_all(_cfg)
         data["volume"] = get_volume()
+        data["volume_muted"] = get_volume_muted()
         topic = f"mac-monitor/{_cfg['node_id']}/state"
         _mqtt_client.publish(topic, json.dumps(data), qos=0)
         logger.debug("Force-published state after command")
@@ -966,6 +1084,19 @@ def get_volume() -> int:
     except (ValueError, AttributeError):
         pass
     return 50
+
+
+def get_volume_muted() -> bool:
+    """Get current macOS output mute state."""
+    try:
+        result = _run_as_user(
+            ["osascript", "-e", "output muted of (get volume settings)"],
+        )
+        if result and result.returncode == 0:
+            return result.stdout.strip().lower() == "true"
+    except (ValueError, AttributeError):
+        pass
+    return False
 
 
 def main() -> None:
@@ -1030,6 +1161,9 @@ def main() -> None:
     client.connect_async(cfg["mqtt"]["host"], cfg["mqtt"]["port"], keepalive=60)
     client.loop_start()
 
+    # Prime psutil.cpu_percent() — first call with interval=None always returns 0
+    psutil.cpu_percent(interval=None)
+
     # Main publish loop
     state_topic = f"mac-monitor/{node}/state"
     interval = cfg.get("publish_interval", 30)
@@ -1038,8 +1172,9 @@ def main() -> None:
         while running:
             try:
                 data = collect_all(cfg)
-                # Add current volume
+                # Add current volume and mute state
                 data["volume"] = get_volume()
+                data["volume_muted"] = get_volume_muted()
                 client.publish(state_topic, json.dumps(data), qos=0)
                 logger.debug("Published state: %d keys", len(data))
             except Exception:
