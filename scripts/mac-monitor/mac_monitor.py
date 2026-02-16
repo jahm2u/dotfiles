@@ -25,6 +25,8 @@ from paho.mqtt.enums import CallbackAPIVersion
 # ---------------------------------------------------------------------------
 logger = logging.getLogger("mac-monitor")
 running = True
+_mqtt_client: mqtt.Client | None = None
+_cfg: dict | None = None
 
 
 def _console_uid() -> str | None:
@@ -786,6 +788,9 @@ def handle_keep_awake(payload: str) -> None:
                        getattr(result, "stderr", "").strip() if result else "")
         return
     logger.info("Amphetamine session %s", "started" if desired else "ended")
+    # Publish state immediately so HA switch updates without waiting for next poll
+    time.sleep(0.5)  # brief delay for Amphetamine to settle
+    _force_publish_state()
 
 
 def handle_mic_mute(payload: str) -> None:
@@ -930,6 +935,20 @@ def on_message(client: mqtt.Client, userdata: dict, msg: mqtt.MQTTMessage) -> No
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
+def _force_publish_state() -> None:
+    """Immediately collect and publish current state (for responsive UI after commands)."""
+    if not _mqtt_client or not _cfg:
+        return
+    try:
+        data = collect_all(_cfg)
+        data["volume"] = get_volume()
+        topic = f"mac-monitor/{_cfg['node_id']}/state"
+        _mqtt_client.publish(topic, json.dumps(data), qos=0)
+        logger.debug("Force-published state after command")
+    except Exception:
+        logger.exception("Error in force publish")
+
+
 def get_volume() -> int:
     """Get current macOS output volume (must run in user session)."""
     try:
@@ -944,7 +963,7 @@ def get_volume() -> int:
 
 
 def main() -> None:
-    global running
+    global running, _mqtt_client, _cfg
 
     parser = argparse.ArgumentParser(description="Mac Mini MQTT Monitor")
     parser.add_argument("--config", required=True, help="Path to config.json")
@@ -984,6 +1003,10 @@ def main() -> None:
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
+
+    # Store globals for force-publish from command handlers
+    _mqtt_client = client
+    _cfg = cfg
 
     # Auto-reconnect
     client.reconnect_delay_set(min_delay=1, max_delay=120)
