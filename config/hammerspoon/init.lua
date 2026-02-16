@@ -1393,13 +1393,18 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
 end)
 volumeKeyTap:start()
 
--- Watch for system audio device changes (e.g. user switches via menu bar)
--- Keeps audioCycleIndex in sync so volume keys control the correct device
+-- Watch for system audio device changes (output switch, device add/remove)
+-- Rebuilds device list on any change so hotplug works reliably
+local audioRebuildTimer = nil
 hs.audiodevice.watcher.setCallback(function(event)
-    if event == "dOut" then
+    -- Debounce: audio events often fire in bursts during hotplug
+    if audioRebuildTimer then audioRebuildTimer:stop() end
+    audioRebuildTimer = hs.timer.doAfter(1, function()
+        audioRebuildTimer = nil
+        buildAudioDeviceList()
         initAudioCycleIndex()
         syncVolumeIndex()
-    end
+    end)
 end)
 hs.audiodevice.watcher.start()
 
