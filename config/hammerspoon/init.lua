@@ -656,6 +656,10 @@ local rightMonitorInputUid = nil -- mic always on right monitor
 local audioPreviewIndex = 0     -- device being previewed (0 = no preview active)
 local audioPreviewTimer = nil   -- auto-apply timer
 
+-- Two-phase state: "device" = cycling devices, "volume" = adjusting volume
+local audioMode = "device"
+local volumeModeTimer = nil     -- resets to device mode after 8s inactivity
+
 -- Volume state
 local volumeLevels = {0, 25, 50, 75, 100}
 local audioVolumeIndex = 3      -- current position in volumeLevels (default 50%)
@@ -1236,8 +1240,13 @@ local function applyAudioSelection()
 end
 
 -- Main handler: direction 1=forward (]), -1=backward ([)
--- Always cycles devices; volume is handled by hardware volume keys
+-- Phase 1 (device mode): cycle devices, auto-applies after 2s, then enters volume mode
+-- Phase 2 (volume mode): cycle volume levels, auto-applies after 2s
+-- Resets to device mode after 8s of inactivity
 local function cycleAudio(direction)
+    -- Cancel volume mode reset timer on any interaction
+    if volumeModeTimer then volumeModeTimer:stop(); volumeModeTimer = nil end
+
     if #audioDevices == 0 then
         buildAudioDeviceList()
         initAudioCycleIndex()
@@ -1247,21 +1256,45 @@ local function cycleAudio(direction)
         return
     end
 
-    if audioPreviewIndex == 0 then
-        audioPreviewIndex = audioCycleIndex
+    if audioMode == "volume" then
+        -- Phase 2: cycle volume levels
+        audioVolumeIndex = audioVolumeIndex + direction
+        if audioVolumeIndex > #volumeLevels then audioVolumeIndex = 1 end
+        if audioVolumeIndex < 1 then audioVolumeIndex = #volumeLevels end
+
+        showVolumePreview()
+
+        if audioPreviewTimer then audioPreviewTimer:stop() end
+        audioPreviewTimer = hs.timer.doAfter(2, function()
+            audioPreviewTimer = nil
+            applyVolume()
+            -- Reset to device mode after 8s of inactivity
+            volumeModeTimer = hs.timer.doAfter(8, function()
+                volumeModeTimer = nil
+                audioMode = "device"
+            end)
+        end)
+    else
+        -- Phase 1: cycle devices
+        if audioPreviewIndex == 0 then
+            audioPreviewIndex = audioCycleIndex
+        end
+
+        audioPreviewIndex = audioPreviewIndex + direction
+        if audioPreviewIndex > #audioDevices then audioPreviewIndex = 1 end
+        if audioPreviewIndex < 1 then audioPreviewIndex = #audioDevices end
+
+        showDevicePreview()
+
+        if audioPreviewTimer then audioPreviewTimer:stop() end
+        audioPreviewTimer = hs.timer.doAfter(2, function()
+            audioPreviewTimer = nil
+            applyAudioSelection()
+            -- Transition to volume mode
+            audioMode = "volume"
+            syncVolumeIndex()
+        end)
     end
-
-    audioPreviewIndex = audioPreviewIndex + direction
-    if audioPreviewIndex > #audioDevices then audioPreviewIndex = 1 end
-    if audioPreviewIndex < 1 then audioPreviewIndex = #audioDevices end
-
-    showDevicePreview()
-
-    if audioPreviewTimer then audioPreviewTimer:stop() end
-    audioPreviewTimer = hs.timer.doAfter(2, function()
-        audioPreviewTimer = nil
-        applyAudioSelection()
-    end)
 end
 
 -- Initialize device list and state
