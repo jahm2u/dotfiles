@@ -809,9 +809,24 @@ def handle_brightness(payload: str) -> None:
         return
     logger.info("Command: set brightness to %d%%", level)
     # m1ddc: 0-100 integer for external displays on Apple Silicon
+    # Set ALL connected displays (e.g. dual LG UltraFines on Mac Mini)
     m1ddc = _find_tool("m1ddc")
     if m1ddc:
-        _popen_as_user([m1ddc, "set", "luminance", str(level)])
+        try:
+            result = subprocess.run(
+                [m1ddc, "display", "list"], capture_output=True, text=True, timeout=5
+            )
+            display_ids = []
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if line.strip().startswith("["):
+                        display_ids.append(line.split("]")[0].strip("["))
+            if not display_ids:
+                display_ids = ["1"]  # fallback to main display
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            display_ids = ["1"]
+        for did in display_ids:
+            _popen_as_user([m1ddc, "set", "luminance", str(level), "-d", did])
     else:
         # Fallback: brightness CLI uses 0.0-1.0 float
         brightness_cli = _find_tool("brightness")
