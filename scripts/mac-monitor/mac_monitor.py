@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Mac Mini MQTT Monitor — publishes system metrics to Home Assistant via MQTT auto-discovery."""
 
+from __future__ import annotations  # PEP 604 union types (X | Y) on Python 3.9
+
 import argparse
 import json
 import logging
