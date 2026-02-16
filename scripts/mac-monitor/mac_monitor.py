@@ -220,26 +220,42 @@ def collect_mic() -> dict:
     return {"mic_muted": False, "mic_volume": 0}
 
 
+def _find_tool(name: str) -> str | None:
+    """Find a CLI tool, checking Homebrew paths that root can't see via PATH."""
+    found = shutil.which(name)
+    if found:
+        return found
+    for prefix in ["/opt/homebrew/bin", "/usr/local/bin"]:
+        path = os.path.join(prefix, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
 def collect_brightness() -> dict:
     """Get display brightness. Tries m1ddc (Apple Silicon external), falls back to brightness CLI."""
     # m1ddc: works with external displays on Apple Silicon (Mac Mini, etc.)
-    try:
-        result = _run_as_user(["m1ddc", "get", "luminance"])
-        if result and result.returncode == 0:
-            val = int(result.stdout.strip())
-            return {"brightness": max(0, min(100, val))}
-    except (ValueError, AttributeError):
-        pass
+    m1ddc = _find_tool("m1ddc")
+    if m1ddc:
+        try:
+            result = _run_as_user([m1ddc, "get", "luminance"])
+            if result and result.returncode == 0:
+                val = int(result.stdout.strip())
+                return {"brightness": max(0, min(100, val))}
+        except (ValueError, AttributeError):
+            pass
     # Fallback: brightness CLI (works with built-in displays / older Macs)
-    try:
-        result = _run_as_user(["brightness", "-l"])
-        if result and result.returncode == 0:
-            for line in result.stdout.splitlines():
-                if "brightness" in line.lower() and "display" in line.lower():
-                    val = float(line.split()[-1])
-                    return {"brightness": round(val * 100)}
-    except (ValueError, IndexError, AttributeError):
-        pass
+    brightness_cli = _find_tool("brightness")
+    if brightness_cli:
+        try:
+            result = _run_as_user([brightness_cli, "-l"])
+            if result and result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if "brightness" in line.lower() and "display" in line.lower():
+                        val = float(line.split()[-1])
+                        return {"brightness": round(val * 100)}
+        except (ValueError, IndexError, AttributeError):
+            pass
     return {"brightness": None}
 
 
@@ -793,12 +809,15 @@ def handle_brightness(payload: str) -> None:
         return
     logger.info("Command: set brightness to %d%%", level)
     # m1ddc: 0-100 integer for external displays on Apple Silicon
-    if shutil.which("m1ddc"):
-        _popen_as_user(["m1ddc", "set", "luminance", str(level)])
+    m1ddc = _find_tool("m1ddc")
+    if m1ddc:
+        _popen_as_user([m1ddc, "set", "luminance", str(level)])
     else:
         # Fallback: brightness CLI uses 0.0-1.0 float
-        brightness_float = level / 100.0
-        _popen_as_user(["brightness", str(brightness_float)])
+        brightness_cli = _find_tool("brightness")
+        if brightness_cli:
+            brightness_float = level / 100.0
+            _popen_as_user([brightness_cli, str(brightness_float)])
 
 
 def handle_shutdown(payload: str) -> None:
