@@ -308,8 +308,8 @@ def collect_time_machine() -> dict:
         if result.returncode == 0 and result.stdout.strip():
             # Output is a path like /Volumes/backup/Backups.backupdb/.../2024-01-01-120000
             backup_path = result.stdout.strip()
-            # Extract date from the last path component
-            date_part = os.path.basename(backup_path)
+            # Extract date from path component (e.g. "2026-02-16-105340.backup")
+            date_part = os.path.basename(backup_path).replace(".backup", "")
             try:
                 dt = datetime.strptime(date_part, "%Y-%m-%d-%H%M%S")
                 data["tm_last_backup"] = dt.replace(tzinfo=timezone.utc).isoformat()
