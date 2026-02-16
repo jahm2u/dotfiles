@@ -135,6 +135,12 @@ def collect_disks(drives: list[dict]) -> dict:
     for drv in drives:
         name = drv["name"]
         path = drv["path"]
+        # macOS APFS: "/" is a sealed snapshot (~4%). Use /System/Volumes/Data
+        # for real usage, which shares the APFS container with the system volume.
+        if path == "/":
+            data_vol = "/System/Volumes/Data"
+            if os.path.isdir(data_vol):
+                path = data_vol
         mounted = os.path.ismount(path) if path != "/" else True
         data[f"drive_{name}_connected"] = mounted
         if mounted:
