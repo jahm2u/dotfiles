@@ -812,18 +812,16 @@ def handle_brightness(payload: str) -> None:
     # Set ALL connected displays (e.g. dual LG UltraFines on Mac Mini)
     m1ddc = _find_tool("m1ddc")
     if m1ddc:
+        display_ids = []
         try:
-            result = subprocess.run(
-                [m1ddc, "display", "list"], capture_output=True, text=True, timeout=5
-            )
-            display_ids = []
-            if result.returncode == 0:
+            result = _run_as_user([m1ddc, "display", "list"])
+            if result and result.returncode == 0:
                 for line in result.stdout.splitlines():
                     if line.strip().startswith("["):
                         display_ids.append(line.split("]")[0].strip("["))
-            if not display_ids:
-                display_ids = ["1"]  # fallback to main display
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except Exception:
+            pass
+        if not display_ids:
             display_ids = ["1"]
         for did in display_ids:
             _popen_as_user([m1ddc, "set", "luminance", str(level), "-d", did])
