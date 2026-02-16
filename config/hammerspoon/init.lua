@@ -761,15 +761,25 @@ local function buildAudioDeviceList()
         end
         if rightLg and leftLg then
             local multiUid = nil
+            -- Prefer our programmatic device by UID
             for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
-                local n = dev:name()
-                if n:find("Multi%-Output") or n:find("Aggregate") or n:find("LG Dual") then
+                if dev:uid() == "com.user.lg-dual-output" then
                     multiUid = dev:uid()
                     break
                 end
             end
+            -- Fall back to any multi-output device
             if not multiUid then
-                local scriptPath = os.getenv("HOME") .. "/repos/02_personal/dotfiles/scripts/create-multi-output.swift"
+                for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
+                    local n = dev:name()
+                    if n:find("Multi%-Output") or n:find("Aggregate") or n:find("LG Dual") then
+                        multiUid = dev:uid()
+                        break
+                    end
+                end
+            end
+            if not multiUid then
+                local scriptPath = os.getenv("HOME") .. "/dotfiles/scripts/create-multi-output.swift"
                 if hs.fs.attributes(scriptPath) then
                     hs.execute("/usr/bin/swift " .. scriptPath)
                     for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
@@ -1349,6 +1359,16 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
     return true
 end)
 volumeKeyTap:start()
+
+-- Watch for system audio device changes (e.g. user switches via menu bar)
+-- Keeps audioCycleIndex in sync so volume keys control the correct device
+hs.audiodevice.watcher.setCallback(function(event)
+    if event == "dOut" then
+        initAudioCycleIndex()
+        syncVolumeIndex()
+    end
+end)
+hs.audiodevice.watcher.start()
 
 -- Single screen watcher: rebuild audio, sync mic, restart sketchybar
 local screenChangeTimer = nil
