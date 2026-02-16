@@ -663,7 +663,7 @@ local audioVolumeIndex = 3      -- current position in volumeLevels (default 50%
 -- Balance offset for LG Dual mode (range: -20 to +20)
 -- Positive = boost left monitor, Negative = boost right monitor
 -- Adjust if one monitor sounds quieter in dual mode
-local DUAL_BALANCE_OFFSET = -20
+local DUAL_BALANCE_OFFSET = 0
 
 -- Glass overlay (hs.canvas) for audio controls
 local audioCanvas = nil
@@ -1217,7 +1217,7 @@ local function applyAudioSelection()
             local switched = hs.audiodevice.findDeviceByUID(device.outputUid)
             if switched then
                 switched:setVolume(volume)
-                switched:setDefaultSystemDevice()
+                pcall(function() switched:setDefaultSystemDevice() end)
             end
             afterSwitch()
         end, {"-t", "output", "-u", device.outputUid})

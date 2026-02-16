@@ -99,6 +99,9 @@ config/sketchybar/krisp-transcripts/
 .claude/docs/savepoint_*.md
 .claude/docs/draft_*.md
 
+# Mac Monitor config (contains MQTT credentials)
+scripts/mac-monitor/config.json
+
 # Temporary files
 tmp.txt
 tmp*.txt

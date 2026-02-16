@@ -1,0 +1,33 @@
+{
+  "node_id": "mac_mini_jeff",
+  "device_name": "Mac Mini Jeff",
+  "device_model": "Mac mini (M4 Pro)",
+  "mqtt": {
+    "host": "192.168.0.201",
+    "port": 1883,
+    "username": "macmonitor",
+    "password": "CHANGE_ME"
+  },
+  "publish_interval": 30,
+  "drives": [
+    {"name": "root", "path": "/", "label": "Internal SSD"},
+    {"name": "backup", "path": "/Volumes/backup", "label": "Backup 4TB"},
+    {"name": "workspace", "path": "/Volumes/Workspace", "label": "Workspace 2TB"}
+  ],
+  "mac_address": "d0:11:e5:0c:00:02",
+  "controls": {
+    "sleep": true,
+    "sleep_display": true,
+    "lock": true,
+    "volume": true,
+    "keep_awake": true,
+    "shutdown": true,
+    "restart": true
+  },
+  "cpu_temp_enabled": true,
+  "docker": {
+    "enabled": false,
+    "watched_containers": []
+  },
+  "shortcuts": []
+}

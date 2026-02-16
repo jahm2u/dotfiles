@@ -18,6 +18,14 @@ DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Command-line flags
 FLAG_VERBOSE=false
 FLAG_DRY_RUN=false
+FLAG_YES=false
+
+# CLI overrides (empty = not set by CLI, lets gather_configuration use its logic)
+CLI_INSTALL_DEPS=""
+CLI_INSTALL_BREWFILE=""
+CLI_INSTALL_MAC_MONITOR=""
+CLI_INSTALL_CALENDAR_LAUNCHAGENT=""
+CLI_INSTALL_TM_CLEANUP_LAUNCHAGENT=""
 
 # Show help message
 show_help() {
@@ -42,22 +50,49 @@ OPTIONS:
     -h, --help       Show this help message and exit
     -v, --verbose    Show detailed output during execution
     -n, --dry-run    Show plan but don't execute (implies verbose)
+    -y, --yes        Non-interactive mode (skip all prompts, use smart defaults)
+
+COMPONENT FLAGS (override individual prompts):
+    --deps / --no-deps                   Install missing brew dependencies
+    --brewfile / --no-brewfile           Install Brewfile packages (slow, default: off with --yes)
+    --calendar-agent / --no-calendar-agent   Calendar sync LaunchAgent
+    --tm-cleanup-agent / --no-tm-cleanup-agent   TM snapshot cleanup LaunchAgent
+    --mac-monitor / --no-mac-monitor     Mac Monitor MQTT agent (requires --mqtt-pass)
+
+MAC MONITOR FLAGS:
+    --node-id VALUE        Node ID (default: auto-detect from hostname)
+    --device-name VALUE    Device name in HA (default: ComputerName)
+    --mqtt-pass VALUE      MQTT password (required for --mac-monitor)
+
+ENVIRONMENT FLAGS:
+    --openai-key VALUE     OpenAI API key
+    --obsidian-vault VALUE Obsidian vault path
+    --calendar-name VALUE  Calendar name (e.g., GOOGLE, WORK)
+    --calendar-url VALUE   Calendar iCal URL
 
 EXAMPLES:
-    # Standard installation (recommended)
+    # Standard interactive installation
     ./scripts/install.sh
 
-    # See detailed output
-    ./scripts/install.sh --verbose
+    # Preview what non-interactive would do
+    ./scripts/install.sh --yes --dry-run
 
-    # Preview what would be done without executing
-    ./scripts/install.sh --dry-run
+    # Non-interactive with mac-monitor
+    ./scripts/install.sh --yes --mac-monitor --mqtt-pass "secret"
+
+    # Full remote setup via SSH
+    ssh mac_mini_mp "cd ~/dotfiles && ./scripts/install.sh --yes --verbose \\
+        --mac-monitor --node-id mac_mini_mp --mqtt-pass 'secret'"
+
+    # Just symlinks + deps, no extras
+    ./scripts/install.sh --yes --no-calendar-agent --no-tm-cleanup-agent
 
 LOGS:
     Full installation log: ~/.config/dotfiles-install.log
 
 FEATURES:
     • Smart defaults (only asks what's unknown)
+    • Non-interactive mode (--yes) for unattended setup
     • Idempotent (safe to run multiple times)
     • Clean progress indicators
     • Graceful error handling
@@ -84,6 +119,81 @@ while [[ $# -gt 0 ]]; do
             FLAG_VERBOSE=true
             shift
             ;;
+        -y|--yes)
+            FLAG_YES=true
+            shift
+            ;;
+        # Component flags
+        --mac-monitor)
+            CLI_INSTALL_MAC_MONITOR="true"
+            shift
+            ;;
+        --no-mac-monitor)
+            CLI_INSTALL_MAC_MONITOR="false"
+            shift
+            ;;
+        --deps)
+            CLI_INSTALL_DEPS="true"
+            shift
+            ;;
+        --no-deps)
+            CLI_INSTALL_DEPS="false"
+            shift
+            ;;
+        --brewfile)
+            CLI_INSTALL_BREWFILE="true"
+            shift
+            ;;
+        --no-brewfile)
+            CLI_INSTALL_BREWFILE="false"
+            shift
+            ;;
+        --calendar-agent)
+            CLI_INSTALL_CALENDAR_LAUNCHAGENT="true"
+            shift
+            ;;
+        --no-calendar-agent)
+            CLI_INSTALL_CALENDAR_LAUNCHAGENT="false"
+            shift
+            ;;
+        --tm-cleanup-agent)
+            CLI_INSTALL_TM_CLEANUP_LAUNCHAGENT="true"
+            shift
+            ;;
+        --no-tm-cleanup-agent)
+            CLI_INSTALL_TM_CLEANUP_LAUNCHAGENT="false"
+            shift
+            ;;
+        # Mac Monitor configuration
+        --node-id)
+            CONFIG_MAC_MONITOR_NODE_ID="$2"
+            shift 2
+            ;;
+        --device-name)
+            CONFIG_MAC_MONITOR_DEVICE_NAME="$2"
+            shift 2
+            ;;
+        --mqtt-pass)
+            CONFIG_MAC_MONITOR_MQTT_PASS="$2"
+            shift 2
+            ;;
+        # Environment configuration
+        --openai-key)
+            CONFIG_OPENAI_API_KEY="$2"
+            shift 2
+            ;;
+        --obsidian-vault)
+            CONFIG_OBSIDIAN_VAULT_PATH="$2"
+            shift 2
+            ;;
+        --calendar-name)
+            CONFIG_CALENDAR_URL_NAME="$2"
+            shift 2
+            ;;
+        --calendar-url)
+            CONFIG_CALENDAR_URL="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
             echo "Use --help for usage information"
@@ -91,6 +201,17 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Flag validation
+if [[ "$CLI_INSTALL_MAC_MONITOR" == "true" && -z "${CONFIG_MAC_MONITOR_MQTT_PASS:-}" ]]; then
+    echo -e "\033[0;31m[ERROR]\033[0m --mac-monitor requires --mqtt-pass VALUE"
+    exit 1
+fi
+
+# --mqtt-pass implies --mac-monitor
+if [[ -n "${CONFIG_MAC_MONITOR_MQTT_PASS:-}" && "$CLI_INSTALL_MAC_MONITOR" != "false" ]]; then
+    CLI_INSTALL_MAC_MONITOR="true"
+fi
 
 log() {
     echo -e "${GREEN}[INFO]${NC} $1"
@@ -132,6 +253,7 @@ STATE_ENV_HAS_OPENAI=""
 STATE_ENV_HAS_OBSIDIAN=""
 STATE_CALENDAR_LAUNCHAGENT_LOADED=""
 STATE_TM_CLEANUP_LAUNCHAGENT_LOADED=""
+STATE_MAC_MONITOR_INSTALLED=""
 STATE_SYMLINKS_EXIST=()
 STATE_MISSING_DEPS=()
 
@@ -210,6 +332,19 @@ detect_system_state() {
         STATE_TM_CLEANUP_LAUNCHAGENT_LOADED="false"
     fi
 
+    # Detect Mac Monitor (LaunchDaemon)
+    if sudo -n launchctl list 2>/dev/null | grep -q "com.user.mac-monitor" \
+        && [[ -d "$HOME/.local/share/mac-monitor/venv" ]] \
+        && [[ -f "$DOTFILES_DIR/scripts/mac-monitor/config.json" ]]; then
+        STATE_MAC_MONITOR_INSTALLED="true"
+    elif [[ -f "/Library/LaunchDaemons/com.user.mac-monitor.plist" ]] \
+        && [[ -d "$HOME/.local/share/mac-monitor/venv" ]] \
+        && [[ -f "$DOTFILES_DIR/scripts/mac-monitor/config.json" ]]; then
+        STATE_MAC_MONITOR_INSTALLED="true"
+    else
+        STATE_MAC_MONITOR_INSTALLED="false"
+    fi
+
     # Detect existing symlinks
     local symlink_paths=(
         "$HOME/.config/aerospace"
@@ -242,42 +377,52 @@ CONFIG_SETUP_OPENAI=""
 CONFIG_SETUP_OBSIDIAN=""
 CONFIG_INSTALL_CALENDAR_LAUNCHAGENT=""
 CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT=""
+CONFIG_INSTALL_MAC_MONITOR=""
+CONFIG_MAC_MONITOR_NODE_ID=""
+CONFIG_MAC_MONITOR_DEVICE_NAME=""
+CONFIG_MAC_MONITOR_MAC_ADDR=""
+CONFIG_MAC_MONITOR_MQTT_PASS=""
 CONFIG_OPENAI_API_KEY=""
 CONFIG_OBSIDIAN_VAULT_PATH=""
 CONFIG_CALENDAR_URL_NAME=""
 CONFIG_CALENDAR_URL=""
 
 gather_configuration() {
-    echo ""
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    log "CONFIGURATION"
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    log "I'll ask you a few questions to configure your installation."
-    log "All questions upfront, then we'll proceed with the plan."
-    echo ""
+    if [[ "$FLAG_YES" != "true" ]]; then
+        echo ""
+        log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log "CONFIGURATION"
+        log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        log "I'll ask you a few questions to configure your installation."
+        log "All questions upfront, then we'll proceed with the plan."
+        echo ""
+    fi
 
     # ─────────────────────────────────────────────────────────────
     # GROUP A: Dependencies
     # ─────────────────────────────────────────────────────────────
 
     if [[ ${#STATE_MISSING_DEPS[@]} -gt 0 ]]; then
-        log "━━ Dependencies ━━"
-        log "Missing: ${STATE_MISSING_DEPS[*]}"
-        echo ""
-
-        if [[ "$STATE_BREW_INSTALLED" == "false" ]]; then
+        if [[ -n "$CLI_INSTALL_DEPS" ]]; then
+            CONFIG_INSTALL_DEPS="$CLI_INSTALL_DEPS"
+        elif [[ "$STATE_BREW_INSTALLED" == "false" ]]; then
             warn "Homebrew is required but not installed."
             log "Install from: https://brew.sh"
             CONFIG_INSTALL_DEPS="false"
+        elif [[ "$FLAG_YES" == "true" ]]; then
+            CONFIG_INSTALL_DEPS="true"
         else
+            log "━━ Dependencies ━━"
+            log "Missing: ${STATE_MISSING_DEPS[*]}"
+            echo ""
             if ask_user "Install missing dependencies automatically?"; then
                 CONFIG_INSTALL_DEPS="true"
             else
                 CONFIG_INSTALL_DEPS="false"
             fi
+            echo ""
         fi
-        echo ""
     else
         CONFIG_INSTALL_DEPS="skip"  # All deps already installed
     fi
@@ -287,27 +432,33 @@ gather_configuration() {
     # ─────────────────────────────────────────────────────────────
 
     if [[ "$STATE_BREW_INSTALLED" == "true" ]] && [[ -f "$DOTFILES_DIR/Brewfile" ]]; then
-        log "━━ Brewfile Dependencies ━━"
-        log "Checking for missing packages from Brewfile..."
-        echo ""
-
-        # Quick check if anything is missing
-        cd "$DOTFILES_DIR" || true
-        if brew bundle check --verbose 2>&1 | grep -qE "(not installed|missing)"; then
-            warn "Some Brewfile dependencies are missing"
-            log "Note: brew bundle install can take 10-30 minutes"
-            echo ""
-            if ask_user "Install missing Brewfile dependencies now?"; then
-                CONFIG_INSTALL_BREWFILE="true"
-            else
-                CONFIG_INSTALL_BREWFILE="false"
-                log "You can install them later with: cd $DOTFILES_DIR && brew bundle"
-            fi
+        if [[ -n "$CLI_INSTALL_BREWFILE" ]]; then
+            CONFIG_INSTALL_BREWFILE="$CLI_INSTALL_BREWFILE"
+        elif [[ "$FLAG_YES" == "true" ]]; then
+            CONFIG_INSTALL_BREWFILE="false"  # Slow, opt-in only
         else
-            log "All Brewfile dependencies already installed"
-            CONFIG_INSTALL_BREWFILE="skip"
+            log "━━ Brewfile Dependencies ━━"
+            log "Checking for missing packages from Brewfile..."
+            echo ""
+
+            # Quick check if anything is missing
+            cd "$DOTFILES_DIR" || true
+            if brew bundle check --verbose 2>&1 | grep -qE "(not installed|missing)"; then
+                warn "Some Brewfile dependencies are missing"
+                log "Note: brew bundle install can take 10-30 minutes"
+                echo ""
+                if ask_user "Install missing Brewfile dependencies now?"; then
+                    CONFIG_INSTALL_BREWFILE="true"
+                else
+                    CONFIG_INSTALL_BREWFILE="false"
+                    log "You can install them later with: cd $DOTFILES_DIR && brew bundle"
+                fi
+            else
+                log "All Brewfile dependencies already installed"
+                CONFIG_INSTALL_BREWFILE="skip"
+            fi
+            echo ""
         fi
-        echo ""
     else
         CONFIG_INSTALL_BREWFILE="skip"
     fi
@@ -317,19 +468,26 @@ gather_configuration() {
     # ─────────────────────────────────────────────────────────────
 
     if [[ "$STATE_ENV_EXISTS" == "false" ]]; then
-        log "━━ Environment Setup ━━"
-        if ask_user "Create .env file from template?"; then
+        if [[ "$FLAG_YES" == "true" ]]; then
             CONFIG_CREATE_ENV="true"
-            CONFIG_SETUP_CALENDAR="prompt"
-            CONFIG_SETUP_OPENAI="prompt"
-            CONFIG_SETUP_OBSIDIAN="prompt"
-        else
-            CONFIG_CREATE_ENV="false"
             CONFIG_SETUP_CALENDAR="skip"
             CONFIG_SETUP_OPENAI="skip"
             CONFIG_SETUP_OBSIDIAN="skip"
+        else
+            log "━━ Environment Setup ━━"
+            if ask_user "Create .env file from template?"; then
+                CONFIG_CREATE_ENV="true"
+                CONFIG_SETUP_CALENDAR="prompt"
+                CONFIG_SETUP_OPENAI="prompt"
+                CONFIG_SETUP_OBSIDIAN="prompt"
+            else
+                CONFIG_CREATE_ENV="false"
+                CONFIG_SETUP_CALENDAR="skip"
+                CONFIG_SETUP_OPENAI="skip"
+                CONFIG_SETUP_OBSIDIAN="skip"
+            fi
+            echo ""
         fi
-        echo ""
     else
         CONFIG_CREATE_ENV="skip"  # Already exists
 
@@ -353,88 +511,113 @@ gather_configuration() {
         fi
     fi
 
-    # Prompt for OpenAI API key if needed
+    # OpenAI API key — CLI flag or interactive prompt
     if [[ "$CONFIG_SETUP_OPENAI" == "prompt" ]]; then
-        log "━━ OpenAI API Key ━━"
-        log "Required for meeting prep and AI analysis features."
-        if ask_user "Configure OpenAI API key now?"; then
-            echo ""
-            log "Get your key from: https://platform.openai.com/api-keys"
-            read -p "Enter your OpenAI API key (or press Enter to skip): " api_key
-            if [[ -n "$api_key" ]]; then
-                CONFIG_OPENAI_API_KEY="$api_key"
+        if [[ -n "$CONFIG_OPENAI_API_KEY" ]]; then
+            : # Already set via --openai-key flag
+        elif [[ "$FLAG_YES" == "true" ]]; then
+            CONFIG_OPENAI_API_KEY=""  # Can't guess secrets
+        else
+            log "━━ OpenAI API Key ━━"
+            log "Required for meeting prep and AI analysis features."
+            if ask_user "Configure OpenAI API key now?"; then
+                echo ""
+                log "Get your key from: https://platform.openai.com/api-keys"
+                read -p "Enter your OpenAI API key (or press Enter to skip): " api_key
+                if [[ -n "$api_key" ]]; then
+                    CONFIG_OPENAI_API_KEY="$api_key"
+                else
+                    CONFIG_OPENAI_API_KEY=""
+                fi
             else
                 CONFIG_OPENAI_API_KEY=""
             fi
-        else
-            CONFIG_OPENAI_API_KEY=""
-        fi
-        echo ""
-    fi
-
-    # Prompt for Obsidian vault path if needed
-    if [[ "$CONFIG_SETUP_OBSIDIAN" == "prompt" ]]; then
-        log "━━ Obsidian Vault ━━"
-        log "Required for meeting prep and note integration."
-
-        # Try to auto-detect
-        local common_vault="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents"
-        if [[ -d "$common_vault" ]]; then
-            log "Found vaults at: $common_vault"
-            ls -1 "$common_vault" 2>/dev/null | head -3
             echo ""
         fi
+    fi
 
-        if ask_user "Configure Obsidian vault path now?"; then
-            read -p "Enter full path to your Obsidian vault: " vault_path
-            vault_path="${vault_path/#\~/$HOME}"  # Expand ~
-            if [[ -d "$vault_path" ]]; then
-                CONFIG_OBSIDIAN_VAULT_PATH="$vault_path"
+    # Obsidian vault path — CLI flag or interactive prompt
+    if [[ "$CONFIG_SETUP_OBSIDIAN" == "prompt" ]]; then
+        if [[ -n "$CONFIG_OBSIDIAN_VAULT_PATH" ]]; then
+            : # Already set via --obsidian-vault flag
+        elif [[ "$FLAG_YES" == "true" ]]; then
+            CONFIG_OBSIDIAN_VAULT_PATH=""  # Can't guess paths
+        else
+            log "━━ Obsidian Vault ━━"
+            log "Required for meeting prep and note integration."
+
+            # Try to auto-detect
+            local common_vault="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents"
+            if [[ -d "$common_vault" ]]; then
+                log "Found vaults at: $common_vault"
+                ls -1 "$common_vault" 2>/dev/null | head -3
+                echo ""
+            fi
+
+            if ask_user "Configure Obsidian vault path now?"; then
+                read -p "Enter full path to your Obsidian vault: " vault_path
+                vault_path="${vault_path/#\~/$HOME}"  # Expand ~
+                if [[ -d "$vault_path" ]]; then
+                    CONFIG_OBSIDIAN_VAULT_PATH="$vault_path"
+                else
+                    warn "Directory not found: $vault_path"
+                    CONFIG_OBSIDIAN_VAULT_PATH=""
+                fi
             else
-                warn "Directory not found: $vault_path"
                 CONFIG_OBSIDIAN_VAULT_PATH=""
             fi
-        else
-            CONFIG_OBSIDIAN_VAULT_PATH=""
+            echo ""
         fi
-        echo ""
     fi
 
-    # Prompt for calendar URL if needed
+    # Calendar URL — CLI flags or interactive prompt
     if [[ "$CONFIG_SETUP_CALENDAR" == "prompt" ]]; then
-        log "━━ Calendar Sync ━━"
-        log "Required for automatic calendar synchronization."
-        if ask_user "Configure a calendar URL now?"; then
-            echo ""
-            log "Examples:"
-            log "  Google: https://calendar.google.com/calendar/ical/...ics"
-            log "  iCloud: https://p##-caldav.icloud.com/published/#/..."
-            echo ""
-            read -p "Calendar name (e.g., GOOGLE, WORK): " cal_name
-            read -p "Calendar URL: " cal_url
-            if [[ -n "$cal_name" ]] && [[ -n "$cal_url" ]]; then
-                CONFIG_CALENDAR_URL_NAME=$(echo "$cal_name" | tr '[:lower:]' '[:upper:]' | tr -cd '[:alnum:]_')
-                CONFIG_CALENDAR_URL="$cal_url"
+        if [[ -n "$CONFIG_CALENDAR_URL_NAME" && -n "$CONFIG_CALENDAR_URL" ]]; then
+            : # Already set via --calendar-name + --calendar-url flags
+        elif [[ "$FLAG_YES" == "true" ]]; then
+            CONFIG_CALENDAR_URL_NAME=""  # Can't guess URLs
+            CONFIG_CALENDAR_URL=""
+        else
+            log "━━ Calendar Sync ━━"
+            log "Required for automatic calendar synchronization."
+            if ask_user "Configure a calendar URL now?"; then
+                echo ""
+                log "Examples:"
+                log "  Google: https://calendar.google.com/calendar/ical/...ics"
+                log "  iCloud: https://p##-caldav.icloud.com/published/#/..."
+                echo ""
+                read -p "Calendar name (e.g., GOOGLE, WORK): " cal_name
+                read -p "Calendar URL: " cal_url
+                if [[ -n "$cal_name" ]] && [[ -n "$cal_url" ]]; then
+                    CONFIG_CALENDAR_URL_NAME=$(echo "$cal_name" | tr '[:lower:]' '[:upper:]' | tr -cd '[:alnum:]_')
+                    CONFIG_CALENDAR_URL="$cal_url"
+                else
+                    CONFIG_CALENDAR_URL_NAME=""
+                    CONFIG_CALENDAR_URL=""
+                fi
             else
                 CONFIG_CALENDAR_URL_NAME=""
                 CONFIG_CALENDAR_URL=""
             fi
-        else
-            CONFIG_CALENDAR_URL_NAME=""
-            CONFIG_CALENDAR_URL=""
+            echo ""
         fi
-        echo ""
     fi
 
     # ─────────────────────────────────────────────────────────────
     # GROUP C: Features / LaunchAgents
     # ─────────────────────────────────────────────────────────────
 
-    log "━━ Features ━━"
+    if [[ "$FLAG_YES" != "true" ]]; then
+        log "━━ Features ━━"
+    fi
 
     # Calendar LaunchAgent
     if [[ "$STATE_CALENDAR_LAUNCHAGENT_LOADED" == "true" ]]; then
         CONFIG_INSTALL_CALENDAR_LAUNCHAGENT="skip"  # Already loaded
+    elif [[ -n "$CLI_INSTALL_CALENDAR_LAUNCHAGENT" ]]; then
+        CONFIG_INSTALL_CALENDAR_LAUNCHAGENT="$CLI_INSTALL_CALENDAR_LAUNCHAGENT"
+    elif [[ "$FLAG_YES" == "true" ]]; then
+        CONFIG_INSTALL_CALENDAR_LAUNCHAGENT="true"
     else
         if ask_user "Install calendar sync LaunchAgent (auto-syncs every 15 min)?"; then
             CONFIG_INSTALL_CALENDAR_LAUNCHAGENT="true"
@@ -446,11 +629,72 @@ gather_configuration() {
     # TM Snapshot Cleanup LaunchAgent
     if [[ "$STATE_TM_CLEANUP_LAUNCHAGENT_LOADED" == "true" ]]; then
         CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="skip"
+    elif [[ -n "$CLI_INSTALL_TM_CLEANUP_LAUNCHAGENT" ]]; then
+        CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="$CLI_INSTALL_TM_CLEANUP_LAUNCHAGENT"
+    elif [[ "$FLAG_YES" == "true" ]]; then
+        CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="true"
     else
         if ask_user "Install Time Machine snapshot cleanup LaunchAgent (auto-cleans after backups)?"; then
             CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="true"
         else
             CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="false"
+        fi
+    fi
+
+    # Mac Monitor MQTT agent
+    if [[ "$STATE_MAC_MONITOR_INSTALLED" == "true" ]]; then
+        CONFIG_INSTALL_MAC_MONITOR="skip"
+    elif [[ -n "$CLI_INSTALL_MAC_MONITOR" ]]; then
+        CONFIG_INSTALL_MAC_MONITOR="$CLI_INSTALL_MAC_MONITOR"
+
+        # Auto-detect sub-values if not provided via flags
+        if [[ "$CONFIG_INSTALL_MAC_MONITOR" == "true" ]]; then
+            if [[ -z "$CONFIG_MAC_MONITOR_NODE_ID" ]]; then
+                CONFIG_MAC_MONITOR_NODE_ID="mac_$(scutil --get ComputerName 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr -cd '[:alnum:]_')"
+            fi
+            if [[ -z "$CONFIG_MAC_MONITOR_DEVICE_NAME" ]]; then
+                CONFIG_MAC_MONITOR_DEVICE_NAME="$(scutil --get ComputerName 2>/dev/null || echo 'Mac')"
+            fi
+            if [[ -z "$CONFIG_MAC_MONITOR_MAC_ADDR" ]]; then
+                CONFIG_MAC_MONITOR_MAC_ADDR="$(ifconfig en0 2>/dev/null | awk '/ether/{print $2}' || echo '')"
+            fi
+        fi
+    elif [[ "$FLAG_YES" == "true" ]]; then
+        CONFIG_INSTALL_MAC_MONITOR="false"  # Needs MQTT password, must opt-in
+    else
+        if ask_user "Install Mac Monitor MQTT agent (system metrics to Home Assistant)?"; then
+            CONFIG_INSTALL_MAC_MONITOR="true"
+            echo ""
+            log "━━ Mac Monitor Configuration ━━"
+            log "MQTT broker: 192.168.0.201:1883 (user: macmonitor)"
+            echo ""
+
+            # Get machine identifier
+            local default_node
+            default_node="mac_$(scutil --get ComputerName 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr -cd '[:alnum:]_')"
+            read -p "Node ID (e.g., mac_mini_jeff, mac_mini_mp) [$default_node]: " node_id
+            CONFIG_MAC_MONITOR_NODE_ID="${node_id:-$default_node}"
+
+            # Get device name
+            local default_name
+            default_name="$(scutil --get ComputerName 2>/dev/null || echo 'Mac')"
+            read -p "Device name in HA [$default_name]: " device_name
+            CONFIG_MAC_MONITOR_DEVICE_NAME="${device_name:-$default_name}"
+
+            # Auto-detect MAC address
+            CONFIG_MAC_MONITOR_MAC_ADDR="$(ifconfig en0 2>/dev/null | awk '/ether/{print $2}' || echo '')"
+            if [[ -n "$CONFIG_MAC_MONITOR_MAC_ADDR" ]]; then
+                log "MAC address (en0): $CONFIG_MAC_MONITOR_MAC_ADDR"
+            fi
+
+            # MQTT password
+            read -sp "MQTT password: " mqtt_pass
+            echo ""
+            CONFIG_MAC_MONITOR_MQTT_PASS="$mqtt_pass"
+
+            echo ""
+        else
+            CONFIG_INSTALL_MAC_MONITOR="false"
         fi
     fi
 
@@ -530,6 +774,12 @@ generate_plan() {
         PLAN+=("$step_num|launchagent_tm_cleanup|Install TM snapshot cleanup LaunchAgent|Auto-clean after backups")
     fi
 
+    # Mac Monitor
+    if [[ "$CONFIG_INSTALL_MAC_MONITOR" == "true" ]]; then
+        ((step_num++))
+        PLAN+=("$step_num|mac_monitor|Install Mac Monitor MQTT agent|System metrics to HA")
+    fi
+
     # Restart services
     if [[ "$STATE_AEROSPACE_INSTALLED" == "true" ]]; then
         ((step_num++))
@@ -564,6 +814,10 @@ display_plan() {
 }
 
 ask_approval() {
+    if [[ "$FLAG_YES" == "true" ]]; then
+        log "Auto-approved (--yes)"
+        return 0
+    fi
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     if ask_user "Proceed with this plan?"; then
         echo ""
@@ -753,6 +1007,14 @@ execute_plan() {
                 fi
                 ;;
 
+            mac_monitor)
+                if exec_quiet "Mac Monitor setup" install_mac_monitor; then
+                    show_result 0
+                else
+                    show_result 1
+                fi
+                ;;
+
             restart_aerospace)
                 if exec_quiet "AeroSpace reload" execute_restart_aerospace; then
                     show_result 0
@@ -918,6 +1180,150 @@ install_custom_fonts() {
     fi
 }
 
+install_mac_monitor() {
+    local label="com.user.mac-monitor"
+    local venv_dir="$HOME/.local/share/mac-monitor/venv"
+    local logs_dir="$HOME/.local/share/mac-monitor/logs"
+    local plist_source="$DOTFILES_DIR/scripts/mac-monitor/com.user.mac-monitor.plist"
+    local plist_target="/Library/LaunchDaemons/$label.plist"
+    local requirements="$DOTFILES_DIR/scripts/mac-monitor/requirements.txt"
+    local config_file="$DOTFILES_DIR/scripts/mac-monitor/config.json"
+
+    log "Installing Mac Monitor MQTT agent"
+
+    # Create directories
+    mkdir -p "$logs_dir"
+
+    # Create virtual environment
+    if [[ ! -d "$venv_dir" ]]; then
+        log "Creating Python virtual environment..."
+        if ! python3 -m venv "$venv_dir"; then
+            error "Failed to create venv"
+            return 1
+        fi
+    fi
+
+    # Install dependencies
+    log "Installing dependencies..."
+    if ! "$venv_dir/bin/pip" install --quiet --upgrade pip 2>&1; then
+        warn "Failed to upgrade pip"
+    fi
+    if ! "$venv_dir/bin/pip" install --quiet -r "$requirements" 2>&1; then
+        error "Failed to install dependencies"
+        return 1
+    fi
+    log "Dependencies installed"
+
+    # Install brightness CLI (optional — enables display brightness control from HA)
+    if command -v brew &>/dev/null && ! command -v brightness &>/dev/null; then
+        log "Installing brightness CLI (Homebrew)..."
+        brew install brightness 2>&1 || warn "Failed to install brightness CLI (non-critical)"
+    fi
+
+    # Generate config.json from gathered answers (or copy template)
+    if [[ ! -f "$config_file" ]]; then
+        if [[ -n "$CONFIG_MAC_MONITOR_NODE_ID" && -n "$CONFIG_MAC_MONITOR_MQTT_PASS" ]]; then
+            # Detect external drives
+            local drives_json='[{"name":"root","path":"/","label":"Internal SSD"}'
+            for vol_path in /Volumes/*; do
+                if [[ -d "$vol_path" ]] && mount | grep -q " $vol_path "; then
+                    local vol_name
+                    vol_name="$(basename "$vol_path")"
+                    local vol_slug
+                    vol_slug="$(echo "$vol_name" | tr '[:upper:]' '[:lower:]' | tr ' ' '_')"
+                    drives_json="$drives_json,{\"name\":\"$vol_slug\",\"path\":\"$vol_path\",\"label\":\"$vol_name\"}"
+                fi
+            done
+            drives_json="$drives_json]"
+
+            # Get Mac model
+            local mac_model
+            mac_model="$(sysctl -n hw.model 2>/dev/null || echo 'Mac')"
+
+            cat > "$config_file" << EOCFG
+{
+  "node_id": "$CONFIG_MAC_MONITOR_NODE_ID",
+  "device_name": "$CONFIG_MAC_MONITOR_DEVICE_NAME",
+  "device_model": "$mac_model",
+  "mqtt": {
+    "host": "192.168.0.201",
+    "port": 1883,
+    "username": "macmonitor",
+    "password": "$CONFIG_MAC_MONITOR_MQTT_PASS"
+  },
+  "publish_interval": 30,
+  "drives": $drives_json,
+  "mac_address": "$CONFIG_MAC_MONITOR_MAC_ADDR",
+  "controls": {
+    "sleep": true,
+    "sleep_display": true,
+    "lock": true,
+    "volume": true,
+    "keep_awake": true,
+    "shutdown": true,
+    "restart": true
+  },
+  "cpu_temp_enabled": true,
+  "docker": {
+    "enabled": false,
+    "watched_containers": []
+  },
+  "shortcuts": []
+}
+EOCFG
+            log "Generated config.json for $CONFIG_MAC_MONITOR_NODE_ID"
+        else
+            cp "$DOTFILES_DIR/scripts/mac-monitor/config.example.json" "$config_file"
+            log "Created config.json from template — edit before starting"
+        fi
+    fi
+
+    # Remove old LaunchAgent if exists
+    if [[ -f "$HOME/Library/LaunchAgents/$label.plist" ]]; then
+        launchctl unload "$HOME/Library/LaunchAgents/$label.plist" 2>/dev/null || true
+        rm -f "$HOME/Library/LaunchAgents/$label.plist"
+        log "Removed old LaunchAgent (migrating to LaunchDaemon)"
+    fi
+
+    # Unload existing LaunchDaemon if loaded
+    if sudo -n launchctl list 2>/dev/null | grep -q "$label"; then
+        sudo launchctl bootout system "$plist_target" 2>/dev/null || true
+    fi
+
+    # Install LaunchDaemon plist with placeholder substitution
+    # LaunchDaemon bypasses macOS Sequoia Local Network Privacy restrictions
+    sed -e "s|HOME_DIR|$HOME|g" -e "s|DOTFILES_DIR|$DOTFILES_DIR|g" \
+        "$plist_source" > "/tmp/$label.plist"
+
+    if ! plutil -lint "/tmp/$label.plist" &>/dev/null; then
+        error "LaunchDaemon plist validation failed"
+        rm -f "/tmp/$label.plist"
+        return 1
+    fi
+
+    sudo mv "/tmp/$label.plist" "$plist_target"
+    sudo chown root:wheel "$plist_target"
+    sudo chmod 644 "$plist_target"
+    log "LaunchDaemon plist installed"
+
+    # Check if config still has CHANGE_ME — don't start the service
+    if grep -q "CHANGE_ME" "$config_file" 2>/dev/null; then
+        warn "Config has placeholder credentials — daemon installed but NOT started"
+        warn "Edit $config_file then run: sudo launchctl bootstrap system $plist_target"
+        return 0
+    fi
+
+    # Load LaunchDaemon
+    if sudo launchctl bootstrap system "$plist_target" 2>/dev/null; then
+        log "LaunchDaemon loaded and running"
+    else
+        warn "Failed to load LaunchDaemon (may need reboot)"
+        warn "Manual start: sudo launchctl bootstrap system $plist_target"
+    fi
+
+    return 0
+}
+
 execute_restart_aerospace() {
     if pgrep -x "AeroSpace" >/dev/null; then
         aerospace reload-config || return 1
@@ -968,6 +1374,19 @@ generate_report() {
             has_next_steps=true
         fi
         log "  • Monitor calendar sync: tail -f ~/.config/sketchybar/logs/calendar-sync.log"
+    fi
+
+    if [[ "$CONFIG_INSTALL_MAC_MONITOR" == "true" ]]; then
+        if [[ $has_next_steps == false ]]; then
+            log "Next steps:"
+            has_next_steps=true
+        fi
+        if grep -q "CHANGE_ME" "$DOTFILES_DIR/scripts/mac-monitor/config.json" 2>/dev/null; then
+            log "  • Edit scripts/mac-monitor/config.json with MQTT credentials, then:"
+            log "    sudo launchctl bootstrap system /Library/LaunchDaemons/com.user.mac-monitor.plist"
+        else
+            log "  • Mac Monitor running — check HA for new device"
+        fi
     fi
 
     if [[ "$STATE_AEROSPACE_INSTALLED" == "true" ]] && pgrep -x "AeroSpace" >/dev/null; then
@@ -1462,6 +1881,11 @@ validate_installation() {
 ask_user() {
     local prompt="$1"
     local default="${2:-y}"
+
+    # Non-interactive mode: use the default
+    if [[ "$FLAG_YES" == "true" ]]; then
+        [[ "$default" == "y" ]] && return 0 || return 1
+    fi
 
     if [[ "$default" == "y" ]]; then
         prompt="$prompt [Y/n]: "
