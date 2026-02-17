@@ -245,6 +245,87 @@ def _get_coreaudio():
     return ca, Addr, dev_id.value
 
 
+def _get_coreaudio_output():
+    """Load CoreAudio and find output volume targets.
+
+    Returns (ca_lib, Addr_class, targets) where targets is a list of
+    (device_id, volume_channel) tuples for setting output volume.
+
+    For aggregate devices (LG Dual), enumerates all devices and finds
+    individual LG display outputs that support volume control.
+    For regular devices, targets is just the default output.
+    """
+    ca = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")
+    cf = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+    cf.CFStringGetCStringPtr.restype = ctypes.c_char_p
+    cf.CFStringGetCStringPtr.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+
+    class Addr(ctypes.Structure):
+        _fields_ = [("sel", ctypes.c_uint32), ("scope", ctypes.c_uint32), ("elem", ctypes.c_uint32)]
+
+    def S(s):
+        return int.from_bytes(s.encode() if isinstance(s, str) else s, "big")
+
+    def has_out_vol(did):
+        for ch in (0, 1):
+            a = Addr(S("volm"), S("outp"), ch)
+            v = ctypes.c_float(0.0)
+            s = ctypes.c_uint32(4)
+            if ca.AudioObjectGetPropertyData(did, ctypes.byref(a), 0, None, ctypes.byref(s), ctypes.byref(v)) == 0:
+                return ch
+        return -1
+
+    def get_name(did):
+        addr = Addr(S("lnam"), S("glob"), 0)
+        name_ref = ctypes.c_void_p(0)
+        sz = ctypes.c_uint32(8)
+        if ca.AudioObjectGetPropertyData(did, ctypes.byref(addr), 0, None, ctypes.byref(sz), ctypes.byref(name_ref)) == 0:
+            cstr = cf.CFStringGetCStringPtr(name_ref, 0x08000100)
+            if cstr:
+                return cstr.decode()
+            # Fallback: CFStringGetCString
+            buf = ctypes.create_string_buffer(256)
+            if cf.CFStringGetCString(name_ref, buf, 256, 0x08000100):
+                return buf.value.decode()
+        return ""
+
+    # Get default output device
+    addr = Addr(S("dOut"), S("glob"), 0)
+    dev_id = ctypes.c_uint32(0)
+    sz = ctypes.c_uint32(4)
+    if ca.AudioObjectGetPropertyData(1, ctypes.byref(addr), 0, None, ctypes.byref(sz), ctypes.byref(dev_id)) != 0:
+        return None, None, []
+
+    # Try default device directly
+    ch = has_out_vol(dev_id.value)
+    if ch >= 0:
+        return ca, Addr, [(dev_id.value, ch)]
+
+    # Aggregate/multi-output — enumerate all devices, find LG outputs with volume
+    addr = Addr(S("dev#"), S("glob"), 0)
+    sz = ctypes.c_uint32(0)
+    ca.AudioObjectGetPropertyDataSize(1, ctypes.byref(addr), 0, None, ctypes.byref(sz))
+    n = sz.value // 4
+    if n == 0:
+        return None, None, []
+    all_ids = (ctypes.c_uint32 * n)()
+    sz2 = ctypes.c_uint32(n * 4)
+    ca.AudioObjectGetPropertyData(1, ctypes.byref(addr), 0, None, ctypes.byref(sz2), all_ids)
+
+    targets = []
+    for did in all_ids:
+        if did == dev_id.value:
+            continue
+        ch = has_out_vol(did)
+        if ch < 0:
+            continue
+        name = get_name(did)
+        if "LG" in name:
+            targets.append((did, ch))
+
+    return (ca, Addr, targets) if targets else (None, None, [])
+
+
 def collect_mic() -> dict:
     """Get mic volume and mute state via CoreAudio HAL (works with USB/display mics)."""
     try:
@@ -849,8 +930,19 @@ def handle_lock(payload: str) -> None:
 def handle_volume_mute(payload: str) -> None:
     desired = payload.strip().upper() in ("ON", "1", "TRUE")
     logger.info("Command: volume_mute %s", "ON (mute)" if desired else "OFF (unmute)")
-    mute_cmd = "set volume with output muted" if desired else "set volume without output muted"
-    _popen_as_user(["osascript", "-e", mute_cmd])
+    try:
+        ca, Addr, targets = _get_coreaudio_output()
+        if not targets:
+            logger.warning("No output volume targets found for mute")
+            return
+        mute_sel = int.from_bytes(b"mute", "big")
+        outp = int.from_bytes(b"outp", "big")
+        val = ctypes.c_uint32(1 if desired else 0)
+        for dev_id, ch in targets:
+            addr = Addr(mute_sel, outp, ch)
+            ca.AudioObjectSetPropertyData(dev_id, ctypes.byref(addr), 0, None, 4, ctypes.byref(val))
+    except Exception:
+        logger.exception("handle_volume_mute failed")
     time.sleep(0.3)
     _force_publish_state()
 
@@ -863,8 +955,21 @@ def handle_volume(payload: str) -> None:
         logger.warning("Invalid volume payload: %s", payload)
         return
     logger.info("Command: set volume to %d", vol)
-    # osascript volume is 0-100 — must run in user session for audio
-    _popen_as_user(["osascript", "-e", f"set volume output volume {vol}"])
+    try:
+        ca, Addr, targets = _get_coreaudio_output()
+        if not targets:
+            logger.warning("No output volume targets found")
+            return
+        volm = int.from_bytes(b"volm", "big")
+        outp = int.from_bytes(b"outp", "big")
+        new_vol = ctypes.c_float(vol / 100.0)
+        for dev_id, ch in targets:
+            addr = Addr(volm, outp, ch)
+            ca.AudioObjectSetPropertyData(dev_id, ctypes.byref(addr), 0, None, 4, ctypes.byref(new_vol))
+    except Exception:
+        logger.exception("handle_volume failed")
+    time.sleep(0.3)
+    _force_publish_state()
 
 
 def handle_keep_awake(payload: str) -> None:
@@ -1074,28 +1179,36 @@ def _force_publish_state() -> None:
 
 
 def get_volume() -> int:
-    """Get current macOS output volume (must run in user session)."""
+    """Get current output volume via CoreAudio (works with aggregate devices like LG Dual)."""
     try:
-        result = _run_as_user(
-            ["osascript", "-e", "output volume of (get volume settings)"],
-        )
-        if result and result.returncode == 0:
-            return int(result.stdout.strip())
-    except (ValueError, AttributeError):
-        pass
+        ca, Addr, targets = _get_coreaudio_output()
+        if not targets:
+            return 50
+        dev_id, ch = targets[0]
+        addr = Addr(int.from_bytes(b"volm", "big"), int.from_bytes(b"outp", "big"), ch)
+        vol = ctypes.c_float(0.0)
+        sz = ctypes.c_uint32(4)
+        if ca.AudioObjectGetPropertyData(dev_id, ctypes.byref(addr), 0, None, ctypes.byref(sz), ctypes.byref(vol)) == 0:
+            return round(vol.value * 100)
+    except Exception:
+        logger.exception("get_volume failed")
     return 50
 
 
 def get_volume_muted() -> bool:
-    """Get current macOS output mute state."""
+    """Get current output mute state via CoreAudio (works with aggregate devices)."""
     try:
-        result = _run_as_user(
-            ["osascript", "-e", "output muted of (get volume settings)"],
-        )
-        if result and result.returncode == 0:
-            return result.stdout.strip().lower() == "true"
-    except (ValueError, AttributeError):
-        pass
+        ca, Addr, targets = _get_coreaudio_output()
+        if not targets:
+            return False
+        dev_id, ch = targets[0]
+        addr = Addr(int.from_bytes(b"mute", "big"), int.from_bytes(b"outp", "big"), ch)
+        muted = ctypes.c_uint32(0)
+        sz = ctypes.c_uint32(4)
+        if ca.AudioObjectGetPropertyData(dev_id, ctypes.byref(addr), 0, None, ctypes.byref(sz), ctypes.byref(muted)) == 0:
+            return bool(muted.value)
+    except Exception:
+        logger.exception("get_volume_muted failed")
     return False
 
 
