@@ -27,7 +27,9 @@
   "cpu_temp_enabled": true,
   "docker": {
     "enabled": false,
-    "watched_containers": []
+    "watched_containers": ["container1", "container2"],
+    "log_error_window": 300,
+    "log_error_patterns": ["error", "exception", "fatal", "traceback"]
   },
   "shortcuts": []
 }

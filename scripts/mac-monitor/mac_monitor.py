@@ -454,6 +454,11 @@ def collect_time_machine() -> dict:
     return data
 
 
+def _docker_slug(name: str) -> str:
+    """Convert a Docker container name to a safe slug for MQTT/HA entity IDs."""
+    return re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
+
+
 def collect_docker(cfg: dict) -> dict | None:
     """Collect Docker stats if enabled and docker CLI available."""
     docker_cfg = cfg.get("docker", {})
@@ -488,17 +493,45 @@ def collect_docker(cfg: dict) -> dict | None:
     except (subprocess.TimeoutExpired, FileNotFoundError):
         data["docker_unhealthy"] = False
 
-    # Per-container status for watched containers
+    # Error counting config
+    error_window = docker_cfg.get("log_error_window", 300)
+    error_patterns = docker_cfg.get("log_error_patterns",
+                                     ["error", "exception", "fatal", "traceback"])
+    error_re = re.compile("|".join(error_patterns), re.IGNORECASE)
+    total_errors = 0
+
+    # Per-container status + error counting
     watched = docker_cfg.get("watched_containers", [])
     for name in watched:
+        slug = _docker_slug(name)
+
+        # Container status (running, exited, restarting, etc.)
         try:
             result = subprocess.run(
-                ["docker", "inspect", "--format", "{{.State.Running}}", name],
+                ["docker", "inspect", "--format", "{{.State.Status}}", name],
                 capture_output=True, text=True, timeout=5,
             )
-            data[f"docker_{name}_running"] = result.stdout.strip().lower() == "true"
-        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
-            data[f"docker_{name}_running"] = False
+            status = result.stdout.strip() if result.returncode == 0 else "unknown"
+            data[f"docker_{slug}_status"] = status
+            data[f"docker_{slug}_running"] = status == "running"
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            data[f"docker_{slug}_status"] = "unknown"
+            data[f"docker_{slug}_running"] = False
+
+        # Error count from recent logs
+        try:
+            result = subprocess.run(
+                ["docker", "logs", "--since", f"{error_window}s", name],
+                capture_output=True, text=True, timeout=10,
+            )
+            combined = result.stdout + result.stderr
+            count = sum(1 for line in combined.splitlines() if error_re.search(line))
+            data[f"docker_{slug}_errors"] = count
+            total_errors += count
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            data[f"docker_{slug}_errors"] = 0
+
+    data["docker_total_errors"] = total_errors
 
     return data
 
@@ -727,16 +760,53 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
                 "availability": avail,
             },
         ))
+        discoveries.append((
+            f"homeassistant/sensor/{node}/docker_total_errors/config",
+            {
+                "name": "Docker Total Errors",
+                "unique_id": f"{node}_docker_total_errors",
+                "state_topic": state_topic,
+                "value_template": "{{ value_json.docker_total_errors }}",
+                "icon": "mdi:alert-circle",
+                "device": dev,
+                "availability": avail,
+            },
+        ))
         for cname in docker_cfg.get("watched_containers", []):
+            slug = _docker_slug(cname)
             discoveries.append((
-                f"homeassistant/binary_sensor/{node}/docker_{cname}_running/config",
+                f"homeassistant/binary_sensor/{node}/docker_{slug}_running/config",
                 {
                     "name": f"Docker {cname}",
-                    "unique_id": f"{node}_docker_{cname}_running",
+                    "unique_id": f"{node}_docker_{slug}_running",
                     "state_topic": state_topic,
-                    "value_template": f"{{{{ 'ON' if value_json.docker_{cname}_running else 'OFF' }}}}",
+                    "value_template": f"{{{{ 'ON' if value_json.docker_{slug}_running else 'OFF' }}}}",
                     "device_class": "running",
                     "icon": "mdi:docker",
+                    "device": dev,
+                    "availability": avail,
+                },
+            ))
+            discoveries.append((
+                f"homeassistant/sensor/{node}/docker_{slug}_status/config",
+                {
+                    "name": f"Docker {cname} Status",
+                    "unique_id": f"{node}_docker_{slug}_status",
+                    "state_topic": state_topic,
+                    "value_template": f"{{{{ value_json.docker_{slug}_status }}}}",
+                    "icon": "mdi:docker",
+                    "device": dev,
+                    "availability": avail,
+                },
+            ))
+            discoveries.append((
+                f"homeassistant/sensor/{node}/docker_{slug}_errors/config",
+                {
+                    "name": f"Docker {cname} Errors",
+                    "unique_id": f"{node}_docker_{slug}_errors",
+                    "state_topic": state_topic,
+                    "value_template": f"{{{{ value_json.docker_{slug}_errors }}}}",
+                    "icon": "mdi:alert-circle",
                     "device": dev,
                     "availability": avail,
                 },
