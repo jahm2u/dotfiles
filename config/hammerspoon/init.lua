@@ -1448,6 +1448,112 @@ hs.audiodevice.watcher.setCallback(function(event)
 end)
 hs.audiodevice.watcher.start()
 
+-- Kensington Expert Mouse: Bottom button logic + scroll-to-arrow
+-- Karabiner sends F18 (bottom-left) and F19 (bottom-right) for Kensington only.
+-- Hammerspoon handles tap/double-tap/hold detection + scroll piggyback.
+--
+-- Bottom left (F18):  single=mouse button 5 | double=Escape x2 | hold=Escape
+-- Bottom right (F19): single(2s)=help | hold=Enter
+-- Scroll down: normal scroll + Down arrow key
+-- Scroll up: normal scroll + Up arrow key
+
+local DOUBLE_TAP_WINDOW = 0.3
+local HOLD_THRESHOLD = 0.3
+local HELP_DELAY = 2.0
+
+local btn1State = { lastTapTime = 0, holdTimer = nil, singleTapTimer = nil, held = false }
+local btn2State = { lastTapTime = 0, holdTimer = nil, singleTapTimer = nil, held = false }
+
+-- Button 1 (F18 / bottom left): single=button5, double=Escape x2, hold=Escape
+local function btn1Down()
+    if btn1State.held then return end
+    if btn1State.singleTapTimer then btn1State.singleTapTimer:stop(); btn1State.singleTapTimer = nil end
+
+    local now = hs.timer.secondsSinceEpoch()
+    if (now - btn1State.lastTapTime) < DOUBLE_TAP_WINDOW then
+        btn1State.lastTapTime = 0
+        if btn1State.holdTimer then btn1State.holdTimer:stop(); btn1State.holdTimer = nil end
+        hs.eventtap.keyStroke({}, "escape", 0)
+        hs.eventtap.keyStroke({}, "escape", 0)
+        return
+    end
+
+    btn1State.holdTimer = hs.timer.doAfter(HOLD_THRESHOLD, function()
+        btn1State.holdTimer = nil
+        btn1State.held = true
+        hs.eventtap.keyStroke({}, "escape", 0)
+    end)
+end
+
+local function btn1Up()
+    if btn1State.held then
+        btn1State.held = false
+        return
+    end
+    if btn1State.holdTimer then btn1State.holdTimer:stop(); btn1State.holdTimer = nil end
+
+    btn1State.lastTapTime = hs.timer.secondsSinceEpoch()
+    btn1State.singleTapTimer = hs.timer.doAfter(DOUBLE_TAP_WINDOW, function()
+        btn1State.singleTapTimer = nil
+        btn1State.lastTapTime = 0
+        hs.eventtap.otherClick({x=0, y=0}, 0, 4) -- button5 (0-indexed: 4)
+    end)
+end
+
+-- Button 2 (F19 / bottom right): hold=Enter
+local function btn2Down()
+    if btn2State.held then return end
+
+    btn2State.holdTimer = hs.timer.doAfter(HOLD_THRESHOLD, function()
+        btn2State.holdTimer = nil
+        btn2State.held = true
+        hs.eventtap.keyStroke({}, "return", 0)
+    end)
+end
+
+local function btn2Up()
+    if btn2State.held then
+        btn2State.held = false
+        return
+    end
+    if btn2State.holdTimer then btn2State.holdTimer:stop(); btn2State.holdTimer = nil end
+
+    btn2State.singleTapTimer = hs.timer.doAfter(HELP_DELAY, function()
+        btn2State.singleTapTimer = nil
+        hs.alert.show("Bottom Right: Hold = Enter", 3)
+    end)
+end
+
+-- Intercept F18/F19 from Karabiner via hotkey bindings
+hs.hotkey.bind({}, "f18", btn1Down, btn1Up)
+hs.hotkey.bind({}, "f19", btn2Down, btn2Up)
+
+-- Scroll speed detection: slow scroll sends arrow keys, fast scroll passes through as scroll wheel
+local SCROLL_FAST_THRESHOLD = 0.3 -- seconds between events; isolated ticks send arrows, continuous = scroll
+local lastScrollTime = 0
+
+local scrollArrowTap = hs.eventtap.new({hs.eventtap.event.types.scrollWheel}, function(event)
+    local delta = event:getProperty(hs.eventtap.event.properties.scrollWheelEventDeltaAxis1)
+    if delta == 0 then return false end
+
+    local now = hs.timer.secondsSinceEpoch()
+    local elapsed = now - lastScrollTime
+    lastScrollTime = now
+
+    if elapsed > SCROLL_FAST_THRESHOLD then
+        -- Slow scroll: send arrow key, block scroll event
+        if delta < 0 then
+            hs.eventtap.keyStroke({}, "down", 0)
+        else
+            hs.eventtap.keyStroke({}, "up", 0)
+        end
+        return true -- block the scroll event
+    end
+
+    return false -- fast scroll: pass through as normal scroll
+end)
+scrollArrowTap:start()
+
 -- Single screen watcher: rebuild audio, sync mic, restart sketchybar
 local screenChangeTimer = nil
 local screenWatcher = hs.screen.watcher.new(function()

@@ -23,6 +23,16 @@
                         ]
                     },
                     {
+                        "description": "End key to mouse button 5",
+                        "manipulators": [
+                            {
+                                "type": "basic",
+                                "from": { "key_code": "end" },
+                                "to": [{ "pointing_button": "button5" }]
+                            }
+                        ]
+                    },
+                    {
                         "description": "Kensington Expert Mouse - Left-hand button remap",
                         "manipulators": [
                             {
@@ -62,7 +72,7 @@
                             {
                                 "type": "basic",
                                 "from": { "pointing_button": "button1" },
-                                "to": [{ "key_code": "return_or_enter" }],
+                                "to": [{ "key_code": "f18" }],
                                 "conditions": [
                                     {
                                         "type": "device_if",
@@ -79,7 +89,7 @@
                             {
                                 "type": "basic",
                                 "from": { "pointing_button": "button2" },
-                                "to": [{ "key_code": "end" }],
+                                "to": [{ "key_code": "f19" }],
                                 "conditions": [
                                     {
                                         "type": "device_if",
