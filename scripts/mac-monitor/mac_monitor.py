@@ -549,7 +549,8 @@ def collect_docker(cfg: dict) -> dict | None:
     ])
     exclude_re = re.compile("|".join(exclude_patterns), re.IGNORECASE) if exclude_patterns else None
     error_levels = set(docker_cfg.get("log_error_levels",
-                                       ["error", "fatal", "critical", "err"]))
+                                       ["error", "fatal", "critical", "err",
+                                        "warn", "warning"]))
     total_errors = 0
 
     # Per-container status + error counting
