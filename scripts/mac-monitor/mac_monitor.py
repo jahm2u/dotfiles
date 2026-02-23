@@ -558,8 +558,21 @@ def collect_docker(cfg: dict) -> dict | None:
             data[f"docker_{slug}_error_lines"] = "\n".join(
                 line[:200] for line in matched[-20:]
             )
+            data[f"docker_{slug}_error_lines_count"] = len(matched)
+            # Extract timestamp from newest error line
+            latest_ts = ""
+            if matched:
+                ts_match = re.match(
+                    r"(\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2})",
+                    matched[-1],
+                )
+                if ts_match:
+                    latest_ts = ts_match.group(1)
+            data[f"docker_{slug}_error_lines_latest"] = latest_ts
         except (subprocess.TimeoutExpired, FileNotFoundError):
             data[f"docker_{slug}_error_lines"] = ""
+            data[f"docker_{slug}_error_lines_count"] = 0
+            data[f"docker_{slug}_error_lines_latest"] = ""
 
     data["docker_total_errors"] = total_errors
 
@@ -840,7 +853,11 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
                     "json_attributes_template": (
                         "{{ {'error_lines': value_json.docker_"
                         + slug
-                        + "_error_lines} | tojson }}"
+                        + "_error_lines, 'error_lines_count': value_json.docker_"
+                        + slug
+                        + "_error_lines_count, 'error_lines_latest': value_json.docker_"
+                        + slug
+                        + "_error_lines_latest} | tojson }}"
                     ),
                     "icon": "mdi:alert-circle",
                     "device": dev,
