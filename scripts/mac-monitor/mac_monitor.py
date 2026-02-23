@@ -495,6 +495,7 @@ def collect_docker(cfg: dict) -> dict | None:
 
     # Error counting config
     error_window = docker_cfg.get("log_error_window", 300)
+    error_lines_window = docker_cfg.get("log_error_lines_window", 86400)
     error_patterns = docker_cfg.get("log_error_patterns", [
         "error", "exception", "fatal", "traceback",
         r"failed: true", "auth_failed", "invalid_token",
@@ -527,26 +528,37 @@ def collect_docker(cfg: dict) -> dict | None:
             data[f"docker_{slug}_status"] = "unknown"
             data[f"docker_{slug}_running"] = False
 
-        # Error count from recent logs
+        # Error count from recent logs (short window for charts)
         try:
             result = subprocess.run(
                 ["docker", "logs", "--since", f"{error_window}s", name],
                 capture_output=True, text=True, timeout=10,
             )
             combined = result.stdout + result.stderr
-            error_lines = [
-                line.rstrip() for line in combined.splitlines()
+            count = sum(
+                1 for line in combined.splitlines()
                 if error_re.search(line) and not (exclude_re and exclude_re.search(line))
-            ]
-            count = len(error_lines)
-            data[f"docker_{slug}_errors"] = count
-            # Keep last 10 error lines (truncated) for dashboard display
-            data[f"docker_{slug}_error_lines"] = "\n".join(
-                line[:200] for line in error_lines[-10:]
             )
+            data[f"docker_{slug}_errors"] = count
             total_errors += count
         except (subprocess.TimeoutExpired, FileNotFoundError):
             data[f"docker_{slug}_errors"] = 0
+
+        # Error lines from longer window (24h default) for dashboard display
+        try:
+            result = subprocess.run(
+                ["docker", "logs", "--since", f"{error_lines_window}s", name],
+                capture_output=True, text=True, timeout=15,
+            )
+            combined = result.stdout + result.stderr
+            matched = [
+                line.rstrip() for line in combined.splitlines()
+                if error_re.search(line) and not (exclude_re and exclude_re.search(line))
+            ]
+            data[f"docker_{slug}_error_lines"] = "\n".join(
+                line[:200] for line in matched[-20:]
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
             data[f"docker_{slug}_error_lines"] = ""
 
     data["docker_total_errors"] = total_errors

@@ -29,6 +29,7 @@
     "enabled": false,
     "watched_containers": ["container1", "container2"],
     "log_error_window": 300,
+    "log_error_lines_window": 86400,
     "log_error_patterns": ["error", "exception", "fatal", "traceback", "failed: true", "auth_failed", "invalid_token", "missing_scope", "Connection failed", "ratelimited", "RateLimitError", "APIConnectionError"],
     "log_error_exclude_patterns": ["error: none", "errors: 0", "0 errors", "failed: false", "connIndex="]
   },
