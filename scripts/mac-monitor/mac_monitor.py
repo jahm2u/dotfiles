@@ -849,17 +849,28 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
                     "unique_id": f"{node}_docker_{slug}_errors",
                     "state_topic": state_topic,
                     "value_template": f"{{{{ value_json.docker_{slug}_errors }}}}",
+                    "icon": "mdi:alert-circle",
+                    "device": dev,
+                    "availability": avail,
+                },
+            ))
+            # Separate error log sensor (24h window) for dashboard display
+            discoveries.append((
+                f"homeassistant/sensor/{node}/docker_{slug}_error_log/config",
+                {
+                    "name": f"Docker {cname} Error Log",
+                    "unique_id": f"{node}_docker_{slug}_error_log",
+                    "state_topic": state_topic,
+                    "value_template": f"{{{{ value_json.docker_{slug}_error_lines_count }}}}",
                     "json_attributes_topic": state_topic,
                     "json_attributes_template": (
                         "{{ {'error_lines': value_json.docker_"
                         + slug
-                        + "_error_lines, 'error_lines_count': value_json.docker_"
-                        + slug
-                        + "_error_lines_count, 'error_lines_latest': value_json.docker_"
+                        + "_error_lines, 'last_error_ts': value_json.docker_"
                         + slug
                         + "_error_lines_latest} | tojson }}"
                     ),
-                    "icon": "mdi:alert-circle",
+                    "icon": "mdi:text-box-search",
                     "device": dev,
                     "availability": avail,
                 },
