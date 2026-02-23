@@ -459,6 +459,46 @@ def _docker_slug(name: str) -> str:
     return re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
 
 
+_ISO_TS_RE = re.compile(r"(\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2})")
+
+
+def _parse_log_entry(line: str, error_levels: set) -> dict | None:
+    """Try to parse a log line as structured JSON, return normalized dict or None.
+
+    Returns a dict with keys: ts, level, msg, source.
+    Returns None if the line isn't JSON or doesn't match error_levels.
+    """
+    json_start = line.find("{")
+    if json_start == -1:
+        return None
+    try:
+        obj = json.loads(line[json_start:])
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    level = str(obj.get("level", "")).lower()
+    if level not in error_levels:
+        return None
+
+    msg = obj.get("msg", obj.get("message", ""))
+    source = obj.get("source", "")
+    time_val = obj.get("time", obj.get("timestamp", obj.get("ts", "")))
+
+    # Convert epoch ms to ISO string
+    ts = ""
+    if isinstance(time_val, (int, float)):
+        if time_val > 1e12:  # epoch milliseconds
+            time_val = time_val / 1000
+        ts = datetime.fromtimestamp(time_val, tz=timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    elif isinstance(time_val, str):
+        m = _ISO_TS_RE.match(time_val)
+        ts = m.group(1) if m else time_val[:25]
+
+    return {"ts": ts, "level": level, "msg": str(msg)[:200], "source": source}
+
+
 def collect_docker(cfg: dict) -> dict | None:
     """Collect Docker stats if enabled and docker CLI available."""
     docker_cfg = cfg.get("docker", {})
@@ -508,6 +548,8 @@ def collect_docker(cfg: dict) -> dict | None:
         r"failed: false", r"connIndex=", r"pong wasn't received",
     ])
     exclude_re = re.compile("|".join(exclude_patterns), re.IGNORECASE) if exclude_patterns else None
+    error_levels = set(docker_cfg.get("log_error_levels",
+                                       ["error", "fatal", "critical", "err"]))
     total_errors = 0
 
     # Per-container status + error counting
@@ -544,33 +586,44 @@ def collect_docker(cfg: dict) -> dict | None:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             data[f"docker_{slug}_errors"] = 0
 
-        # Error lines from longer window (24h default) for dashboard display
+        # Structured error entries from longer window (24h) for dashboard
         try:
             result = subprocess.run(
                 ["docker", "logs", "--since", f"{error_lines_window}s", name],
                 capture_output=True, text=True, timeout=15,
             )
             combined = result.stdout + result.stderr
-            matched = [
-                line.rstrip() for line in combined.splitlines()
-                if error_re.search(line) and not (exclude_re and exclude_re.search(line))
-            ]
-            data[f"docker_{slug}_error_lines"] = "\n".join(
-                line[:200] for line in matched[-20:]
-            )
-            data[f"docker_{slug}_error_lines_count"] = len(matched)
-            # Extract timestamp from newest error line
-            latest_ts = ""
-            if matched:
-                ts_match = re.match(
-                    r"(\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2})",
-                    matched[-1],
-                )
-                if ts_match:
-                    latest_ts = ts_match.group(1)
+            entries: list[dict] = []
+            for raw_line in combined.splitlines():
+                stripped = raw_line.rstrip()
+                if not stripped:
+                    continue
+                # Try structured JSON parse first
+                entry = _parse_log_entry(stripped, error_levels)
+                if entry:
+                    if not (exclude_re and exclude_re.search(stripped)):
+                        entries.append(entry)
+                    continue
+                # Fallback: regex match for unstructured logs
+                if error_re.search(stripped) and not (exclude_re and exclude_re.search(stripped)):
+                    ts = ""
+                    ts_match = _ISO_TS_RE.match(stripped)
+                    if ts_match:
+                        ts = ts_match.group(1)
+                    entries.append({
+                        "ts": ts,
+                        "level": "error",
+                        "msg": stripped[:200],
+                        "source": "",
+                    })
+            total_count = len(entries)
+            recent = entries[-20:]  # keep last 20 for dashboard
+            latest_ts = recent[-1]["ts"] if recent else ""
+            data[f"docker_{slug}_error_entries"] = recent
+            data[f"docker_{slug}_error_lines_count"] = total_count
             data[f"docker_{slug}_error_lines_latest"] = latest_ts
         except (subprocess.TimeoutExpired, FileNotFoundError):
-            data[f"docker_{slug}_error_lines"] = ""
+            data[f"docker_{slug}_error_entries"] = []
             data[f"docker_{slug}_error_lines_count"] = 0
             data[f"docker_{slug}_error_lines_latest"] = ""
 
@@ -864,9 +917,9 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
                     "value_template": f"{{{{ value_json.docker_{slug}_error_lines_count }}}}",
                     "json_attributes_topic": state_topic,
                     "json_attributes_template": (
-                        "{{ {'error_lines': value_json.docker_"
+                        "{{ {'error_entries': value_json.docker_"
                         + slug
-                        + "_error_lines, 'last_error_ts': value_json.docker_"
+                        + "_error_entries, 'last_error_ts': value_json.docker_"
                         + slug
                         + "_error_lines_latest} | tojson }}"
                     ),
