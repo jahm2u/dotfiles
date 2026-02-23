@@ -495,11 +495,17 @@ def collect_docker(cfg: dict) -> dict | None:
 
     # Error counting config
     error_window = docker_cfg.get("log_error_window", 300)
-    error_patterns = docker_cfg.get("log_error_patterns",
-                                     ["error", "exception", "fatal", "traceback"])
+    error_patterns = docker_cfg.get("log_error_patterns", [
+        "error", "exception", "fatal", "traceback",
+        r"failed: true", "auth_failed", "invalid_token",
+        "missing_scope", "Connection failed", "ratelimited",
+        "RateLimitError", "APIConnectionError",
+    ])
     error_re = re.compile("|".join(error_patterns), re.IGNORECASE)
-    exclude_patterns = docker_cfg.get("log_error_exclude_patterns",
-                                       [r"error: none", r"errors: 0", r"0 errors"])
+    exclude_patterns = docker_cfg.get("log_error_exclude_patterns", [
+        r"error: none", r"errors: 0", r"0 errors",
+        r"failed: false",
+    ])
     exclude_re = re.compile("|".join(exclude_patterns), re.IGNORECASE) if exclude_patterns else None
     total_errors = 0
 
