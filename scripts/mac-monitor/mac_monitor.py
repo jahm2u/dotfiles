@@ -503,6 +503,27 @@ def _parse_log_entry(line: str, error_levels: set) -> dict | None:
     return {"ts": ts, "level": level, "msg": str(msg)[:200], "source": source}
 
 
+def _is_error_line(line: str, error_re, exclude_re, error_levels: set) -> bool:
+    """Check if a log line counts as an error using both JSON and regex matching."""
+    clean = _ANSI_RE.sub("", line)
+    if exclude_re and exclude_re.search(clean):
+        return False
+    # Try structured JSON first
+    json_start = clean.find("{")
+    if json_start != -1:
+        try:
+            obj = json.loads(clean[json_start:])
+            level = str(obj.get("level", "")).lower()
+            if level in error_levels:
+                msg = str(obj.get("msg", obj.get("message", "")))
+                return not (exclude_re and exclude_re.search(msg))
+            return False
+        except (json.JSONDecodeError, ValueError):
+            pass
+    # Regex fallback
+    return bool(error_re.search(clean))
+
+
 def collect_docker(cfg: dict) -> dict | None:
     """Collect Docker stats if enabled and docker CLI available."""
     docker_cfg = cfg.get("docker", {})
@@ -584,7 +605,7 @@ def collect_docker(cfg: dict) -> dict | None:
             combined = result.stdout + result.stderr
             count = sum(
                 1 for line in combined.splitlines()
-                if error_re.search(line) and not (exclude_re and exclude_re.search(line))
+                if _is_error_line(line, error_re, exclude_re, error_levels)
             )
             data[f"docker_{slug}_errors"] = count
             total_errors += count
@@ -616,11 +637,14 @@ def collect_docker(cfg: dict) -> dict | None:
                 if error_re.search(clean) and not (exclude_re and exclude_re.search(clean)):
                     ts = ""
                     msg = clean
-                    # Extract and strip leading timestamp from msg
-                    ts_match = _ISO_TS_RE.match(clean)
+                    # Extract timestamp from anywhere in the line
+                    ts_match = _ISO_TS_RE.search(clean)
                     if ts_match:
                         ts = ts_match.group(1)
-                        msg = clean[ts_match.end():].lstrip(" |:-")
+                        # Strip timestamp + surrounding chars from msg
+                        before = clean[:ts_match.start()].rstrip(" [")
+                        after = clean[ts_match.end():].lstrip(" |:.-]")
+                        msg = (before + " " + after).strip() if before else after
                     # Detect actual log level from line
                     level = "error"
                     level_match = _LEVEL_RE.search(msg)
