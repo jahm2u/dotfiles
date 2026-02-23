@@ -480,7 +480,7 @@ def _parse_log_entry(line: str, error_levels: set) -> dict | None:
     except (json.JSONDecodeError, ValueError):
         return None
 
-    level = str(obj.get("level", "")).lower()
+    level = str(obj.get("level", obj.get("type", ""))).lower()
     if level not in error_levels:
         return None
 
@@ -503,25 +503,24 @@ def _parse_log_entry(line: str, error_levels: set) -> dict | None:
     return {"ts": ts, "level": level, "msg": str(msg)[:200], "source": source}
 
 
-def _is_error_line(line: str, error_re, exclude_re, error_levels: set) -> bool:
-    """Check if a log line counts as an error using both JSON and regex matching."""
+def _is_error_line(line: str, exclude_re, error_levels: set) -> bool:
+    """Check if a log line counts as an error using structured JSON level/type field."""
     clean = _ANSI_RE.sub("", line)
     if exclude_re and exclude_re.search(clean):
         return False
-    # Try structured JSON first
+    # Only match structured JSON with a level/type field
     json_start = clean.find("{")
-    if json_start != -1:
-        try:
-            obj = json.loads(clean[json_start:])
-            level = str(obj.get("level", "")).lower()
-            if level in error_levels:
-                msg = str(obj.get("msg", obj.get("message", "")))
-                return not (exclude_re and exclude_re.search(msg))
-            return False
-        except (json.JSONDecodeError, ValueError):
-            pass
-    # Regex fallback
-    return bool(error_re.search(clean))
+    if json_start == -1:
+        return False
+    try:
+        obj = json.loads(clean[json_start:])
+        level = str(obj.get("level", obj.get("type", ""))).lower()
+        if level in error_levels:
+            msg = str(obj.get("msg", obj.get("message", "")))
+            return not (exclude_re and exclude_re.search(msg))
+        return False
+    except (json.JSONDecodeError, ValueError):
+        return False
 
 
 def collect_docker(cfg: dict) -> dict | None:
@@ -561,13 +560,6 @@ def collect_docker(cfg: dict) -> dict | None:
     # Error counting config
     error_window = docker_cfg.get("log_error_window", 300)
     error_lines_window = docker_cfg.get("log_error_lines_window", 86400)
-    error_patterns = docker_cfg.get("log_error_patterns", [
-        "error", "exception", "fatal", "traceback",
-        r"failed: true", "auth_failed", "invalid_token",
-        "missing_scope", "Connection failed", "ratelimited",
-        "RateLimitError", "APIConnectionError",
-    ])
-    error_re = re.compile("|".join(error_patterns), re.IGNORECASE)
     exclude_patterns = docker_cfg.get("log_error_exclude_patterns", [
         r"error: none", r"errors: 0", r"0 errors",
         r"failed: false", r"connIndex=", r"pong.+received",
@@ -605,7 +597,7 @@ def collect_docker(cfg: dict) -> dict | None:
             combined = result.stdout + result.stderr
             count = sum(
                 1 for line in combined.splitlines()
-                if _is_error_line(line, error_re, exclude_re, error_levels)
+                if _is_error_line(line, exclude_re, error_levels)
             )
             data[f"docker_{slug}_errors"] = count
             total_errors += count
@@ -624,43 +616,13 @@ def collect_docker(cfg: dict) -> dict | None:
                 stripped = raw_line.rstrip()
                 if not stripped:
                     continue
-                # Try structured JSON parse first
+                # Only match structured JSON with level/type field
                 entry = _parse_log_entry(stripped, error_levels)
                 if entry:
                     if not (exclude_re and (
                         exclude_re.search(stripped) or exclude_re.search(entry["msg"])
                     )):
                         entries.append(entry)
-                    continue
-                # Fallback: regex match for unstructured logs
-                clean = _ANSI_RE.sub("", stripped)
-                if error_re.search(clean) and not (exclude_re and exclude_re.search(clean)):
-                    ts = ""
-                    msg = clean
-                    # Extract timestamp from anywhere in the line
-                    ts_match = _ISO_TS_RE.search(clean)
-                    if ts_match:
-                        ts = ts_match.group(1)
-                        # Strip timestamp + surrounding chars from msg
-                        before = clean[:ts_match.start()].rstrip(" [")
-                        after = clean[ts_match.end():].lstrip(" |:.-]")
-                        msg = (before + " " + after).strip() if before else after
-                    # Detect actual log level from line
-                    level = "error"
-                    level_match = _LEVEL_RE.search(msg)
-                    if level_match:
-                        level = level_match.group(1).lower()
-                        # Normalize warn/err variants
-                        if level == "err":
-                            level = "error"
-                        if level == "warning":
-                            level = "warn"
-                    entries.append({
-                        "ts": ts,
-                        "level": level,
-                        "msg": msg.strip()[:200],
-                        "source": "",
-                    })
             total_count = len(entries)
             recent = entries[-20:]  # keep last 20 for dashboard
             latest_ts = recent[-1]["ts"] if recent else ""
