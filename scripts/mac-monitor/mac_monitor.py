@@ -460,6 +460,10 @@ def _docker_slug(name: str) -> str:
 
 
 _ISO_TS_RE = re.compile(r"(\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2})")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_LEVEL_RE = re.compile(
+    r"\b(ERROR|FATAL|CRITICAL|WARNING|WARN|ERR)\b", re.IGNORECASE,
+)
 
 
 def _parse_log_entry(line: str, error_levels: set) -> dict | None:
@@ -608,15 +612,29 @@ def collect_docker(cfg: dict) -> dict | None:
                         entries.append(entry)
                     continue
                 # Fallback: regex match for unstructured logs
-                if error_re.search(stripped) and not (exclude_re and exclude_re.search(stripped)):
+                clean = _ANSI_RE.sub("", stripped)
+                if error_re.search(clean) and not (exclude_re and exclude_re.search(clean)):
                     ts = ""
-                    ts_match = _ISO_TS_RE.match(stripped)
+                    msg = clean
+                    # Extract and strip leading timestamp from msg
+                    ts_match = _ISO_TS_RE.match(clean)
                     if ts_match:
                         ts = ts_match.group(1)
+                        msg = clean[ts_match.end():].lstrip(" |:-")
+                    # Detect actual log level from line
+                    level = "error"
+                    level_match = _LEVEL_RE.search(msg)
+                    if level_match:
+                        level = level_match.group(1).lower()
+                        # Normalize warn/err variants
+                        if level == "err":
+                            level = "error"
+                        if level == "warning":
+                            level = "warn"
                     entries.append({
                         "ts": ts,
-                        "level": "error",
-                        "msg": stripped[:200],
+                        "level": level,
+                        "msg": msg.strip()[:200],
                         "source": "",
                     })
             total_count = len(entries)
