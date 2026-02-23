@@ -545,7 +545,7 @@ def collect_docker(cfg: dict) -> dict | None:
     error_re = re.compile("|".join(error_patterns), re.IGNORECASE)
     exclude_patterns = docker_cfg.get("log_error_exclude_patterns", [
         r"error: none", r"errors: 0", r"0 errors",
-        r"failed: false", r"connIndex=", r"pong wasn't received",
+        r"failed: false", r"connIndex=", r"pong.+received",
     ])
     exclude_re = re.compile("|".join(exclude_patterns), re.IGNORECASE) if exclude_patterns else None
     error_levels = set(docker_cfg.get("log_error_levels",
@@ -602,7 +602,9 @@ def collect_docker(cfg: dict) -> dict | None:
                 # Try structured JSON parse first
                 entry = _parse_log_entry(stripped, error_levels)
                 if entry:
-                    if not (exclude_re and exclude_re.search(stripped)):
+                    if not (exclude_re and (
+                        exclude_re.search(stripped) or exclude_re.search(entry["msg"])
+                    )):
                         entries.append(entry)
                     continue
                 # Fallback: regex match for unstructured logs
