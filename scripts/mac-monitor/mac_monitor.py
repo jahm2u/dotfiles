@@ -525,11 +525,17 @@ def collect_docker(cfg: dict) -> dict | None:
                 capture_output=True, text=True, timeout=10,
             )
             combined = result.stdout + result.stderr
-            count = sum(1 for line in combined.splitlines() if error_re.search(line))
+            error_lines = [line.rstrip() for line in combined.splitlines() if error_re.search(line)]
+            count = len(error_lines)
             data[f"docker_{slug}_errors"] = count
+            # Keep last 10 error lines (truncated) for dashboard display
+            data[f"docker_{slug}_error_lines"] = "\n".join(
+                line[:200] for line in error_lines[-10:]
+            )
             total_errors += count
         except (subprocess.TimeoutExpired, FileNotFoundError):
             data[f"docker_{slug}_errors"] = 0
+            data[f"docker_{slug}_error_lines"] = ""
 
     data["docker_total_errors"] = total_errors
 
@@ -806,6 +812,12 @@ def publish_discovery(client: mqtt.Client, cfg: dict) -> None:
                     "unique_id": f"{node}_docker_{slug}_errors",
                     "state_topic": state_topic,
                     "value_template": f"{{{{ value_json.docker_{slug}_errors }}}}",
+                    "json_attributes_topic": state_topic,
+                    "json_attributes_template": (
+                        "{{ {'error_lines': value_json.docker_"
+                        + slug
+                        + "_error_lines} | tojson }}"
+                    ),
                     "icon": "mdi:alert-circle",
                     "device": dev,
                     "availability": avail,
