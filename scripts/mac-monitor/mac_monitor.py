@@ -498,6 +498,9 @@ def collect_docker(cfg: dict) -> dict | None:
     error_patterns = docker_cfg.get("log_error_patterns",
                                      ["error", "exception", "fatal", "traceback"])
     error_re = re.compile("|".join(error_patterns), re.IGNORECASE)
+    exclude_patterns = docker_cfg.get("log_error_exclude_patterns",
+                                       [r"error: none", r"errors: 0", r"0 errors"])
+    exclude_re = re.compile("|".join(exclude_patterns), re.IGNORECASE) if exclude_patterns else None
     total_errors = 0
 
     # Per-container status + error counting
@@ -525,7 +528,10 @@ def collect_docker(cfg: dict) -> dict | None:
                 capture_output=True, text=True, timeout=10,
             )
             combined = result.stdout + result.stderr
-            error_lines = [line.rstrip() for line in combined.splitlines() if error_re.search(line)]
+            error_lines = [
+                line.rstrip() for line in combined.splitlines()
+                if error_re.search(line) and not (exclude_re and exclude_re.search(line))
+            ]
             count = len(error_lines)
             data[f"docker_{slug}_errors"] = count
             # Keep last 10 error lines (truncated) for dashboard display

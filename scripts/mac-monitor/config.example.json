@@ -29,7 +29,8 @@
     "enabled": false,
     "watched_containers": ["container1", "container2"],
     "log_error_window": 300,
-    "log_error_patterns": ["error", "exception", "fatal", "traceback"]
+    "log_error_patterns": ["error", "exception", "fatal", "traceback"],
+    "log_error_exclude_patterns": ["error: none", "errors: 0", "0 errors"]
   },
   "shortcuts": []
 }
