@@ -38,7 +38,7 @@
                             {
                                 "type": "basic",
                                 "from": { "pointing_button": "button3" },
-                                "to": [{ "pointing_button": "button2" }],
+                                "to": [{ "key_code": "f20" }],
                                 "conditions": [
                                     {
                                         "type": "device_if",
@@ -72,7 +72,7 @@
                             {
                                 "type": "basic",
                                 "from": { "pointing_button": "button1" },
-                                "to": [{ "key_code": "f18" }],
+                                "to": [{ "pointing_button": "button5" }],
                                 "conditions": [
                                     {
                                         "type": "device_if",
@@ -89,7 +89,7 @@
                             {
                                 "type": "basic",
                                 "from": { "pointing_button": "button2" },
-                                "to": [{ "key_code": "f19" }],
+                                "to": [{ "key_code": "return_or_enter" }],
                                 "conditions": [
                                     {
                                         "type": "device_if",

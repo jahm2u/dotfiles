@@ -656,13 +656,6 @@ local rightMonitorInputUid = nil -- mic always on right monitor
 local audioPreviewIndex = 0     -- device being previewed (0 = no preview active)
 local audioPreviewTimer = nil   -- auto-apply timer
 
--- Two-phase state: "device" = cycling devices, "volume" = adjusting volume
-local audioMode = "device"
-local volumeModeTimer = nil     -- resets to device mode after 8s inactivity
-
--- Volume state
-local volumeLevels = {0, 25, 50, 75, 100}
-local audioVolumeIndex = 3      -- current position in volumeLevels (default 50%)
 
 -- Balance offset for LG Dual mode (range: -20 to +20)
 -- Positive = boost left monitor, Negative = boost right monitor
@@ -837,18 +830,6 @@ local function initAudioCycleIndex()
     audioCycleIndex = 1
 end
 
--- Snap audioVolumeIndex to nearest level from current system volume
-local function syncVolumeIndex()
-    local current = hs.audiodevice.defaultOutputDevice()
-    local vol = current and current:volume() or 50
-    audioVolumeIndex = 1
-    for vi = #volumeLevels, 1, -1 do
-        if vol >= volumeLevels[vi] - 10 then
-            audioVolumeIndex = vi
-            break
-        end
-    end
-end
 
 -- Draw a flat geometric speaker icon on the canvas
 -- level: 0=muted, 1=low, 2=high
@@ -1015,87 +996,6 @@ local function showDevicePreview()
     audioCanvas:show()
 end
 
--- Show the volume slider overlay (glass style)
-local function showVolumePreview()
-    hideAudioOverlay()
-
-    local W, H = 300, 72
-    local screen = hs.mouse.getCurrentScreen() or hs.screen.mainScreen()
-    local sf = screen:frame()
-
-    audioCanvas = hs.canvas.new({
-        x = sf.x + (sf.w - W) / 2,
-        y = sf.y + sf.h - H - 120,
-        w = W, h = H,
-    })
-    audioCanvas:level(hs.canvas.windowLevels.overlay)
-    audioCanvas:behavior(hs.canvas.windowBehaviors.canJoinAllSpaces + hs.canvas.windowBehaviors.stationary)
-
-    -- Background
-    audioCanvas:appendElements({
-        type = "rectangle",
-        action = "strokeAndFill",
-        fillColor = {white = 0.12, alpha = 0.78},
-        strokeColor = {white = 0.5, alpha = 0.25},
-        strokeWidth = 0.5,
-        roundedRectRadii = {xRadius = 16, yRadius = 16},
-    })
-
-    -- Device label
-    local device = audioDevices[audioCycleIndex]
-    local label = device and device.label or "Unknown"
-    audioCanvas:appendElements({
-        type = "text",
-        text = hs.styledtext.new(label, {
-            font = {name = ".AppleSystemUIFont", size = 13},
-            color = {white = 0.9, alpha = 0.95},
-            paragraphStyle = {alignment = "center"},
-        }),
-        frame = {x = 40, y = 8, w = W - 80, h = 20},
-    })
-
-    -- Speaker icon (low)
-    drawSpeakerIcon(audioCanvas, 14, 34, 18, 1, {white = 0.7, alpha = 0.9})
-
-    -- Slider track
-    local trackX, trackY, trackW, trackH = 42, 40, W - 84, 6
-    audioCanvas:appendElements({
-        type = "rectangle",
-        action = "fill",
-        fillColor = {white = 0.25, alpha = 0.5},
-        roundedRectRadii = {xRadius = 3, yRadius = 3},
-        frame = {x = trackX, y = trackY, w = trackW, h = trackH},
-    })
-
-    -- Slider fill
-    local vol = volumeLevels[audioVolumeIndex]
-    local fillW = math.max(0, trackW * vol / 100)
-    if fillW > 1 then
-        audioCanvas:appendElements({
-            type = "rectangle",
-            action = "fill",
-            fillColor = {white = 1, alpha = 0.9},
-            roundedRectRadii = {xRadius = 3, yRadius = 3},
-            frame = {x = trackX, y = trackY, w = fillW, h = trackH},
-        })
-    end
-
-    -- Speaker icon (high)
-    drawSpeakerIcon(audioCanvas, W - 36, 34, 18, 2, {white = 0.7, alpha = 0.9})
-
-    -- Volume percentage
-    audioCanvas:appendElements({
-        type = "text",
-        text = hs.styledtext.new(vol .. "%", {
-            font = {name = ".AppleSystemUIFont", size = 11},
-            color = {white = 0.65, alpha = 0.85},
-            paragraphStyle = {alignment = "center"},
-        }),
-        frame = {x = 40, y = 52, w = W - 80, h = 16},
-    })
-
-    audioCanvas:show()
-end
 
 -- Show quick volume feedback (for hardware keys and apply confirmation)
 local function showQuickVolume(vol, label)
@@ -1170,21 +1070,6 @@ local function showQuickVolume(vol, label)
     end)
 end
 
--- Set volume on the current active device
-local function applyVolume()
-    local device = audioDevices[audioCycleIndex]
-    if not device then return end
-    local volume = volumeLevels[audioVolumeIndex]
-
-    if device.isDual then
-        setDualVolume(device, volume)
-    else
-        local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
-        if dev then dev:setVolume(volume) end
-    end
-
-    showQuickVolume(volume, device.label)
-end
 
 -- Switch output to the previewed device
 local function applyAudioSelection()
@@ -1239,14 +1124,8 @@ local function applyAudioSelection()
     end
 end
 
--- Main handler: direction 1=forward (]), -1=backward ([)
--- Phase 1 (device mode): cycle devices, auto-applies after 2s, then enters volume mode
--- Phase 2 (volume mode): cycle volume levels, auto-applies after 2s
--- Resets to device mode after 8s of inactivity
+-- Cycle through audio devices: direction 1=forward, -1=backward
 local function cycleAudio(direction)
-    -- Cancel volume mode reset timer on any interaction
-    if volumeModeTimer then volumeModeTimer:stop(); volumeModeTimer = nil end
-
     if #audioDevices == 0 then
         buildAudioDeviceList()
         initAudioCycleIndex()
@@ -1256,61 +1135,32 @@ local function cycleAudio(direction)
         return
     end
 
-    if audioMode == "volume" then
-        -- Phase 2: cycle volume levels
-        audioVolumeIndex = audioVolumeIndex + direction
-        if audioVolumeIndex > #volumeLevels then audioVolumeIndex = 1 end
-        if audioVolumeIndex < 1 then audioVolumeIndex = #volumeLevels end
-
-        showVolumePreview()
-
-        if audioPreviewTimer then audioPreviewTimer:stop() end
-        audioPreviewTimer = hs.timer.doAfter(2, function()
-            audioPreviewTimer = nil
-            applyVolume()
-            -- Reset to device mode after 8s of inactivity
-            volumeModeTimer = hs.timer.doAfter(8, function()
-                volumeModeTimer = nil
-                audioMode = "device"
-            end)
-        end)
-    else
-        -- Phase 1: cycle devices
-        if audioPreviewIndex == 0 then
-            audioPreviewIndex = audioCycleIndex
-        end
-
-        audioPreviewIndex = audioPreviewIndex + direction
-        if audioPreviewIndex > #audioDevices then audioPreviewIndex = 1 end
-        if audioPreviewIndex < 1 then audioPreviewIndex = #audioDevices end
-
-        showDevicePreview()
-
-        if audioPreviewTimer then audioPreviewTimer:stop() end
-        audioPreviewTimer = hs.timer.doAfter(2, function()
-            audioPreviewTimer = nil
-            applyAudioSelection()
-            -- Transition to volume mode
-            audioMode = "volume"
-            syncVolumeIndex()
-        end)
+    if audioPreviewIndex == 0 then
+        audioPreviewIndex = audioCycleIndex
     end
+
+    audioPreviewIndex = audioPreviewIndex + direction
+    if audioPreviewIndex > #audioDevices then audioPreviewIndex = 1 end
+    if audioPreviewIndex < 1 then audioPreviewIndex = #audioDevices end
+
+    showDevicePreview()
+
+    if audioPreviewTimer then audioPreviewTimer:stop() end
+    audioPreviewTimer = hs.timer.doAfter(2, function()
+        audioPreviewTimer = nil
+        applyAudioSelection()
+    end)
 end
 
 -- Initialize device list and state
 buildAudioDeviceList()
 initAudioCycleIndex()
-syncVolumeIndex()
 
--- Bind Ctrl+Option+Cmd+] for forward
-hs.hotkey.bind({"ctrl", "alt", "cmd"}, "]", function() cycleAudio(1) end)
 
--- Bind Ctrl+Option+Cmd+[ for backward
-hs.hotkey.bind({"ctrl", "alt", "cmd"}, "[", function() cycleAudio(-1) end)
-
--- Intercept system volume keys for all devices (glass overlay instead of native HUD)
--- NOTE: macOS will disable an eventtap if the callback takes too long.
--- We defer canvas work (showQuickVolume) so the tap returns instantly.
+-- Intercept system volume keys with modifiers
+-- Ctrl+Alt + Volume = adjust volume on current device (with overlay)
+-- Cmd+Ctrl+Alt + Volume = cycle through audio devices
+-- Plain volume keys = pass through to native macOS
 local VOLUME_STEP = 6.25  -- ~16 steps like native macOS
 local pendingVolumeFeedback = nil  -- {vol, label} to show after tap returns
 
@@ -1319,17 +1169,14 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
         local data = event:systemKey()
         if not data then return false end
 
-        -- Ignore non-volume keys
         if data.key ~= "SOUND_UP" and data.key ~= "SOUND_DOWN" and data.key ~= "MUTE" then
             return false
         end
 
-        -- Always consume volume keys to suppress native HUD
         local mods = hs.eventtap.checkKeyboardModifiers()
-        local ctrlAlt = mods.ctrl and mods.alt and not mods.cmd
 
-        -- Ctrl+Option + Volume Up/Down = switch audio device
-        if ctrlAlt and data.down then
+        -- Cmd+Ctrl+Alt + Volume = cycle audio devices
+        if mods.cmd and mods.ctrl and mods.alt and data.down then
             if data.key == "SOUND_UP" then
                 cycleAudio(1)
             elseif data.key == "SOUND_DOWN" then
@@ -1338,73 +1185,77 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
             return true
         end
 
-        -- Plain volume keys = adjust volume
-        local device = audioDevices[audioCycleIndex]
-        if not device then return true end
-        local label = device.label or "Unknown"
+        -- Ctrl+Alt + Volume = adjust volume on current device
+        if mods.ctrl and mods.alt and not mods.cmd then
+            if not data.down then return true end
 
-        if data.key == "SOUND_UP" and data.down then
-            if device.isDual then
-                for _, uid in ipairs(device.outputUids) do
-                    local dev = hs.audiodevice.findDeviceByUID(uid)
-                    if dev then dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP)) end
+            local device = audioDevices[audioCycleIndex]
+            if not device then return true end
+            local label = device.label or "Unknown"
+
+            if data.key == "SOUND_UP" then
+                if device.isDual then
+                    for _, uid in ipairs(device.outputUids) do
+                        local dev = hs.audiodevice.findDeviceByUID(uid)
+                        if dev then dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP)) end
+                    end
+                    local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+                    pendingVolumeFeedback = {sample and math.floor(sample:volume() + 0.5) or 0, label}
+                else
+                    local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+                    if dev then
+                        dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP))
+                        pendingVolumeFeedback = {math.floor(dev:volume() + 0.5), label}
+                    end
                 end
-                local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
-                pendingVolumeFeedback = {sample and math.floor(sample:volume() + 0.5) or 0, label}
-            else
-                local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
-                if dev then
-                    dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP))
-                    pendingVolumeFeedback = {math.floor(dev:volume() + 0.5), label}
+            elseif data.key == "SOUND_DOWN" then
+                if device.isDual then
+                    for _, uid in ipairs(device.outputUids) do
+                        local dev = hs.audiodevice.findDeviceByUID(uid)
+                        if dev then dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP)) end
+                    end
+                    local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+                    pendingVolumeFeedback = {sample and math.floor(sample:volume() + 0.5) or 0, label}
+                else
+                    local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+                    if dev then
+                        dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP))
+                        pendingVolumeFeedback = {math.floor(dev:volume() + 0.5), label}
+                    end
                 end
-            end
-        elseif data.key == "SOUND_DOWN" and data.down then
-            if device.isDual then
-                for _, uid in ipairs(device.outputUids) do
-                    local dev = hs.audiodevice.findDeviceByUID(uid)
-                    if dev then dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP)) end
-                end
-                local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
-                pendingVolumeFeedback = {sample and math.floor(sample:volume() + 0.5) or 0, label}
-            else
-                local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
-                if dev then
-                    dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP))
-                    pendingVolumeFeedback = {math.floor(dev:volume() + 0.5), label}
-                end
-            end
-        elseif data.key == "MUTE" and data.down and not data["repeat"] then
-            if device.isDual then
-                for _, uid in ipairs(device.outputUids) do
-                    local dev = hs.audiodevice.findDeviceByUID(uid)
-                    if dev then dev:setMuted(not dev:muted()) end
-                end
-                local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
-                local muted = sample and sample:muted()
-                local vol = muted and 0 or (sample and math.floor(sample:volume() + 0.5) or 50)
-                pendingVolumeFeedback = {vol, muted and label .. " \u{00B7} Muted" or label}
-            else
-                local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
-                if dev then
-                    dev:setMuted(not dev:muted())
-                    local muted = dev:muted()
-                    local vol = muted and 0 or math.floor(dev:volume() + 0.5)
+            elseif data.key == "MUTE" and not data["repeat"] then
+                if device.isDual then
+                    for _, uid in ipairs(device.outputUids) do
+                        local dev = hs.audiodevice.findDeviceByUID(uid)
+                        if dev then dev:setMuted(not dev:muted()) end
+                    end
+                    local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+                    local muted = sample and sample:muted()
+                    local vol = muted and 0 or (sample and math.floor(sample:volume() + 0.5) or 50)
                     pendingVolumeFeedback = {vol, muted and label .. " \u{00B7} Muted" or label}
+                else
+                    local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+                    if dev then
+                        dev:setMuted(not dev:muted())
+                        local muted = dev:muted()
+                        local vol = muted and 0 or math.floor(dev:volume() + 0.5)
+                        pendingVolumeFeedback = {vol, muted and label .. " \u{00B7} Muted" or label}
+                    end
                 end
             end
+
+            if pendingVolumeFeedback then
+                local fb = pendingVolumeFeedback
+                pendingVolumeFeedback = nil
+                hs.timer.doAfter(0, function() showQuickVolume(fb[1], fb[2]) end)
+            end
+            return true
         end
 
-        -- Defer canvas work to next run loop so the tap returns instantly
-        if pendingVolumeFeedback then
-            local fb = pendingVolumeFeedback
-            pendingVolumeFeedback = nil
-            hs.timer.doAfter(0, function() showQuickVolume(fb[1], fb[2]) end)
-        end
-
-        return true
+        -- Plain volume keys: pass through to native macOS
+        return false
     end)
-    -- Always consume volume keys even if callback errored
-    if ok then return consume else return true end
+    if ok then return consume else return false end
 end)
 volumeKeyTap:start()
 
@@ -1422,7 +1273,6 @@ local audioRebuildTimer = nil
 local function rebuildAudioFull()
     buildAudioDeviceList()
     initAudioCycleIndex()
-    syncVolumeIndex()
     -- Sync count AFTER rebuild (buildAudioDeviceList may create multi-output device)
     lastKnownDeviceCount = #hs.audiodevice.allOutputDevices()
 end
@@ -1443,90 +1293,38 @@ hs.audiodevice.watcher.setCallback(function(event)
     elseif event == "dOut" then
         -- Normal switch (menu bar, our picker) — just re-index
         initAudioCycleIndex()
-        syncVolumeIndex()
     end
 end)
 hs.audiodevice.watcher.start()
 
--- Kensington Expert Mouse: Bottom button logic + scroll-to-arrow
--- Karabiner sends F18 (bottom-left) and F19 (bottom-right) for Kensington only.
--- Hammerspoon handles tap/double-tap/hold detection + scroll piggyback.
---
--- Bottom left (F18):  single=mouse button 5 | double=Escape x2 | hold=Escape
--- Bottom right (F19): single(2s)=help | hold=Enter
+-- Kensington Expert Mouse: Button logic + scroll-to-arrow
+-- Karabiner sends F18 (bottom-left) and F20 (top-left) for Kensington only.
+-- Top right: left click (Karabiner: button4 → button1)
+-- Bottom right: Enter (Karabiner: button2 → return_or_enter)
+-- Top left (F20):    single=right-click (instant) | double=Escape
+-- Bottom left (F18): button 5
 -- Scroll down: normal scroll + Down arrow key
 -- Scroll up: normal scroll + Up arrow key
 
 local DOUBLE_TAP_WINDOW = 0.3
-local HOLD_THRESHOLD = 0.3
-local HELP_DELAY = 2.0
 
-local btn1State = { lastTapTime = 0, holdTimer = nil, singleTapTimer = nil, held = false }
-local btn2State = { lastTapTime = 0, holdTimer = nil, singleTapTimer = nil, held = false }
+-- Button: top-left (F20): instant right-click, double=Escape
+local topLeftState = { lastTapTime = 0 }
 
--- Button 1 (F18 / bottom left): single=button5, double=Escape x2, hold=Escape
-local function btn1Down()
-    if btn1State.held then return end
-    if btn1State.singleTapTimer then btn1State.singleTapTimer:stop(); btn1State.singleTapTimer = nil end
-
+local function topLeftDown()
     local now = hs.timer.secondsSinceEpoch()
-    if (now - btn1State.lastTapTime) < DOUBLE_TAP_WINDOW then
-        btn1State.lastTapTime = 0
-        if btn1State.holdTimer then btn1State.holdTimer:stop(); btn1State.holdTimer = nil end
+    if (now - topLeftState.lastTapTime) < DOUBLE_TAP_WINDOW then
+        topLeftState.lastTapTime = 0
         hs.eventtap.keyStroke({}, "escape", 0)
-        hs.eventtap.keyStroke({}, "escape", 0)
-        return
+    else
+        topLeftState.lastTapTime = now
+        hs.eventtap.rightClick(hs.mouse.absolutePosition())
     end
-
-    btn1State.holdTimer = hs.timer.doAfter(HOLD_THRESHOLD, function()
-        btn1State.holdTimer = nil
-        btn1State.held = true
-        hs.eventtap.keyStroke({}, "escape", 0)
-    end)
 end
 
-local function btn1Up()
-    if btn1State.held then
-        btn1State.held = false
-        return
-    end
-    if btn1State.holdTimer then btn1State.holdTimer:stop(); btn1State.holdTimer = nil end
+hs.hotkey.bind({}, "f20", topLeftDown)
 
-    btn1State.lastTapTime = hs.timer.secondsSinceEpoch()
-    btn1State.singleTapTimer = hs.timer.doAfter(DOUBLE_TAP_WINDOW, function()
-        btn1State.singleTapTimer = nil
-        btn1State.lastTapTime = 0
-        hs.eventtap.otherClick({x=0, y=0}, 0, 4) -- button5 (0-indexed: 4)
-    end)
-end
-
--- Button 2 (F19 / bottom right): hold=Enter
-local function btn2Down()
-    if btn2State.held then return end
-
-    btn2State.holdTimer = hs.timer.doAfter(HOLD_THRESHOLD, function()
-        btn2State.holdTimer = nil
-        btn2State.held = true
-        hs.eventtap.keyStroke({}, "return", 0)
-    end)
-end
-
-local function btn2Up()
-    if btn2State.held then
-        btn2State.held = false
-        return
-    end
-    if btn2State.holdTimer then btn2State.holdTimer:stop(); btn2State.holdTimer = nil end
-
-    btn2State.singleTapTimer = hs.timer.doAfter(HELP_DELAY, function()
-        btn2State.singleTapTimer = nil
-        hs.alert.show("Bottom Right: Hold = Enter", 3)
-    end)
-end
-
--- Intercept F18/F19 from Karabiner via hotkey bindings
-hs.hotkey.bind({}, "f18", btn1Down, btn1Up)
-hs.hotkey.bind({}, "f19", btn2Down, btn2Up)
+-- Bottom-left: Karabiner sends F18, no Hammerspoon interception (passes through to system)
 
 -- Scroll speed detection: slow scroll sends arrow keys, fast scroll passes through as scroll wheel
 local SCROLL_FAST_THRESHOLD = 0.3 -- seconds between events; isolated ticks send arrows, continuous = scroll

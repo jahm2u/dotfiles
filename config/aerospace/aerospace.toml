@@ -159,6 +159,12 @@ automatically-unhide-macos-hidden-apps = false
     ctrl-alt-minus = 'resize smart -100'
     ctrl-alt-equal = 'resize smart +100'
 
+    # Reset layout for current workspace
+    ctrl-alt-g = 'flatten-workspace-tree'
+
+    # Toggle floating/tiling for current window
+    ctrl-alt-f = 'layout floating tiling'
+
     # Service mode for advanced commands
     shift-alt-semicolon = 'mode service'
 
@@ -175,9 +181,6 @@ automatically-unhide-macos-hidden-apps = false
 
     # Join commands moved to main mode with ctrl-shift-alt modifiers
 
-    down = 'volume down'
-    up = 'volume up'
-    shift-down = ['volume set 0', 'mode main']
 
 # Application-specific configurations
 [[on-window-detected]]
