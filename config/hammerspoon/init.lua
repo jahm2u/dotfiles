@@ -1297,60 +1297,11 @@ hs.audiodevice.watcher.setCallback(function(event)
 end)
 hs.audiodevice.watcher.start()
 
--- Kensington Expert Mouse: Button logic + scroll-to-arrow
--- Karabiner sends F18 (bottom-left) and F20 (top-left) for Kensington only.
--- Top right: left click (Karabiner: button4 → button1)
--- Bottom right: Enter (Karabiner: button2 → return_or_enter)
--- Top left (F20):    single=right-click (instant) | double=Escape
--- Bottom left (F18): button 5
--- Scroll down: normal scroll + Down arrow key
--- Scroll up: normal scroll + Up arrow key
-
-local DOUBLE_TAP_WINDOW = 0.3
-
--- Button: top-left (F20): instant right-click, double=Escape
-local topLeftState = { lastTapTime = 0 }
-
-local function topLeftDown()
-    local now = hs.timer.secondsSinceEpoch()
-    if (now - topLeftState.lastTapTime) < DOUBLE_TAP_WINDOW then
-        topLeftState.lastTapTime = 0
-        hs.eventtap.keyStroke({}, "escape", 0)
-    else
-        topLeftState.lastTapTime = now
-        hs.eventtap.rightClick(hs.mouse.absolutePosition())
-    end
-end
-
-hs.hotkey.bind({}, "f20", topLeftDown)
-
--- Bottom-left: Karabiner sends F18, no Hammerspoon interception (passes through to system)
-
--- Scroll speed detection: slow scroll sends arrow keys, fast scroll passes through as scroll wheel
-local SCROLL_FAST_THRESHOLD = 0.3 -- seconds between events; isolated ticks send arrows, continuous = scroll
-local lastScrollTime = 0
-
-local scrollArrowTap = hs.eventtap.new({hs.eventtap.event.types.scrollWheel}, function(event)
-    local delta = event:getProperty(hs.eventtap.event.properties.scrollWheelEventDeltaAxis1)
-    if delta == 0 then return false end
-
-    local now = hs.timer.secondsSinceEpoch()
-    local elapsed = now - lastScrollTime
-    lastScrollTime = now
-
-    if elapsed > SCROLL_FAST_THRESHOLD then
-        -- Slow scroll: send arrow key, block scroll event
-        if delta < 0 then
-            hs.eventtap.keyStroke({}, "down", 0)
-        else
-            hs.eventtap.keyStroke({}, "up", 0)
-        end
-        return true -- block the scroll event
-    end
-
-    return false -- fast scroll: pass through as normal scroll
-end)
-scrollArrowTap:start()
+-- Kensington Expert Mouse: Button layout (all handled in Karabiner)
+-- Top right: left click (button4 → button1)
+-- Top left: right click (button3 → button2)
+-- Bottom right: Enter (button2 → return_or_enter)
+-- Bottom left: Ctrl+Option+G (button1 → key combo)
 
 -- Single screen watcher: rebuild audio, sync mic, restart sketchybar
 local screenChangeTimer = nil
