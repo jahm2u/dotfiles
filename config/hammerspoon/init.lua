@@ -644,13 +644,20 @@ hs.hotkey.bind({"ctrl", "alt", "cmd"}, "p", toggleSketchybarPrivacy)
 -- Calendar sync is now handled via LaunchAgent calling sync-calendars.sh helper
 
 -- Audio output switching with visual preview and volume control
--- Phase 1: ] and [ browse devices; auto-applies after 2s
--- Phase 2: after device applies, ] and [ adjust volume; auto-applies after 2s
 -- Mic always pinned to right (main) monitor
+local audioLog = hs.logger.new('audio', 'info')
 local sasPath = "/opt/homebrew/bin/SwitchAudioSource"
 local audioCycleIndex = 0       -- current ACTIVE device in audioDevices
 local audioDevices = {}         -- built at init, rebuilt on display changes
 local rightMonitorInputUid = nil -- mic always on right monitor
+
+-- Hardcoded serial-to-label mapping for identical LG UltraFine displays
+-- Serial is extracted from UID: "AppleUSBAudioEngine:...:SERIAL:2"
+-- Swap these if Left/Right are backwards
+local LG_SERIAL_MAP = {
+    ["21241000"] = "LG Left",
+    ["22241000"] = "LG Right",
+}
 
 -- Preview state
 local audioPreviewIndex = 0     -- device being previewed (0 = no preview active)
@@ -685,14 +692,6 @@ local function buildAudioDeviceList()
     rightMonitorInputUid = nil
 
     local jsonOutput = hs.execute(sasPath .. " -a -t output -f json")
-    local currentJson = hs.execute(sasPath .. " -c -t output -f json")
-    local currentOutputUid = currentJson:match('"uid"%s*:%s*"([^"]+)"')
-
-    -- The main display is whichever LG is the current default output
-    local mainSerial = nil
-    if currentOutputUid and currentOutputUid:find("LG UltraFine") then
-        mainSerial = currentOutputUid:match(":(%d+):%d+$")
-    end
 
     local lgDevices = {}
     local otherDevices = {}
@@ -712,8 +711,9 @@ local function buildAudioDeviceList()
                 if name:find("LG UltraFine") then
                     local serial = uid:match(":(%d+):%d+$")
                     local inputUid = uid:gsub(":%d+$", ":1")
+                    local label = LG_SERIAL_MAP[serial] or ("LG " .. (serial or "?"))
                     table.insert(lgDevices, {
-                        label = (mainSerial and serial == mainSerial) and "LG Right" or "LG Left",
+                        label = label,
                         outputUid = uid,
                         inputUid = inputUid,
                         serial = serial
@@ -726,12 +726,6 @@ local function buildAudioDeviceList()
                 end
             end
         end
-    end
-
-    -- Fallback if current output isn't LG
-    if not mainSerial and #lgDevices == 2 then
-        lgDevices[1].label = "LG Left"
-        lgDevices[2].label = "LG Right"
     end
 
     -- Sort: Left first, then Right
@@ -757,36 +751,22 @@ local function buildAudioDeviceList()
             if lg.label == "LG Right" then rightLg = lg else leftLg = lg end
         end
         if rightLg and leftLg then
+            -- Always recreate LG Dual to ensure sub-devices are fresh
+            -- (stale references happen when monitors are unplugged/replugged)
+            local scriptPath = os.getenv("HOME") .. "/dotfiles/scripts/create-multi-output.swift"
+            if hs.fs.attributes(scriptPath) then
+                audioLog:i("Recreating LG Dual aggregate device")
+                hs.execute("/usr/bin/swift " .. scriptPath)
+            end
             local multiUid = nil
-            -- Prefer our programmatic device by UID
             for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
                 if dev:uid() == "com.user.lg-dual-output" then
                     multiUid = dev:uid()
                     break
                 end
             end
-            -- Fall back to any multi-output device
             if not multiUid then
-                for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
-                    local n = dev:name()
-                    if n:find("Multi%-Output") or n:find("Aggregate") or n:find("LG Dual") then
-                        multiUid = dev:uid()
-                        break
-                    end
-                end
-            end
-            if not multiUid then
-                local scriptPath = os.getenv("HOME") .. "/dotfiles/scripts/create-multi-output.swift"
-                if hs.fs.attributes(scriptPath) then
-                    hs.execute("/usr/bin/swift " .. scriptPath)
-                    for _, dev in ipairs(hs.audiodevice.allOutputDevices()) do
-                        local n = dev:name()
-                        if n:find("Multi%-Output") or n:find("Aggregate") or n:find("LG Dual") then
-                            multiUid = dev:uid()
-                            break
-                        end
-                    end
-                end
+                audioLog:w("LG Dual creation failed — no aggregate device found")
             end
             table.insert(audioDevices, {
                 label = "LG Dual",
@@ -1162,7 +1142,64 @@ initAudioCycleIndex()
 -- Cmd+Ctrl+Alt + Volume = cycle through audio devices
 -- Plain volume keys = pass through to native macOS
 local VOLUME_STEP = 6.25  -- ~16 steps like native macOS
-local pendingVolumeFeedback = nil  -- {vol, label} to show after tap returns
+
+-- Volume adjustment (deferred out of eventtap to avoid macOS killing the tap)
+local function adjustVolume(key, isRepeat)
+    local device = audioDevices[audioCycleIndex]
+    if not device then return end
+    local label = device.label or "Unknown"
+
+    if key == "SOUND_UP" then
+        if device.isDual then
+            for _, uid in ipairs(device.outputUids) do
+                local dev = hs.audiodevice.findDeviceByUID(uid)
+                if dev then dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP)) end
+            end
+            local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+            showQuickVolume(sample and math.floor(sample:volume() + 0.5) or 0, label)
+        else
+            local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+            if dev then
+                dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP))
+                showQuickVolume(math.floor(dev:volume() + 0.5), label)
+            end
+        end
+    elseif key == "SOUND_DOWN" then
+        if device.isDual then
+            for _, uid in ipairs(device.outputUids) do
+                local dev = hs.audiodevice.findDeviceByUID(uid)
+                if dev then dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP)) end
+            end
+            local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+            showQuickVolume(sample and math.floor(sample:volume() + 0.5) or 0, label)
+        else
+            local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+            if dev then
+                dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP))
+                showQuickVolume(math.floor(dev:volume() + 0.5), label)
+            end
+        end
+    elseif key == "MUTE" and not isRepeat then
+        if device.isDual then
+            for _, uid in ipairs(device.outputUids) do
+                local dev = hs.audiodevice.findDeviceByUID(uid)
+                if dev then dev:setMuted(not dev:muted()) end
+            end
+            local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
+            local muted = sample and sample:muted()
+            local vol = muted and 0 or (sample and math.floor(sample:volume() + 0.5) or 50)
+            showQuickVolume(vol, muted and label .. " \u{00B7} Muted" or label)
+        else
+            local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
+            if dev then
+                dev:setMuted(not dev:muted())
+                local muted = dev:muted()
+                local vol = muted and 0 or math.floor(dev:volume() + 0.5)
+                showQuickVolume(vol, muted and label .. " \u{00B7} Muted" or label)
+            end
+        end
+    end
+end
 
 local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, function(event)
     local ok, consume = pcall(function()
@@ -1175,96 +1212,42 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
 
         local mods = hs.eventtap.checkKeyboardModifiers()
 
-        -- Cmd+Ctrl+Alt + Volume = cycle audio devices
-        if mods.cmd and mods.ctrl and mods.alt and data.down then
-            if data.key == "SOUND_UP" then
-                cycleAudio(1)
-            elseif data.key == "SOUND_DOWN" then
-                cycleAudio(-1)
-            end
+        -- Ctrl+Alt + Volume = cycle audio devices (deferred)
+        if mods.ctrl and mods.alt and data.down then
+            local direction = (data.key == "SOUND_UP") and 1 or -1
+            hs.timer.doAfter(0, function() cycleAudio(direction) end)
             return true
         end
 
-        -- Ctrl+Alt + Volume = adjust volume on current device
-        if mods.ctrl and mods.alt and not mods.cmd then
+        -- Plain volume keys = adjust volume on current device (deferred)
+        if not mods.ctrl and not mods.alt and not mods.cmd then
             if not data.down then return true end
-
-            local device = audioDevices[audioCycleIndex]
-            if not device then return true end
-            local label = device.label or "Unknown"
-
-            if data.key == "SOUND_UP" then
-                if device.isDual then
-                    for _, uid in ipairs(device.outputUids) do
-                        local dev = hs.audiodevice.findDeviceByUID(uid)
-                        if dev then dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP)) end
-                    end
-                    local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
-                    pendingVolumeFeedback = {sample and math.floor(sample:volume() + 0.5) or 0, label}
-                else
-                    local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
-                    if dev then
-                        dev:setVolume(math.min(100, (dev:volume() or 0) + VOLUME_STEP))
-                        pendingVolumeFeedback = {math.floor(dev:volume() + 0.5), label}
-                    end
-                end
-            elseif data.key == "SOUND_DOWN" then
-                if device.isDual then
-                    for _, uid in ipairs(device.outputUids) do
-                        local dev = hs.audiodevice.findDeviceByUID(uid)
-                        if dev then dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP)) end
-                    end
-                    local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
-                    pendingVolumeFeedback = {sample and math.floor(sample:volume() + 0.5) or 0, label}
-                else
-                    local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
-                    if dev then
-                        dev:setVolume(math.max(0, (dev:volume() or 0) - VOLUME_STEP))
-                        pendingVolumeFeedback = {math.floor(dev:volume() + 0.5), label}
-                    end
-                end
-            elseif data.key == "MUTE" and not data["repeat"] then
-                if device.isDual then
-                    for _, uid in ipairs(device.outputUids) do
-                        local dev = hs.audiodevice.findDeviceByUID(uid)
-                        if dev then dev:setMuted(not dev:muted()) end
-                    end
-                    local sample = hs.audiodevice.findDeviceByUID(device.outputUids[1])
-                    local muted = sample and sample:muted()
-                    local vol = muted and 0 or (sample and math.floor(sample:volume() + 0.5) or 50)
-                    pendingVolumeFeedback = {vol, muted and label .. " \u{00B7} Muted" or label}
-                else
-                    local dev = hs.audiodevice.findDeviceByUID(device.outputUid)
-                    if dev then
-                        dev:setMuted(not dev:muted())
-                        local muted = dev:muted()
-                        local vol = muted and 0 or math.floor(dev:volume() + 0.5)
-                        pendingVolumeFeedback = {vol, muted and label .. " \u{00B7} Muted" or label}
-                    end
-                end
-            end
-
-            if pendingVolumeFeedback then
-                local fb = pendingVolumeFeedback
-                pendingVolumeFeedback = nil
-                hs.timer.doAfter(0, function() showQuickVolume(fb[1], fb[2]) end)
-            end
+            local key = data.key
+            local isRepeat = data["repeat"]
+            hs.timer.doAfter(0, function() adjustVolume(key, isRepeat) end)
             return true
         end
 
-        -- Plain volume keys: pass through to native macOS
+        -- Any other modifier combo: pass through
         return false
     end)
-    if ok then return consume else return false end
+    if ok then
+        return consume
+    else
+        audioLog:e("Volume tap error: " .. tostring(consume))
+        return false
+    end
 end)
 volumeKeyTap:start()
 
 -- Watchdog: re-enable volume eventtap if macOS disabled it
 hs.timer.doEvery(3, function()
     if not volumeKeyTap:isEnabled() then
+        audioLog:w("Volume eventtap was disabled by macOS, re-enabling")
         volumeKeyTap:start()
     end
 end)
+
 
 -- Shared rebuild function: rebuilds device list and syncs count
 local lastKnownDeviceCount = #hs.audiodevice.allOutputDevices()
