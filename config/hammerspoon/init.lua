@@ -1,11 +1,14 @@
 --
 --
 --
---  Variables 
---  
+--  Variables
 --
 --
 --
+--
+-- Enable CLI access (hs -c "command")
+require("hs.ipc")
+
 -- Specify your combination (your hyperkey)
 local hyper = {"ctrl", "alt" }
 local cmdshift = { "cmd", "shift" }
@@ -646,6 +649,17 @@ hs.hotkey.bind({"ctrl", "alt", "cmd"}, "p", toggleSketchybarPrivacy)
 -- Audio output switching with visual preview and volume control
 -- Mic always pinned to right (main) monitor
 local audioLog = hs.logger.new('audio', 'info')
+
+-- File logger for audio debugging (persists across console clears)
+local audioLogPath = os.getenv("HOME") .. "/.config/sketchybar/logs/hammerspoon-audio.log"
+local function audioFileLog(msg)
+    local f = io.open(audioLogPath, "a")
+    if f then
+        f:write(os.date("%Y-%m-%d %H:%M:%S") .. " " .. msg .. "\n")
+        f:close()
+    end
+end
+audioFileLog("=== Hammerspoon audio init ===")
 local sasPath = "/opt/homebrew/bin/SwitchAudioSource"
 local audioCycleIndex = 0       -- current ACTIVE device in audioDevices
 local audioDevices = {}         -- built at init, rebuilt on display changes
@@ -1055,9 +1069,11 @@ end
 local function applyAudioSelection()
     local device = audioDevices[audioPreviewIndex]
     if not device then
+        audioFileLog("applyAudio: no device at preview index " .. tostring(audioPreviewIndex))
         hideAudioOverlay()
         return
     end
+    audioFileLog("applyAudio: switching to " .. (device.label or "?") .. " isDual=" .. tostring(device.isDual or false))
 
     -- Match volume from current device to prevent blaring
     local currentDev = hs.audiodevice.defaultOutputDevice()
@@ -1146,7 +1162,10 @@ local VOLUME_STEP = 6.25  -- ~16 steps like native macOS
 -- Volume adjustment (deferred out of eventtap to avoid macOS killing the tap)
 local function adjustVolume(key, isRepeat)
     local device = audioDevices[audioCycleIndex]
-    if not device then return end
+    if not device then
+        audioFileLog("adjustVolume: no device at index " .. tostring(audioCycleIndex) .. " (total=" .. #audioDevices .. ")")
+        return
+    end
     local label = device.label or "Unknown"
 
     if key == "SOUND_UP" then
@@ -1201,6 +1220,8 @@ local function adjustVolume(key, isRepeat)
     end
 end
 
+local lastVolumeTapEvent = hs.timer.secondsSinceEpoch()
+
 local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, function(event)
     local ok, consume = pcall(function()
         local data = event:systemKey()
@@ -1210,10 +1231,13 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
             return false
         end
 
+        lastVolumeTapEvent = hs.timer.secondsSinceEpoch()
+
         local mods = hs.eventtap.checkKeyboardModifiers()
 
         -- Ctrl+Alt + Volume = cycle audio devices (deferred)
         if mods.ctrl and mods.alt and data.down then
+            audioFileLog("TAP: cycle " .. data.key)
             local direction = (data.key == "SOUND_UP") and 1 or -1
             hs.timer.doAfter(0, function() cycleAudio(direction) end)
             return true
@@ -1222,6 +1246,7 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
         -- Plain volume keys = adjust volume on current device (deferred)
         if not mods.ctrl and not mods.alt and not mods.cmd then
             if not data.down then return true end
+            audioFileLog("TAP: vol " .. data.key .. " idx=" .. tostring(audioCycleIndex))
             local key = data.key
             local isRepeat = data["repeat"]
             hs.timer.doAfter(0, function() adjustVolume(key, isRepeat) end)
@@ -1234,17 +1259,48 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
     if ok then
         return consume
     else
+        audioFileLog("TAP ERROR: " .. tostring(consume))
         audioLog:e("Volume tap error: " .. tostring(consume))
         return false
     end
 end)
 volumeKeyTap:start()
+audioFileLog("Volume eventtap started")
 
--- Watchdog: re-enable volume eventtap if macOS disabled it
+-- Global diagnostic for `hs -c "audioDiag()"`
+function audioDiag()
+    local dev = audioDevices[audioCycleIndex]
+    local info = {
+        tapEnabled = volumeKeyTap:isEnabled(),
+        deviceCount = #audioDevices,
+        cycleIndex = audioCycleIndex,
+        currentLabel = dev and dev.label or "nil",
+        lastEventAge = math.floor(hs.timer.secondsSinceEpoch() - lastVolumeTapEvent),
+    }
+    for i, d in ipairs(audioDevices) do
+        info["dev" .. i] = d.label .. (d.isDual and " [dual]" or "")
+    end
+    return hs.json.encode(info, true)
+end
+
+-- Watchdog: forcibly recreate the volume eventtap if macOS silently killed it.
+-- isEnabled() can return true even when macOS has disabled the tap at the
+-- CGEvent level, so we also force a stop+start every 30s as a safety net.
+local volumeTapForceRestartInterval = 30
+local lastTapRestart = hs.timer.secondsSinceEpoch()
+
 hs.timer.doEvery(3, function()
+    local now = hs.timer.secondsSinceEpoch()
     if not volumeKeyTap:isEnabled() then
+        audioFileLog("WATCHDOG: tap disabled, restarting")
         audioLog:w("Volume eventtap was disabled by macOS, re-enabling")
         volumeKeyTap:start()
+        lastTapRestart = now
+    elseif (now - lastTapRestart) >= volumeTapForceRestartInterval then
+        -- Force stop+start to recover from silent macOS tap death
+        volumeKeyTap:stop()
+        volumeKeyTap:start()
+        lastTapRestart = now
     end
 end)
 
@@ -1264,18 +1320,23 @@ end
 -- dOut with same device count = normal switch → fast re-index
 -- Device count changed = hotplug → debounced full rebuild
 hs.audiodevice.watcher.setCallback(function(event)
+    audioFileLog("audioWatcher: event=" .. tostring(event))
     local currentCount = #hs.audiodevice.allOutputDevices()
     if currentCount ~= lastKnownDeviceCount then
         -- Device added or removed (monitor hotplug)
+        audioFileLog("audioWatcher: device count changed " .. lastKnownDeviceCount .. " → " .. currentCount)
         lastKnownDeviceCount = currentCount
         if audioRebuildTimer then audioRebuildTimer:stop() end
         audioRebuildTimer = hs.timer.doAfter(2, function()
             audioRebuildTimer = nil
             rebuildAudioFull()
+            audioFileLog("audioWatcher: rebuild done, devices=" .. #audioDevices .. " idx=" .. audioCycleIndex)
         end)
     elseif event == "dOut" then
         -- Normal switch (menu bar, our picker) — just re-index
         initAudioCycleIndex()
+        local dev = audioDevices[audioCycleIndex]
+        audioFileLog("audioWatcher: dOut re-index → " .. audioCycleIndex .. " (" .. (dev and dev.label or "nil") .. ")")
     end
 end)
 hs.audiodevice.watcher.start()
