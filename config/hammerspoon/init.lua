@@ -1366,3 +1366,148 @@ local screenWatcher = hs.screen.watcher.new(function()
 end)
 screenWatcher:start()
 
+--
+-- Presence Management: quit Telegram/Slack when Sleep Focus activates, relaunch when it ends
+-- Uses distributed notifications + Assertions.json read + fallback poll
+--
+-- name = process name (for hs.application.get), bundleID = for hs.application.open
+local presenceApps = {
+    { name = "Telegram", bundleID = "com.tdesktop.Telegram" },
+    { name = "Slack",    bundleID = "com.tinyspeck.slackmacgap" },
+}
+local presenceWasClosed = {}
+local presenceSleepFocusActive = false
+local presencePollTimer = nil
+local presenceReopenTimer = nil
+local SLEEP_FOCUS_ID = "com.apple.sleep.sleep-mode"
+local DND_ASSERTIONS = os.getenv("HOME") .. "/Library/DoNotDisturb/DB/Assertions.json"
+local PRESENCE_POLL_INTERVAL = 30 -- seconds
+
+local function presenceLog(fmt, ...)
+    hs.printf("presence: " .. fmt, ...)
+end
+
+local function isSleepFocusActive()
+    local f = io.open(DND_ASSERTIONS, "r")
+    if not f then
+        presenceLog("cannot open Assertions.json")
+        return false
+    end
+    local content = f:read("*a")
+    f:close()
+    local ok, parsed = pcall(hs.json.decode, content)
+    if not ok or not parsed or not parsed.data then
+        presenceLog("failed to parse Assertions.json")
+        return false
+    end
+    for _, store in ipairs(parsed.data) do
+        if store.storeAssertionRecords then
+            for _, rec in ipairs(store.storeAssertionRecords) do
+                local details = rec.assertionDetails
+                if details and details.assertionDetailsModeIdentifier == SLEEP_FOCUS_ID then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function closePresenceApps()
+    presenceWasClosed = {}
+    for _, entry in ipairs(presenceApps) do
+        local ok, app = pcall(hs.application.get, entry.name)
+        if ok and app and app.kill then
+            pcall(function() app:kill() end)
+            presenceWasClosed[entry.bundleID] = entry.name
+        end
+    end
+    if next(presenceWasClosed) then
+        local names = {}
+        for _, n in pairs(presenceWasClosed) do names[#names + 1] = n end
+        presenceLog("Sleep Focus ON → closed %s", table.concat(names, ", "))
+    end
+end
+
+local function openPresenceApps()
+    if not next(presenceWasClosed) then return end
+    local toOpen = {}
+    for bid, name in pairs(presenceWasClosed) do
+        toOpen[bid] = name
+    end
+    presenceWasClosed = {}
+    local opened = {}
+    for bid, name in pairs(toOpen) do
+        local ok, result = pcall(hs.application.open, bid)
+        if ok and result then
+            opened[#opened + 1] = name
+        else
+            presenceLog("failed to open %s: %s", name, tostring(result))
+        end
+    end
+    if #opened > 0 then
+        presenceLog("Sleep Focus OFF → reopened %s", table.concat(opened, ", "))
+    end
+end
+
+local function stopPresencePoll()
+    if presencePollTimer then
+        presencePollTimer:stop()
+        presencePollTimer = nil
+    end
+end
+
+local function checkSleepFocus(source)
+    local active = isSleepFocusActive()
+    presenceLog("check (%s): active=%s was=%s", source or "?", tostring(active), tostring(presenceSleepFocusActive))
+    if active == presenceSleepFocusActive then return end
+    presenceSleepFocusActive = active
+    if active then
+        closePresenceApps()
+        -- Start polling as fallback for detecting OFF (notification may not fire)
+        stopPresencePoll()
+        presencePollTimer = hs.timer.doEvery(PRESENCE_POLL_INTERVAL, function()
+            checkSleepFocus("poll")
+        end)
+        presenceLog("started fallback poll every %ds", PRESENCE_POLL_INTERVAL)
+    else
+        stopPresencePoll()
+        if presenceReopenTimer then presenceReopenTimer:stop() end
+        presenceLog("stopped fallback poll, reopening in 3s")
+        presenceReopenTimer = hs.timer.doAfter(3, function()
+            presenceReopenTimer = nil
+            openPresenceApps()
+        end)
+    end
+end
+
+-- Distributed notifications: primary trigger
+local dndOnWatcher = hs.distributednotifications.new(function()
+    presenceLog("notification: _NSDoNotDisturbEnabledNotification")
+    hs.timer.doAfter(1, function() checkSleepFocus("notif-on") end)
+end, "_NSDoNotDisturbEnabledNotification")
+dndOnWatcher:start()
+
+local dndOffWatcher = hs.distributednotifications.new(function()
+    presenceLog("notification: _NSDoNotDisturbDisabledNotification")
+    hs.timer.doAfter(1, function() checkSleepFocus("notif-off") end)
+end, "_NSDoNotDisturbDisabledNotification")
+dndOffWatcher:start()
+
+-- Check initial state on load
+-- If Sleep Focus is already active, assume all presence apps should reopen when it ends
+if isSleepFocusActive() then
+    presenceSleepFocusActive = true
+    for _, entry in ipairs(presenceApps) do
+        presenceWasClosed[entry.bundleID] = entry.name
+    end
+    presenceLog("init: Sleep Focus active, will reopen %d apps when it ends", #presenceApps)
+    -- Start fallback poll
+    presencePollTimer = hs.timer.doEvery(PRESENCE_POLL_INTERVAL, function()
+        checkSleepFocus("poll")
+    end)
+else
+    presenceLog("init: Sleep Focus inactive, standing by")
+end
+
+
