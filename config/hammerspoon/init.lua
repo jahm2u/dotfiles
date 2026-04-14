@@ -1431,21 +1431,18 @@ end
 
 local function openPresenceApps()
     presenceWasClosed = {}
-    local opened = {}
+    local delay = 0
     for _, entry in ipairs(presenceApps) do
-        local app = hs.application.get(entry.name)
-        if not app then
-            local ok, result = pcall(hs.application.open, entry.bundleID)
-            if ok and result then
-                opened[#opened + 1] = entry.name
-            else
-                presenceLog("failed to open %s: %s", entry.name, tostring(result))
+        hs.timer.doAfter(delay, function()
+            local running = hs.application.applicationsForBundleID(entry.bundleID)
+            if #running == 0 then
+                presenceLog("launching %s", entry.name)
+                hs.execute("open -b " .. entry.bundleID)
             end
-        end
+        end)
+        delay = delay + 2
     end
-    if #opened > 0 then
-        presenceLog("Sleep Focus OFF → opened %s", table.concat(opened, ", "))
-    end
+    presenceLog("Sleep Focus OFF → opening %d apps (staggered)", #presenceApps)
 end
 
 local function checkSleepFocus(source)
