@@ -156,7 +156,8 @@ Generate ONE message only, no explanation:"
     }
   ],
   "temperature": 0.9,
-  "max_completion_tokens": 20
+  "max_completion_tokens": 20,
+  "safety_identifier": "dotfiles-meeting-prep"
 }
 EOF
 )

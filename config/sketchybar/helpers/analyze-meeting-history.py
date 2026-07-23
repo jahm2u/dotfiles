@@ -268,7 +268,8 @@ Focus on actionable insights. If no information is available for a section, retu
             ],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_completion_tokens=16000
+            max_completion_tokens=16000,
+            safety_identifier="dotfiles-meeting-prep"
         )
 
         # Check for refusal

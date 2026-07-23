@@ -389,7 +389,8 @@ NOW GENERATE - REMEMBER: Each item appears ONCE ONLY. Predict specific blockers 
             ],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_completion_tokens=16000
+            max_completion_tokens=16000,
+            safety_identifier="dotfiles-meeting-prep"
         )
 
         content = json.loads(response.choices[0].message.content)

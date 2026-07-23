@@ -248,11 +248,27 @@ TODOIST_API_TOKEN="your-todoist-api-token-here"
 - **Calendar URLs**: Google Calendar → Settings → Secret iCal address | iCloud → Right-click → Share → Public Calendar
 - **Telegram**: @BotFather → /newbot | @userinfobot for Chat ID
 
+### OpenAI API Convention
+
+**Every OpenAI API call in this repo MUST pass a `safety_identifier`.** This is a stable, non-PII string that lets OpenAI attribute and rate-limit abuse per-feature instead of blocking the whole account (the shared `OPENAI_API_KEY` is used by 5 call sites). Use `safety_identifier="dotfiles-translate"` for the translation feature and `safety_identifier="dotfiles-meeting-prep"` for meeting-prep scripts. Add the same identifier to any new call site.
+
+- **Python SDK** (`client.chat.completions.create(...)`): pass `safety_identifier="dotfiles-meeting-prep"` as a kwarg.
+- **Raw HTTP** (Lua `hs.http.asyncPost` / shell `curl`): add `"safety_identifier": "..."` to the JSON body.
+
+**Current call sites** (all set the identifier):
+- Translation: `config/hammerspoon/init.lua` (`translateText`, `gpt-4.1-nano`) → `dotfiles-translate`
+- `config/sketchybar/helpers/analyze-meeting-history.py` → `dotfiles-meeting-prep`
+- `config/sketchybar/helpers/generate-meeting-note.py` → `dotfiles-meeting-prep`
+- `config/sketchybar/helpers/identify-participant-from-transcript.py` → `dotfiles-meeting-prep`
+- `config/sketchybar/helpers/generate-meeting-message.sh` (curl) → `dotfiles-meeting-prep`
+
+**Key rotation:** `OPENAI_API_KEY` lives only in `~/dotfiles/.env` (gitignored, unquoted). All 5 call sites resolve to it — Python scripts load it via `load_dotenv` (`~/dotfiles/.env` first), `init.lua` reads it at `init.lua:33`. Rotate by editing that one line, then `open -g hammerspoon://reload`. Requires: `safety_identifier` needs `openai` SDK ≥ ~1.55 (repo venv has 2.6.1).
+
 ### Python Virtual Environment
 
 **Location:** `~/.config/sketchybar/venv`
 
-**Dependencies:** `openai==1.12.0`, `python-dotenv==1.0.0`, `pyyaml==6.0.1`, `requests`, `python-dateutil`
+**Dependencies:** `openai==2.6.1`, `python-dotenv==1.0.0`, `pyyaml==6.0.1`, `requests`, `python-dateutil`
 
 ```bash
 # Verify dependencies

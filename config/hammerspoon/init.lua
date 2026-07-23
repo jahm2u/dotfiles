@@ -133,7 +133,10 @@ Text: "]] .. text:gsub('"', '\\"') .. [["
     messages = {
       {role = "system", content = "You are a high-quality translator that provides accurate translations between English and Portuguese."}, -- Added system role for better context
       {role = "user", content = prompt}
-    }
+    },
+    -- Stable, non-PII end-user tag so OpenAI can attribute/limit abuse per-feature
+    -- instead of blocking the whole account. See OpenAI safety_identifier docs.
+    safety_identifier = "dotfiles-translate"
   }
 
   local jsonBody = hs.json.encode(body)
