@@ -103,35 +103,92 @@ local function isInputField()
   return false
 end
 
+-- Model used for translation. Recorded in the translation log so outputs stay
+-- attributable after a model change.
+local TRANSLATE_MODEL = "gpt-4.1-nano"
+
+-- Append every translation (both sides) as one JSON object per line, so the
+-- prompt rules can be tuned from real failures instead of guesses.
+-- Reviewing this log is documented in CLAUDE.md -> "Translation Log".
+-- Gitignored via config/sketchybar/logs/ (.gitignore:66) - never committed.
+local TRANSLATION_LOG = os.getenv("HOME") .. "/.config/sketchybar/logs/translations.log"
+
+local function logTranslation(input, output)
+  local ok, err = pcall(function()
+    local line = hs.json.encode({
+      ts = os.date("%Y-%m-%dT%H:%M:%S"),
+      model = TRANSLATE_MODEL,
+      input = input,
+      output = output
+    }) .. "\n"
+
+    local f = io.open(TRANSLATION_LOG, "a")
+    if not f then
+      -- logs dir may not exist yet on a fresh machine
+      os.execute("mkdir -p " .. TRANSLATION_LOG:match("(.*)/[^/]*$"):gsub(" ", "\\ "))
+      f = io.open(TRANSLATION_LOG, "a")
+      if not f then return end
+    end
+
+    f:write(line)
+    f:close()
+  end)
+
+  -- Logging must never break the translation itself
+  if not ok then
+    print("translation log write failed: " .. tostring(err))
+  end
+end
+
 local function translateText(text, attempt, callback)
   attempt = attempt or 1
 
-  -- Improved prompt using best practices:
-  -- 1. Clear task description with explicit instructions
-  -- 2. Format with clear separation of input and desired output
-  -- 3. Example-based instructions for clarity
+  -- Prompt rules come from team feedback on machine-translated tech writing:
+  -- 1. Tech jargon stays in English (no pt-br equivalent; forces a mental re-translation)
+  -- 2. Translate meaning, not words (literal idioms produce nonsense)
   local prompt = [[
 Translate the text below:
 
 - If it's in English → translate to Portuguese (informal "você", not "o senhor")
 - If it's in Portuguese → translate to English
 
-Important rules:
+RULE 1 — Keep technical vocabulary in English. Do not translate it.
+Our docs, tooling, error messages and library references are all in English.
+Most tech terms have no real pt-br equivalent, so inventing one makes the text
+harder to read — the reader has to translate it back in their head to understand it.
+Leave jargon in English even inside a Portuguese sentence. For example:
+- AI / product: skill, prompt, model, agent, token, context, output
+- experimentation: test, split, control, variant, arm, funnel, lift, rollout
+- engineering: deploy, commit, branch, merge, build, endpoint, log, cache
+- marketing: landing page, checkout, upsell, lead, click, dashboard
+This list is not exhaustive. If a word is jargon in this context, keep the
+English word. When unsure whether a term is jargon, keep it in English.
+  "AI skills" → "skills de AI"          NOT "habilidades de AI"
+  "the split control" → "o control do split"   NOT "o braço de controle"
+
+RULE 2 — Translate the meaning, not the words.
+Never translate an idiom or metaphor literally. Say what it actually means the
+way a native speaker of the target language would say it, or drop the figure of
+speech and state it plainly. If a literal rendering would puzzle a native
+speaker, it is wrong — rewrite it plainly instead.
+  "both bite when tested" → state what really happens (e.g. "as duas quebram quando testadas")
+                            NOT "as duas mordem quando um teste"
+
+Formatting rules:
 1. Match capitalization (don't add capitals where none exist)
 2. Match punctuation style (don't add periods or commas)
 3. Keep the same informal/casual tone
-4. Preserve abbreviations and slang with equivalents
-5. PRESERVE ALL LINE BREAKS AND PARAGRAPH FORMATTING exactly as in the original
-6. Keep spacing, indentation and line structure intact
-7. Return ONLY the translation with no explanations
+4. PRESERVE ALL LINE BREAKS AND PARAGRAPH FORMATTING exactly as in the original
+5. Keep spacing, indentation and line structure intact
+6. Return ONLY the translation with no explanations
 
 Text: "]] .. text:gsub('"', '\\"') .. [["
 ]]
 
   local body = {
-    model = "gpt-4.1-nano",  -- Updated to GPT-4.1-ultra
+    model = TRANSLATE_MODEL,
     messages = {
-      {role = "system", content = "You are a high-quality translator that provides accurate translations between English and Portuguese."}, -- Added system role for better context
+      {role = "system", content = "You are a translator between English and Portuguese for a product and engineering team. You keep technical vocabulary in English rather than inventing Portuguese equivalents, and you translate meaning rather than words — never an idiom literally."}, -- Added system role for better context
       {role = "user", content = prompt}
     },
     -- Stable, non-PII end-user tag so OpenAI can attribute/limit abuse per-feature
@@ -154,6 +211,7 @@ Text: "]] .. text:gsub('"', '\\"') .. [["
         local response = hs.json.decode(body)
         local translated = response and response.choices and response.choices[1].message.content
         if translated and translated:match("%S") then
+          logTranslation(text, translated)
           callback(translated)
           return
         else

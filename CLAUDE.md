@@ -264,6 +264,52 @@ TODOIST_API_TOKEN="your-todoist-api-token-here"
 
 **Key rotation:** `OPENAI_API_KEY` lives only in `~/dotfiles/.env` (gitignored, unquoted). All 5 call sites resolve to it — Python scripts load it via `load_dotenv` (`~/dotfiles/.env` first), `init.lua` reads it at `init.lua:33`. Rotate by editing that one line, then `open -g hammerspoon://reload`. Requires: `safety_identifier` needs `openai` SDK ≥ ~1.55 (repo venv has 2.6.1).
 
+### Translation Shortcut & Log
+
+**Shortcut:** `Ctrl+Alt+D` or `Alt+D` — copies the selection, translates EN↔PT, pastes over it.
+Implemented in `config/hammerspoon/init.lua` (`translateText`, `replaceWithTranslatedText`).
+
+**Prompt rules exist for a reason — do not "simplify" them.** They come from direct
+team feedback that machine-translated tech writing was unreadable in pt-br:
+
+1. **Technical vocabulary stays in English.** Our docs, tooling, error messages and
+   library references are all English, and most tech terms have no real pt-br
+   equivalent. Translating them forces the reader to translate back in their head.
+   Real failures that motivated this: `skill` → `habilidade` (it means an AI skill),
+   `the split control` → `o control do split` was rendered `o braço de controle`.
+2. **Translate meaning, not words.** Literal idioms produce nonsense —
+   `both bite when tested` → `as duas mordem quando um teste`.
+
+**Translation log:** `~/.config/sketchybar/logs/translations.log`
+
+One JSON object per line: `{ts, model, input, output}`. Written by `logTranslation()`
+on every successful translation. Gitignored via `config/sketchybar/logs/` — it contains
+raw message text (including client and personal messages) and must never be committed.
+
+**Review it periodically to improve the prompt.** The point of this log is that the
+term list in Rule 1 should grow from real data, not guesses. To find English terms
+that got translated when they should have been preserved:
+
+```bash
+scripts/review-translations.py              # terms that leaked (were translated)
+scripts/review-translations.py --term skill # inspect the cases for one term
+scripts/review-translations.py --list       # recent translations, both sides
+```
+
+The report lists jargon present in `input` but absent from `output` — those words got
+translated and belong in the RULE 1 list in `init.lua`. Add them, then
+`open -g hammerspoon://reload`. Keep `TERMS` in the script in sync with that list.
+A term can also go missing because the sentence was legitimately restructured, so
+check `--term <word>` before adding.
+
+**Model:** `TRANSLATE_MODEL` in `init.lua` (currently `gpt-4.1-nano`). Recorded in each
+log line so outputs stay attributable after a model change. If quality is still poor
+after prompt tuning, the model is a bigger lever than the prompt.
+
+**Open question (raised by Estrella, Sep 2026):** the team may standardize on English
+for all tech writing, which would make the EN→PT direction unnecessary — the shortcut
+would become PT→EN only. Pending a dev-headquarter discussion.
+
 ### Python Virtual Environment
 
 **Location:** `~/.config/sketchybar/venv`
@@ -440,6 +486,7 @@ brew services restart sketchybar
 - `{SERVICE}-stdout.log` - Standard output
 - `{SERVICE}-stderr.log` - Error output
 - `meeting-prep.log` - Meeting prep workflow
+- `translations.log` - Every EN↔PT translation (JSON lines: ts, model, input, output); review to improve the translation prompt
 - `~/.config/dotfiles-install.log` - Installation log
 
 **Caches:** `~/.cache/sketchybar/`
