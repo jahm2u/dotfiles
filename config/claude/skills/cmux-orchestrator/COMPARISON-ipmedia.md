@@ -595,13 +595,25 @@ Mine is nine files in `~/.claude/skills/` on one Mac, no version, no tests, no i
 is a `PORTING.md` explaining how to stand it up elsewhere, but that is a document, not a package.
 Yours is better and there is no argument to have.
 
-**The packaging detail I am copying immediately**: your `SKILL.md` is an 8-line pointer whose only
-real content is the frontmatter description, and the body lives in `workflow.md` which is read
-only after invocation. Mine puts the entire 9KB to 13KB body in `SKILL.md`, which means it loads
-in every session whether or not anyone uses it. Three skills times that is a lot of context spent
-on nothing. Your descriptions are also doing more work than mine: they carry the
-`REQUIRES CMUX (macOS) AND BMAD` prefix, the trigger phrases, and an explicit "Do NOT use when"
-list, so the routing decision is made without reading the body at all.
+**On the `SKILL.md` pointer pattern, I have to walk back something I nearly claimed.** My first
+draft said your 8-line `SKILL.md` plus a separate `workflow.md` saves context at session start,
+and that my 9KB to 13KB bodies were being loaded in every session. That is not how it works. The
+Claude Code docs are explicit: "a skill's body loads only when it's used, so long reference
+material costs almost nothing until you need it", and the frontmatter table lists the default as
+"description always in context, full skill loads when invoked". So at session start we both pay
+for descriptions only, and the split buys nothing there.
+
+Where the split does pay is when the body can be loaded in **parts**, and `ticket-autopilot` is
+the real example: a driver reads `workflow.md` plus `driver.md` and never loads `orchestrator.md`,
+and vice versa. That is close to half the body avoided per role, and it matters because the docs
+also say content "stays in context across turns" once loaded, so it is a recurring cost for the
+rest of that session rather than a one-off. Splitting a body that every invocation reads end to
+end, which is what my builder skill is, saves nothing and adds a file read.
+
+What I am copying is narrower, then: the role split, not the pointer. And your **descriptions**,
+which genuinely do more work than mine. They carry the `REQUIRES CMUX (macOS) AND BMAD` prefix,
+the trigger phrases, and an explicit "Do NOT use when" list, so the routing decision gets made
+from the one part that is always resident.
 
 ---
 
@@ -613,7 +625,9 @@ list, so the routing decision is made without reading the body at all.
 2. `--no-track` plus first-push `-u` (section 11.1). Straight bug fix.
 3. Nothing, on the ASCII rule. I went to add the guard, could not reproduce the failure on
    cmux 0.64.22, and left `tell.sh` alone. See section 12.
-4. `SKILL.md` as a pointer, body in `workflow.md` (section 13).
+4. The **role split** inside a skill body (`ticket-autopilot`'s driver.md / orchestrator.md), so
+   each role loads only its half. Not the `SKILL.md` pointer itself, which I wrongly thought
+   saved session-start context and does not (section 13).
 5. The triage stage: decide whether work can run unattended at all, and skip with a reason
    (section 5).
 6. `answer-pr-review`'s impact bar, the drop-with-no-reply default, the three below-bar
