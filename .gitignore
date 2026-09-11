@@ -70,6 +70,13 @@ BMAD*
 *.context.xml
 test_env_config.py
 
+# Claude Code skills (~/.claude/skills is a symlink to config/claude/skills).
+# The skills themselves are versioned. babysit-chat/state/ is NOT: those sidecars are
+# live partner/advertiser operational memory -- who is asking, what is broken for which
+# advertiser, what we already told them -- not configuration. Git history is permanent
+# and offsite, so that content stays on this machine (decided 2026-09-11).
+config/claude/skills/babysit-chat/state/
+
 # Claude Code history and settings (contains personal info)
 config/claude/history.jsonl
 config/claude/settings.json
