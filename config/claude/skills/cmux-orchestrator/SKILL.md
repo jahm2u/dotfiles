@@ -100,6 +100,12 @@ BabaFlow a Haiku builder started at 86% context and an Opus one auto-compacted b
 report with them loaded. Pass `--mcp full` only when the spec needs browser checks or a project
 MCP, and say so in the spec.
 
+The worktree branch is created with `--no-track`, so the builder's `git status` stays quiet and
+its first `git push -u origin <branch>` sets the right upstream. The builder also inherits this
+repo's curated memories: spawn links `~/.claude/projects/<worktree-slug>/memory` to the primary
+checkout's. If spawn prints `WARNING: no memory dir`, the builder is running without the repo's
+house rules, and you should expect it to rediscover things the memories already know.
+
 **Sidebar folders.** Every builder of a repo is placed in one pinned, collapsible sidebar group
 named `🔨 <repo> builders`. The group header is an empty anchor terminal cmux creates for it; YOUR
 workspace is the first child under that header (the first spawn moves it there out of whatever

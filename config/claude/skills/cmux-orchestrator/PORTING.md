@@ -175,11 +175,21 @@ spawn.sh --slug <kebab> --spec <abs-path.md> [--issue N] \
 1. Validates: kebab slug, spec exists (absolute, or retried against the primary checkout), spec
    has `status:` frontmatter, **no ledger / branch / worktree path already exists for this slug**
    (idempotence guard — the collector must run before a slug is reused).
-2. `git fetch origin`, then `git worktree add <root>/.claude/worktrees/wt-<slug> -b <branch> <base>`.
+2. `git fetch origin`, then `git worktree add <root>/.claude/worktrees/wt-<slug> -b <branch> --no-track <base>`.
+   `--no-track` is load-bearing: without it the branch's upstream becomes `origin/main` and every
+   `git status` in the worktree reports a bogus "diverged from origin/main". The builder's first
+   push is `git push -u origin <branch>`, which sets the correct upstream.
    Branch is `fix/<issue>-<slug>` — or `fix/<slug>` when the slug already leads with the issue
    number, so you never get `fix/71-71-foo` — or `feat/<slug>` with no issue.
 3. Symlinks `node_modules` (and `admin-app/node_modules`) from the primary checkout into the
    worktree, so the builder does not reinstall. **Repo-specific; see §10.**
+3b. Symlinks `~/.claude/projects/<worktree-slug>/memory` to the primary checkout's memory
+   directory. Claude Code keys file-based memory on the **cwd** with no git awareness, so a
+   worktree is a different project and without this the builder starts with zero curated
+   memories. The slug replaces every non-alphanumeric character with a dash. Two-way: a memory
+   the builder saves is visible everywhere. If the primary checkout has no memory directory,
+   spawn warns and says the builder started without memories rather than failing silently.
+   The collector removes the link (and only the link) at teardown.
 4. Copies the spec into the worktree at `<spec-dir>/spec-<slug>.md`.
 5. Writes the ledger.
 6. Launches:
@@ -366,6 +376,18 @@ Each of these cost a real incident and is now written into the skills — keep t
 - **`send` then `sleep` then `send-key enter`** (§5).
 - **Tab mode: `BF_BUILDER_WS` is the host workspace** — close the surface, not the workspace (§7).
 - **Squash-merged branches need `git branch -D`**, not `-d`.
+- **`--no-track` on `git worktree add`.** Without it the branch's upstream is `origin/main`, so
+  the worktree's `git status` permanently claims it has "diverged from origin/main" and a
+  `git pull` there would merge main INTO the feature branch. The builder's first push is
+  `git push -u origin <branch>`, which sets the real upstream.
+- **A worktree is a different cwd, so it is a different Claude Code project.** Memory is keyed on
+  the cwd with no git awareness, so a builder gets zero curated memories unless spawn symlinks
+  them in. A missing memory dir and a mis-derived slug look identical, so spawn warns loudly and
+  lists what it did find rather than skipping in silence.
+- **`[ test ] && cmd` as the LAST statement of a loop body aborts the script under `set -e`**,
+  because the loop's exit status becomes the failed test's. It survives in some nesting contexts
+  and not others, which is worse than failing consistently: the memory block passed four test
+  cases and only aborted on the fifth. Write `if [ test ]; then cmd; fi` in these scripts.
 - **Two mechanisms have closed the wrong issues**, so the builder verifies PR state *and* issue
   state after merging rather than trusting `Fixes #N`.
 - **MCP servers are the builder's biggest fixed context cost** (§8).

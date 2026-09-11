@@ -6,7 +6,7 @@
 #            [--base origin/main] [--model opus[1m]] [--mode auto|acceptEdits|yolo] [--focus] [--spec-dir _bmad-output/implementation-artifacts] [--mcp none|full] [--place tab|workspace] [--group repo|mine|none]
 #
 # What it does (idempotent per slug: refuses if a ledger already exists):
-#   1. git worktree add .claude/worktrees/wt-<slug> -b <branch> <base>   (Rule 20)
+#   1. git worktree add .claude/worktrees/wt-<slug> -b <branch> --no-track <base>   (Rule 20)
 #   2. symlink node_modules + admin-app/node_modules from the primary checkout
 #   3. copy the spec into the worktree's _bmad-output/implementation-artifacts/spec-<slug>.md
 #   4. write the ledger  _bmad/handoff/cmux/<slug>.env
@@ -62,12 +62,70 @@ git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH" && bf_die "branch 
 
 echo "==> fetching $BASE"
 git -C "$ROOT" fetch -q origin
-echo "==> git worktree add $WT -b $BRANCH $BASE"
-git -C "$ROOT" worktree add -q "$WT" -b "$BRANCH" "$BASE"
+echo "==> git worktree add $WT -b $BRANCH --no-track $BASE"
+# --no-track is REQUIRED. Without it git sets the new branch's upstream to origin/main
+# (branch.autoSetupMerge defaults on for a remote-tracking start point), and then every
+# `git status` in the worktree reports "Your branch and 'origin/main' have diverged,
+# and have N and M different commits each" -- noise with no real remote counterpart --
+# and a `git pull` there would try to merge main INTO the feature branch. The builder's
+# first push is `git push -u origin <branch>` (see cmux-builder section 2), which is what
+# sets the branch's own remote ref as upstream.
+git -C "$ROOT" worktree add -q "$WT" -b "$BRANCH" --no-track "$BASE"
 
 echo "==> node_modules symlinks"
 [ -d "$ROOT/node_modules" ] && ln -s "$ROOT/node_modules" "$WT/node_modules"
 [ -d "$ROOT/admin-app/node_modules" ] && ln -s "$ROOT/admin-app/node_modules" "$WT/admin-app/node_modules"
+
+# Claude Code's file-based memory lives at ~/.claude/projects/<cwd-slug>/memory/, keyed by the
+# CWD, with no git awareness and no fallback to the parent repo. A worktree is a different cwd,
+# so without this link every builder starts with ZERO curated memories and none of the repo's
+# house rules reach it. The link is two-way on purpose: a memory the builder saves is visible
+# everywhere immediately. (Two worktrees saving at the same moment can race on the MEMORY.md
+# index line; if an index entry goes missing, re-add it -- the memory file itself was written.)
+echo "==> memory symlink"
+# Every non-alphanumeric character becomes a dash, not just the slashes. pwd -P first: an
+# unexpanded ~ or a symlinked path slugifies to a directory that does not exist, and the
+# mkdir + ln below would then succeed in the wrong place.
+bf_slug_path() { printf '%s' "$1" | sed 's|[^A-Za-z0-9]|-|g'; }
+# $ROOT is already physical (bf_primary_root resolves it), so these normally agree. They differ
+# only when the repo itself sits under a symlink, and then it is not knowable from here which
+# form Claude Code keyed its projects dir on -- so read whichever one actually has the memories,
+# and write the worktree link under BOTH forms when they differ.
+MAIN_SLUG=$(bf_slug_path "$(cd "$ROOT" && pwd -P)")
+MAIN_SLUG_L=$(bf_slug_path "$ROOT")
+WT_SLUG=$(bf_slug_path "$(cd "$WT" && pwd -P)")
+WT_SLUG_L=$(bf_slug_path "$WT")
+MEM_SRC=""
+for cand in "$MAIN_SLUG" "$MAIN_SLUG_L"; do
+  if [ -d "$HOME/.claude/projects/$cand/memory" ]; then MEM_SRC=$cand; break; fi
+done
+if [ -n "$MEM_SRC" ]; then
+  for dest in "$WT_SLUG" "$WT_SLUG_L"; do
+    if [ "$dest" = "$MEM_SRC" ]; then continue; fi
+    mkdir -p "$HOME/.claude/projects/$dest"
+    # A leftover link whose target is gone reads as ABSENT to -e, and ln then fails "File exists".
+    if [ -L "$HOME/.claude/projects/$dest/memory" ] && [ ! -e "$HOME/.claude/projects/$dest/memory" ]; then
+      rm "$HOME/.claude/projects/$dest/memory"
+    fi
+    [ -e "$HOME/.claude/projects/$dest/memory" ] || \
+      ln -s "$HOME/.claude/projects/$MEM_SRC/memory" "$HOME/.claude/projects/$dest/memory"
+    echo "    $dest/memory -> $MEM_SRC/memory"
+    # a trailing `[ ... ] && break` here would leave the loop non-zero under set -e
+    if [ "$WT_SLUG" = "$WT_SLUG_L" ]; then break; fi
+  done
+else
+  # A mis-derived slug and a genuinely absent memory directory skip IDENTICALLY. Print what
+  # does exist so the difference is visible, and say the builder started without memories
+  # rather than letting silence read as success.
+  echo "    WARNING: no memory dir at ~/.claude/projects/$MAIN_SLUG/memory" >&2
+  echo "    builder starts WITHOUT curated memories. Projects matching this repo:" >&2
+  found=0
+  for d in "$HOME"/.claude/projects/*"$(basename "$ROOT")"*; do
+    [ -d "$d" ] || continue
+    echo "      $(basename "$d")" >&2; found=1
+  done
+  [ $found -eq 1 ] || echo "      (none)" >&2
+fi
 
 SPEC_DIR="$WT/$SPEC_DIR"
 mkdir -p "$SPEC_DIR"

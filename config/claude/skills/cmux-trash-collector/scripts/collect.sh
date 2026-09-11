@@ -109,6 +109,19 @@ if [ -d "$WT" ]; then
   if [ $FORCE -eq 1 ]; then git -C "$ROOT" worktree remove --force "$WT"; else git -C "$ROOT" worktree remove "$WT"; fi
 fi
 git -C "$ROOT" worktree prune
+
+# The worktree's memory entry is a SYMLINK into the primary checkout's memory dir (spawn.sh
+# creates it so the builder inherits the repo's house rules). The worktree is gone now, so the
+# link dangles. Remove the link only -- never a real directory, and never the shared target it
+# points at. $WT is already the physical path, so slugify the string rather than cd-ing to a
+# path that no longer exists.
+WT_SLUG=$(printf '%s' "$WT" | sed 's|[^A-Za-z0-9]|-|g')
+MEM_LINK="$HOME/.claude/projects/$WT_SLUG/memory"
+if [ -L "$MEM_LINK" ]; then
+  rm "$MEM_LINK" && echo "==> removed memory symlink $WT_SLUG/memory"
+  # and the project dir, but only when nothing else is left in it (rmdir refuses otherwise)
+  rmdir "$HOME/.claude/projects/$WT_SLUG" 2>/dev/null && echo "==> removed empty project dir $WT_SLUG" || true
+fi
 if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
   if [ "$PR_STATE" = "MERGED" ] || [ $FORCE -eq 1 ]; then
     git -C "$ROOT" branch -D "$BRANCH" >/dev/null && echo "==> deleted local branch $BRANCH (squash-merged branches need -D)"
