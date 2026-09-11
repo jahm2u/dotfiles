@@ -369,6 +369,54 @@ too long and missing the point:
 Eleven lines to four, no raw list names, and it now says what the two campaigns
 ARE. The verification note stays — that is context, not detail.
 
+## 2c. Talking to another session (cmux and SendMessage)
+
+A babysitter drives other sessions constantly -- builders it spawned, and sometimes a
+partner-shaped MCP-only workspace. Two channels, and the cheap one lies.
+
+**Prefer `SendMessage` when both ends are Claude sessions.** Find them with `ListAgents`.
+It does not truncate, it names its sender, and the message survives in the transcript. Use
+cmux only to drive something that is not a peer: a builder's TUI, a permission dialog, an
+`[A]/[E]` menu.
+
+**cmux flag behaviour differs per subcommand. Measured 2026-09-11, all four:**
+
+| Call | Behaviour |
+|---|---|
+| `cmux send --surface <ref> -- "text"` | Correct -- flags written LITERALLY. |
+| `T="--surface <ref>"; cmux send $T -- "text"` | **Types into YOUR OWN prompt** and prints `OK <your surface> <your workspace>`. Looks like success. |
+| `cmux send-key --workspace <ref> ... <key>` | `Error: invalid_params: Unknown key` -- `--workspace` is parsed as the key. |
+| `cmux read-screen --workspace <ref> --surface <ref>` | Fine -- this one accepts both. |
+
+**Write the flags literally; never build them in a shell variable.** Verified twice: the
+argv is identical in theory, but the variable form lands on the CALLER's surface and the
+flag string shows up verbatim in your own prompt as message text. `lib.sh`'s `bf_target()`
+uses exactly that pattern, so `tell.sh` printing "sent to ..." is an echo of intent, not
+proof of delivery -- read the target's screen back.
+
+**`cmux send` silently drops text from a long message.** A ~1,900-character brief arrived
+with a large middle span missing -- start and tail intact, no error. The receiver caught it
+only because the missing part was a numbered list whose absence was obvious. **Keep cmux
+messages to a few lines; for anything longer write a file and send the path.** A file also
+survives the receiver compacting.
+
+**`ctrl+u` does not clear a Claude prompt** -- returns `OK`, changes nothing. Repeated
+`backspace` does. So stale prompt text CONCATENATES with whatever you type next; clear it
+and confirm the prompt is bare before sending.
+
+**A "clear" prompt reading can be a busy session.** Mid-turn there is no `❯` rendered at
+all, so any helper that greps for it returns empty and reports a clean prompt. Do not build
+a verification on that alone.
+
+**After any `cmux send`, read the target's screen back.** `OK` means a keystroke went
+somewhere. It is not proof of the right target and not proof the whole message landed.
+
+**An idle session logs nothing**, so "quiet" is three different states and you must look:
+a live turn renders a token counter / `esc to interrupt`; `❯` followed by text is
+unsubmitted and going nowhere; a bare `❯` is finished and waiting on you. A builder that
+reported `pr-open` and then went silent is usually the middle one -- it is not done, and
+nothing will wake you.
+
 ## 3. Triage what arrives
 
 For every report, ask **"can I just fix this?"** before "should this be a

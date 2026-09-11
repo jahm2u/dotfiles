@@ -80,6 +80,19 @@ bf_prompt_text() { # target-flags
 # idle builder logs nothing, so nothing noticed. Hence: clear any stale fragment
 # first (otherwise the new text CONCATENATES onto it), then confirm the prompt came
 # back empty, re-pressing Enter up to 3 times before failing loudly.
+# NOTE (2026-09-11): clearing a stale prompt is NOT actually solved here.
+#
+# Two separate defects, both verified, neither fixed because the fix needs bf_target to
+# stop returning flags as a STRING:
+#   1. `ctrl+u` does not clear a Claude TUI prompt. cmux returns OK; the text stays.
+#      Repeated `backspace` DOES work -- but see 2 before writing that loop.
+#   2. cmux ignores flags that arrive via SHELL VARIABLE EXPANSION. `cmux send $target ...`
+#      lands on the CALLER's own surface while the byte-identical literal form lands on the
+#      target. So a backspace loop written as `cmux send-key $target backspace` would erase
+#      YOUR OWN prompt, not the builder's. That is why this is a comment and not code.
+# Consequence: stale prompt text still CONCATENATES with whatever is typed next, and
+# `tell.sh`'s "sent to ..." line is an echo of intent, not proof of delivery. Read the
+# builder's screen back.
 bf_send_line() { # target-flags text
   local target="$1" text="$2" i left
   cmux send-key $target ctrl+u >/dev/null 2>&1 || true
@@ -147,6 +160,10 @@ bf_builder_where() {
 }
 
 # Type a line into the builder's Claude prompt, wherever it lives.
+#
+# KEEP IT SHORT. `cmux send` SILENTLY DROPS TEXT from a long message -- verified 2026-09-11,
+# a ~1,900-char brief arrived with a large middle span missing, start and tail intact, no
+# error at either end. For anything longer than a few lines, write a file and send the path.
 bf_say_to_builder() { # text
   bf_send_line "$(bf_target)" "$1"
 }
