@@ -279,6 +279,30 @@ team feedback that machine-translated tech writing was unreadable in pt-br:
    `the split control` → `o control do split` was rendered `o braço de controle`.
 2. **Translate meaning, not words.** Literal idioms produce nonsense —
    `both bite when tested` → `as duas mordem quando um teste`.
+3. **Rule 1 is narrow.** The first version of Rule 1 said "when unsure, keep it in
+   English", and the log (Sep 2026) showed the model applying that to every word:
+   `sua conta é um paid account? a subscription está active?`, `os men open como
+   reaction from a view`. The prompt now carries an explicit list of ordinary words
+   that must be translated (response, message, users, changes, access...) and a
+   test: would a Brazilian dev say the English word in a stand-up? Verbs are always
+   conjugated in Portuguese (`fazer o merge`, never `está paying`).
+4. **The direction is decided in Lua, not by the model.** `detectTranslationTarget`
+   counts stopwords that exist in only one language and the prompt then states the
+   source and target explicitly. Left to itself, nano judged a Portuguese message
+   dense with English jargon (skill, AWS, ArgoCD, deploy...) to be "already in
+   English" and returned it unchanged, one run in three. The chosen target is
+   recorded in each log line as `target` (`auto` when the detector abstained).
+5. **Genuinely mixed input is left to the model.** When both languages are
+   substantially present (minority ≥ 3 stopwords and majority < 4× minority) the
+   detector abstains and the prompt's mixed-input rule applies: majority language
+   is the source, parts already in the target language are copied through.
+   Known limitation: nano still garbles this case about half the time. It is rare
+   (2 of 166 logged, both caused by retrying a half-translated output, which the
+   narrow Rule 1 now prevents). Translate the quote and the reply separately.
+
+The text is sent between `<text>` tags rather than in quotes — quoting made the
+model echo quotes back, and the Lua side also strips stray quotes and tags.
+API keys (`sk-...`) are redacted before the line is written to the log.
 
 **Translation log:** `~/.config/sketchybar/logs/translations.log`
 
@@ -296,13 +320,26 @@ scripts/review-translations.py --term skill # inspect the cases for one term
 scripts/review-translations.py --list       # recent translations, both sides
 ```
 
-The report lists jargon present in `input` but absent from `output` — those words got
-translated and belong in the RULE 1 list in `init.lua`. Add them, then
-`open -g hammerspoon://reload`. Keep `TERMS` in the script in sync with that list.
-A term can also go missing because the sentence was legitimately restructured, so
-check `--term <word>` before adding.
+The report has two sections. The first lists jargon present in `input` but absent
+from `output` — those words got translated and belong in the RULE 1 list in
+`init.lua`. The second lists plain English words (from `PLAIN_WORDS`) that survived
+into Portuguese output — those are over-Englishing and belong in the "RULE 1 is
+narrow" examples. Add them, then `open -g hammerspoon://reload`. Keep `TERMS` and
+`PLAIN_WORDS` in the script in sync with the prompt. A term can also go missing
+because the sentence was legitimately restructured, so check `--term <word>` before
+adding.
 
-**Model:** `TRANSLATE_MODEL` in `init.lua` (currently `gpt-4.1-nano`). Recorded in each
+To judge a prompt change on real output instead of by eye, replay failed log cases
+through the API with `scripts/replay-translations.py`. It extracts the prompt from
+`init.lua` itself (`--old` adds the git HEAD version, `--model` adds models) and
+runs the real `detectTranslationTarget` through `hs -c`, so Hammerspoon must be
+running with the current config. A replay of 10 cases costs well under a cent.
+Run a flaky case three times: nano is nondeterministic even at temperature 0.2,
+and a single green run proved nothing for the PT→EN passthrough bug.
+
+**Model:** `TRANSLATE_MODEL` in `init.lua` (currently `gpt-4.1-nano`). In the Sep 2026
+replay `gpt-4.1-mini` wrote slightly more natural Portuguese but kept translating
+mixed-language input in both directions, so nano stayed. Recorded in each
 log line so outputs stay attributable after a model change. If quality is still poor
 after prompt tuning, the model is a bigger lever than the prompt.
 

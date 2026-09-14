@@ -26,14 +26,37 @@ LOG = os.path.expanduser("~/.config/sketchybar/logs/translations.log")
 # Jargon that must survive translation. Keep in sync with RULE 1 in init.lua.
 TERMS = [
     # AI / product
-    "skill", "prompt", "model", "agent", "token", "context", "output",
+    "skill", "prompt", "model", "agent", "token", "context", "output", "feature",
     # experimentation
-    "test", "split", "control", "variant", "arm", "funnel", "lift", "rollout",
+    "split", "control", "variant", "arm", "funnel", "lift", "rollout",
     # engineering
-    "deploy", "commit", "branch", "merge", "build", "endpoint", "log", "cache",
+    "deploy", "commit", "branch", "merge", "build", "PR", "check", "endpoint", "log", "cache",
+    "workflow", "secret",
     # marketing
-    "landing page", "checkout", "upsell", "lead", "click", "dashboard",
+    "landing page", "checkout", "upsell", "lead", "click", "dashboard", "retargeting",
+    # our product
+    "elite", "daddy", "baby", "SD", "SB", "match", "survey", "dedupe",
 ]
+
+# The opposite failure: ordinary English words left untranslated inside Portuguese
+# output ("sua conta é um paid account?"). Keep in sync with the "RULE 1 is narrow"
+# examples in init.lua. Each entry is (english, portuguese stem to expect instead).
+PLAIN_WORDS = [
+    ("response", "respost"), ("message", "mensage"), ("users", "usuári"),
+    ("changes", "mudanç"), ("access", "acess"), ("permissions", "permiss"),
+    ("subscription", "assinatur"), ("paid", "pag"), ("active", "ativ"),
+    ("distance", "distânci"), ("location", "localiza"), ("speed", "velocid"),
+    ("interaction", "intera"), ("resources", "recurs"), ("questions", "pergunt"),
+    ("minutes", "minut"), ("page", "págin"), ("video", "víde"), ("account", "cont"),
+    ("requirement", "requisit"), ("immediately", "imediat"), ("coffee", "caf"),
+]
+
+PT_MARKERS = re.compile(r"\b(que|não|nao|para|pra|com|uma|você|voce|está|esta|isso|mas|também)\b", re.I)
+
+
+def is_portuguese(text):
+    return len(PT_MARKERS.findall(text)) >= 2
+
 
 
 def load(path):
@@ -58,6 +81,25 @@ def load(path):
 def present(term, text):
     """Whole-word match, tolerating a plural 's' and pt-br plural 'es'."""
     return re.search(rf"\b{re.escape(term)}(s|es)?\b", text, re.IGNORECASE) is not None
+
+
+def report_plain(records):
+    """English words with a plain pt-br equivalent that survived into Portuguese output."""
+    hits = defaultdict(list)
+    for r in records:
+        if not is_portuguese(r["output"]) or is_portuguese(r["input"]):
+            continue
+        for en, pt_stem in PLAIN_WORDS:
+            if present(en, r["input"]) and present(en, r["output"]):
+                hits[en].append(r)
+    if not hits:
+        print(f"\nNo plain English left untranslated across {len(records)} translations.")
+        return
+    print(f"\nPlain English left untranslated in Portuguese output ({len(records)} scanned):\n")
+    for en, rs in sorted(hits.items(), key=lambda kv: -len(kv[1])):
+        print(f"  {len(rs):3}x  {en:<14} most recent: {rs[-1]['ts']}")
+    print("\nThese are NOT jargon. Add recurring ones to the 'RULE 1 is narrow' examples")
+    print("in config/hammerspoon/init.lua, then reload:  open -g hammerspoon://reload")
 
 
 def report_leaks(records):
@@ -116,6 +158,7 @@ def main():
         show_term(records, args.term)
     else:
         report_leaks(records)
+        report_plain(records)
 
 
 if __name__ == "__main__":

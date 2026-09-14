@@ -113,11 +113,19 @@ local TRANSLATE_MODEL = "gpt-4.1-nano"
 -- Gitignored via config/sketchybar/logs/ (.gitignore:66) - never committed.
 local TRANSLATION_LOG = os.getenv("HOME") .. "/.config/sketchybar/logs/translations.log"
 
-local function logTranslation(input, output)
+-- Never let an API key reach the log: messages asking a colleague to paste back a
+-- token pass through this hook, and the log is plain text on disk.
+local function redactSecrets(s)
+  return (s:gsub("sk%-[%w_%-]+", "sk-[redacted]"))
+end
+
+local function logTranslation(input, output, target)
+  input, output = redactSecrets(input), redactSecrets(output)
   local ok, err = pcall(function()
     local line = hs.json.encode({
       ts = os.date("%Y-%m-%dT%H:%M:%S"),
       model = TRANSLATE_MODEL,
+      target = target or "auto",
       input = input,
       output = output
     }) .. "\n"
@@ -140,39 +148,111 @@ local function logTranslation(input, output)
   end
 end
 
+-- Decide the direction in code, not in the model. Left to itself the model
+-- sometimes judged a Portuguese message full of English jargon (skill, AWS,
+-- ArgoCD, deploy...) to be "already in English" and returned it unchanged.
+-- Counts stopwords that exist in only one of the two languages; ambiguous
+-- words (a, o, e, as, do, com) are deliberately absent. Global so the replay
+-- harness can call the real thing through `hs -c`.
+local PT_STOPWORDS = {}
+for w in ("que não nao para pra uma você voce está esta isso mas também tambem de da dos das os um é porque sim já ja aqui ainda então entao tem foi ser fazer quando onde muito nós nos ele ela eles essa esse dessa desse entre vai mais como ou na pelo pela até ate"):gmatch("%S+") do PT_STOPWORDS[w] = true end
+local EN_STOPWORDS = {}
+for w in ("the and is are to of that this we you it for with not on have be can if but what should would was were will they there these those about"):gmatch("%S+") do EN_STOPWORDS[w] = true end
+
+function detectTranslationTarget(s)
+  local pt, en = 0, 0
+  for w in s:lower():gmatch("[%w\128-\255]+") do
+    if PT_STOPWORDS[w] then pt = pt + 1 elseif EN_STOPWORDS[w] then en = en + 1 end
+  end
+  -- Genuinely mixed text (a quoted PT line plus an EN reply) is left to the
+  -- model's own mixed-input rule: forcing a direction there made it worse.
+  local minority, majority = math.min(pt, en), math.max(pt, en)
+  if minority >= 3 and majority < 4 * minority then return nil end
+  if pt > en then return "English" end
+  if en > pt then return "Portuguese" end
+  return nil
+end
+
 local function translateText(text, attempt, callback)
   attempt = attempt or 1
+
+  local target = detectTranslationTarget(text)
+  local directionLine
+  if target then
+    local source = target == "English" and "Portuguese" or "English"
+    directionLine = "The text is in " .. source .. ". Translate it into " .. target .. ".\n"
+      .. "Do not re-decide the direction: English jargon inside a Portuguese sentence does not make it English.\n"
+      .. "Sentences already entirely in " .. target .. " are copied through unchanged; everything else is translated.\n"
+      .. "Returning the text unchanged is never a valid answer.\n"
+  else
+    directionLine = "- If it's in English → translate to Portuguese\n"
+      .. "- If it's in Portuguese → translate to English\n"
+      .. "- If it mixes both, pick ONE target language for the whole text: the language\n"
+      .. "  most of the text is in is the source. Translate those parts and copy the parts\n"
+      .. "  already in the target language through unchanged. Never translate in both\n"
+      .. "  directions within one text\n"
+  end
 
   -- Prompt rules come from team feedback on machine-translated tech writing:
   -- 1. Tech jargon stays in English (no pt-br equivalent; forces a mental re-translation)
   -- 2. Translate meaning, not words (literal idioms produce nonsense)
   local prompt = [[
-Translate the text below:
+Translate the text between the <text> tags.
 
-- If it's in English → translate to Portuguese (informal "você", not "o senhor")
-- If it's in Portuguese → translate to English
+]] .. directionLine .. [[
+- Portuguese is informal ("você", not "o senhor")
+- A single word or short phrase is still translated ("distance" → "distância")
 
-RULE 1 — Keep technical vocabulary in English. Do not translate it.
+RULE 1 — Keep technical vocabulary in English. Translate everything else.
 Our docs, tooling, error messages and library references are all in English.
-Most tech terms have no real pt-br equivalent, so inventing one makes the text
-harder to read — the reader has to translate it back in their head to understand it.
-Leave jargon in English even inside a Portuguese sentence. For example:
-- AI / product: skill, prompt, model, agent, token, context, output
-- experimentation: test, split, control, variant, arm, funnel, lift, rollout
-- engineering: deploy, commit, branch, merge, build, endpoint, log, cache
-- marketing: landing page, checkout, upsell, lead, click, dashboard
-This list is not exhaustive. If a word is jargon in this context, keep the
-English word. When unsure whether a term is jargon, keep it in English.
-  "AI skills" → "skills de AI"          NOT "habilidades de AI"
+Real tech jargon has no natural pt-br equivalent, so inventing one makes the text
+harder to read — the reader has to translate it back in their head.
+Keep in English, even inside a Portuguese sentence:
+- names: products, tools, commands, file names, identifiers, ticket ids, URLs, @mentions
+- quoted terms the text is talking ABOUT stay exactly as written, and a language
+  name stays truthful: "in english, it is called a \"meet and greet\""
+  → "em inglês, se chama \"meet and greet\""   NOT "em português, se chama \"encontro e apresentação\""
+- AI / product: skill, prompt, model, agent, token, context, output, feature
+- experimentation: split test, control, variant, arm, funnel, lift, rollout
+- engineering: deploy, commit, branch, merge, build, PR, check (CI), endpoint, log, cache, workflow, secret
+- marketing: landing page, checkout, upsell, lead, click, dashboard, retargeting
+- our product: elite, daddy, baby, SD, SB, match, survey, dedupe, p50/p95
+  "AI skills" → "skills de AI"                 NOT "habilidades de AI"
   "the split control" → "o control do split"   NOT "o braço de controle"
+  "the variant arm" → "o arm da variant"       NOT "o braço da variante"
+  "coelhinho's checks" → "os checks do coelhinho"   NOT "as verificações do coelhinho"
+  "a survey of paying users" → "uma survey com usuários pagantes"
+
+RULE 1 is narrow. The test: would a Brazilian developer say this English word in
+the middle of a Portuguese sentence in a stand-up? If plain Portuguese is what
+they would actually say, use the Portuguese word. Ordinary words are NOT jargon
+just because they appear in a technical conversation:
+  response → resposta, message → mensagem, users → usuários, changes → mudanças,
+  access → acesso, permissions → permissões, subscription → assinatura,
+  paid → pago, active → ativo, distance → distância, location → localização,
+  speed → velocidade, interaction → interação, resources → recursos,
+  questions → perguntas, minutes → minutos, page → página, video → vídeo
+  "is your account a paid account? is the subscription active?"
+    → "sua conta é paga? a assinatura está ativa?"
+    NOT "sua conta é um paid account? a subscription está active?"
+Never leave an English verb form or an English clause inside a Portuguese
+sentence. Conjugate a Portuguese verb; for jargon verbs use "fazer <term>":
+  "you are paying" → "você está pagando"              NOT "você está paying"
+  "rotate them immediately" → "rotacionar na hora"    NOT "rotate them immediately"
+  "I will merge this skill" → "vou fazer o merge dessa skill"
+Never leave a whole phrase untranslated because it contains one jargon word:
+  "are we checking this interaction?" → "estamos checando essa interação?"
 
 RULE 2 — Translate the meaning, not the words.
 Never translate an idiom or metaphor literally. Say what it actually means the
 way a native speaker of the target language would say it, or drop the figure of
 speech and state it plainly. If a literal rendering would puzzle a native
 speaker, it is wrong — rewrite it plainly instead.
-  "both bite when tested" → state what really happens (e.g. "as duas quebram quando testadas")
-                            NOT "as duas mordem quando um teste"
+  "both bite when tested" → "as duas quebram quando testadas"  NOT "as duas mordem quando um teste"
+  "this is key" → "isso é essencial"                            NOT "isto é chave"
+  "pre coffee, if you can believe it" → "antes do café, acredite se quiser"
+                                        NOT "before coffee se você puder acreditar"
+  "would go a long way" → "ajudaria muito"
 
 Formatting rules:
 1. Match capitalization (don't add capitals where none exist)
@@ -180,20 +260,26 @@ Formatting rules:
 3. Keep the same informal/casual tone
 4. PRESERVE ALL LINE BREAKS AND PARAGRAPH FORMATTING exactly as in the original
 5. Keep spacing, indentation and line structure intact
-6. Return ONLY the translation with no explanations
+6. Use proper Portuguese accents (você, não, está, mudança)
+7. Return ONLY the translation — no explanations, no surrounding quotes, no tags
 
-Text: "]] .. text:gsub('"', '\\"') .. [["
+<text>
+]] .. text .. [[
+
+</text>
 ]]
 
   local body = {
     model = TRANSLATE_MODEL,
     messages = {
-      {role = "system", content = "You are a translator between English and Portuguese for a product and engineering team. You keep technical vocabulary in English rather than inventing Portuguese equivalents, and you translate meaning rather than words — never an idiom literally."}, -- Added system role for better context
+      {role = "system", content = "You are a translator between English and Portuguese for a product and engineering team. You keep real technical jargon and proper names in English, but you translate every ordinary word — an English word is not jargon just because it appears in a technical conversation. You translate meaning rather than words, never an idiom literally."},
       {role = "user", content = prompt}
     },
     -- Stable, non-PII end-user tag so OpenAI can attribute/limit abuse per-feature
     -- instead of blocking the whole account. See OpenAI safety_identifier docs.
-    safety_identifier = "dotfiles-translate"
+    safety_identifier = "dotfiles-translate",
+    -- Low temperature: translation should be reproducible, not creative
+    temperature = 0.2
   }
 
   local jsonBody = hs.json.encode(body)
@@ -211,7 +297,14 @@ Text: "]] .. text:gsub('"', '\\"') .. [["
         local response = hs.json.decode(body)
         local translated = response and response.choices and response.choices[1].message.content
         if translated and translated:match("%S") then
-          logTranslation(text, translated)
+          -- Strip wrappers the model sometimes echoes back: the <text> tags from
+          -- the prompt, and quotes around the whole output when the input had none
+          translated = translated:gsub("^%s*<text>%s*", "")
+          translated = translated:gsub("%s*</text>%s*$", "")
+          if not text:match('^%s*"') and translated:match('^%s*".*"%s*$') then
+            translated = translated:gsub('^%s*"', ''):gsub('"%s*$', '')
+          end
+          logTranslation(text, translated, target)
           callback(translated)
           return
         else
