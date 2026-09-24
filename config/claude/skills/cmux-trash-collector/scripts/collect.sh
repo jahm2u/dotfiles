@@ -85,6 +85,10 @@ if [ -d "$WT" ]; then
   [ -n "$DIRTY" ] && git -C "$WT" diff > "$ARCH/UNCOMMITTED-DISCARDED.patch" 2>/dev/null || true
 fi
 cp "$(bf_log_file "$SLUG")" "$ARCH/builder.log" 2>/dev/null || true
+# Codex review rounds (codex-review.sh writes them beside the ledger): keep the reviews and
+# transcripts, drop the generated runner scripts and exit markers.
+for f in "$DIR/$SLUG".codex-review-*.md "$DIR/$SLUG".codex-review-*.log; do if [ -e "$f" ]; then mv "$f" "$ARCH/"; fi; done
+rm -f "$DIR/$SLUG".codex-review-*.sh "$DIR/$SLUG".codex-review-*.exit
 echo "==> harvested to $ARCH: $(ls "$ARCH" | tr '\n' ' ')"
 
 # 3. builder workspace

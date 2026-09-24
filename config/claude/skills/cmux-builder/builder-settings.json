@@ -9,6 +9,8 @@
       "Skill",
       "Bash(~/.claude/skills/cmux-builder/scripts/report.sh:*)",
       "Bash(/Users/v/.claude/skills/cmux-builder/scripts/report.sh:*)",
+      "Bash(/Users/v/.claude/skills/cmux-builder/scripts/codex-review.sh:*)",
+      "Bash(~/.claude/skills/cmux-builder/scripts/codex-review.sh:*)",
       "Bash($R:*)",
       "Bash(R=*)",
       "Bash(env:*)",

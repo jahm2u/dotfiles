@@ -78,9 +78,34 @@ backend suite green in 41s").
 Quick-dev's one-shot and step-05 endings say "offer to push" and HALT — you are past the human
 there; continue with section 2 instead of halting.
 
-## 2. Ship it
+## 2. Two local reviews, then ship it
 
-The project's CLAUDE.md is in your worktree and applies in full. In particular:
+Nothing reaches the PR reviewer until two local reviews have run on your COMMITTED work, in
+this order. Report each with `review-round` ("local claude: 2 major fixed", "codex round 2: clean").
+
+1. **Local Claude review** -- one context-free adversarial review of the diff, in a fresh
+   subagent (the `code-review` skill at medium, or the repo's own reviewer skill if its CLAUDE.md
+   names one). Fix every major+ at the root cause, commit. Once per PR, not per round.
+2. **Local Codex review** -- run, with a 600000 ms Bash timeout:
+   ```bash
+   cd <literal worktree path> && ~/.claude/skills/cmux-builder/scripts/codex-review.sh
+   ```
+   It opens a `🔍 review` tab beside you running Codex (gpt-6-astra, low effort, `--yolo`) --
+   inline if no tab can be opened -- reviews the WHOLE branch against `origin/main`, blocks
+   until it finishes (up to 540 s), prints the review and closes the tab. Codex only REVIEWS; you fix.
+   - Exit 0: clean. Move on.
+   - Exit 1: at least one `[P0]`-`[P2]`. Verify each against the code; fix the real ones and
+     commit; a finding you judge wrong gets one line of why in your next `review-round` report
+     and in the PR body, and does not count against you. Re-run. P3 is a nit: acknowledge only.
+   - Exit 2: the review itself failed, timed out, or printed findings it could not parse --
+     read what it printed. One retry, then `blocked`.
+   - Exit 3: refused before reviewing (dirty tree incl. untracked files, no commits, no codex).
+     Fix the cause; it is not a finding.
+   Done when every P0-P2 left is one you recorded as wrong (Codex will keep repeating it; that
+   is not a reason to loop). Stop after 3 rounds that still report P0-P2 you agree with: `question`.
+   If it prints `WARNING: codex changed the worktree`, revert what it wrote -- never commit it.
+
+Then push and open the PR. The project's CLAUDE.md is in your worktree and applies in full. In particular:
 
 - Commit with `git commit -F -` and a quoted heredoc. Footer: `Fixes #$BF_ISSUE` when the PR completes the issue, `Refs #$BF_ISSUE` when it is a part; blank line before the footer.
 - Gate every commit on HEAD having moved (commitlint can reject silently): `BEFORE=$(git rev-parse --short HEAD)`, commit, assert `git rev-parse --short HEAD` differs.
@@ -98,8 +123,9 @@ cd <literal worktree path> && node scripts/pr-watch.js <N> --wait
 Each round: `report.sh review-round "round k: <blocking> blocking / <minor> minor"`. Fix every major+
 at the root cause inside the spec's boundaries; sub-major findings are acknowledged, not fixed,
 unless trivial and inside a hunk you already touched. Reply to each inline finding with its
-disposition (`gh api repos/<owner>/<repo>/pulls/<N>/comments/<id>/replies -f body=…`), push,
-loop. A major that requires leaving the spec's boundaries is a `question` to the orchestrator.
+disposition (`gh api repos/<owner>/<repo>/pulls/<N>/comments/<id>/replies -f body=…`), commit,
+re-run `codex-review.sh` on the fix (it is cheap and catches what the fix broke; the local
+Claude review is NOT repeated per round), then push and loop. A major that requires leaving the spec's boundaries is a `question` to the orchestrator.
 If `mergeable` is CONFLICTING, merge `origin/main` into the branch.
 
 When pr-watch prints `CONVERGED` for the CURRENT head: `report.sh converged "PR #<N> converged at
