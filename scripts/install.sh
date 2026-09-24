@@ -1050,6 +1050,10 @@ execute_symlinks() {
     create_symlink "$DOTFILES_DIR/config/hammerspoon" "$HOME/.hammerspoon" "Hammerspoon"
     create_symlink "$DOTFILES_DIR/config/raycast" "$HOME/.config/raycast" "Raycast"
     create_symlink "$DOTFILES_DIR/config/khal" "$HOME/.config/khal" "Khal"
+    mkdir -p "$HOME/.claude"
+    create_symlink "$DOTFILES_DIR/config/claude/skills" "$HOME/.claude/skills" "Claude skills"
+    create_symlink "$DOTFILES_DIR/config/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md" "Claude global CLAUDE.md"
+    create_symlink "$DOTFILES_DIR/config/claude/RTK.md" "$HOME/.claude/RTK.md" "Claude RTK.md (imported by CLAUDE.md)"
 }
 
 execute_install_deps() {
