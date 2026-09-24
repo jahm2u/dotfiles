@@ -31,6 +31,17 @@ $C <slug> --keep-branch         # leave the remote branch (someone else still ne
    - which branch/worktree/workspace were removed.
 5. If the builder left entries in `deferred-work.md`, read the archived copy and tell the user what was deferred; that is the only place those items now exist besides the merged PR body.
 
+## Stray tabs
+
+Before the worktree goes, `scripts/sweep-tabs.py --dir <worktree>` closes the OTHER tabs still
+working inside it (an interactive `codex`, a shell), and after it `--deleted` sweeps tabs left
+in any worktree that is already gone (trash from collections that predate this). Tabs are found
+by process cwd (`lsof`) mapped to cmux through `cmux tree`'s tty, never by title. A tab is closed
+only when everything on it is a shell, `sleep`, or codex and its children. Anything running
+Claude, an editor, `top`, a server -- or the orchestrator's, builder's or caller's own tab -- is
+printed as `LEFT` with the reason and stays open. Run it with `--dry-run` to see the verdicts
+first. A closed codex conversation reopens with `codex resume`.
+
 ## What it never does
 
 - Merge a PR, close an issue, or push anything except a remote-branch delete after a confirmed merge.

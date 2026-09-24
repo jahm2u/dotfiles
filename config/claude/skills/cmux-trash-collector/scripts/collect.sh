@@ -107,6 +107,12 @@ fi
 # The builders folder goes when its last builder does (only the empty anchor left).
 bf_group_drop_if_empty "${BF_GROUP:-}" "${BF_ORCH_WS:-}" || true
 
+# Other tabs working inside the worktree (an interactive codex, a shell) would outlive it with a
+# deleted cwd. Close the provably disposable ones; anything else -- a Claude session above all --
+# is only reported. Then sweep trash stranded by collections that predate this step.
+SWEEP="$HOME/.claude/skills/cmux-trash-collector/scripts/sweep-tabs.py"
+if [ -d "$WT" ]; then (cd "$ROOT" && "$SWEEP" --dir "$WT") || echo "WARNING: tab sweep failed; check for tabs left in $WT" >&2; fi
+
 # 4. worktree + branch
 if [ -d "$WT" ]; then
   echo "==> git worktree remove $WT"
@@ -136,6 +142,8 @@ if [ $KEEP_BRANCH -eq 0 ] && git -C "$ROOT" ls-remote --exit-code --heads origin
     git -C "$ROOT" push -q origin --delete "$BRANCH" && echo "==> deleted remote branch $BRANCH" || echo "WARNING: could not delete remote branch $BRANCH"
   fi
 fi
+
+(cd "$ROOT" && "$SWEEP" --deleted) || true
 
 # 5. bookkeeping
 cmux clear-status "bf-$SLUG" --workspace "$BF_ORCH_WS" >/dev/null 2>&1 || true
