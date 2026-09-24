@@ -61,6 +61,12 @@ bf_my_workspace() {
   cmux identify --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["caller"]["workspace_ref"])'
 }
 
+# The CALLER's own surface. Needed because a builder is a tab INSIDE the orchestrator's
+# workspace, so a workspace ref alone no longer identifies which of the two you mean.
+bf_my_surface() {
+  cmux identify --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["caller"]["surface_ref"])'
+}
+
 # Text currently sitting UNSUBMITTED in a prompt (empty when the prompt is clear).
 # No `❯` on screen at all (mid-turn, or a dialog) also reads as empty -- the safe
 # direction, since a false "still there" would loop on Enter.
@@ -90,9 +96,20 @@ bf_prompt_text() { # target-flags
 #      lands on the CALLER's own surface while the byte-identical literal form lands on the
 #      target. So a backspace loop written as `cmux send-key $target backspace` would erase
 #      YOUR OWN prompt, not the builder's. That is why this is a comment and not code.
-# Consequence: stale prompt text still CONCATENATES with whatever is typed next, and
-# `tell.sh`'s "sent to ..." line is an echo of intent, not proof of delivery. Read the
-# builder's screen back.
+# CORRECTION (2026-09-12), measured -- two of the claims above are wrong:
+#   * `cmux send` REPLACES the prompt contents, it does NOT concatenate. A stalled builder
+#     holding `node scripts/pr-watch.js 3567 --wait` took a fresh `cmux send` and the old
+#     text was gone. So stale text is not a reason to avoid tell.sh.
+#   * `cmux send-key <literal-flags> enter` can return OK and submit NOTHING -- four
+#     attempts in a row did nothing on a stalled surface, while tell.sh to that same
+#     surface submitted first time. The literal-vs-variable rule is NOT the whole story.
+# And the verification below FAILS FALSE: it reads Claude's own "Press up to edit queued
+# messages" hint as unsubmitted text, so a message queued while the builder is mid-turn
+# reports as a failure and is then delivered anyway. Three such warnings on 2026-09-12,
+# all three delivered exactly once.
+# Consequence, both directions: `tell.sh`'s "sent to ..." is an echo of intent, and its
+# non-zero exit is not proof of failure. READ THE BUILDER'S SCREEN BACK -- bare prompt
+# plus your text in the transcript means delivered, whatever the exit code said.
 bf_send_line() { # target-flags text
   local target="$1" text="$2" i left
   cmux send-key $target ctrl+u >/dev/null 2>&1 || true
@@ -110,6 +127,21 @@ bf_send_line() { # target-flags text
 
 bf_say_to() { # workspace-ref text
   bf_send_line "--workspace $1" "$2"
+}
+
+# --- orchestrator addressing ----------------------------------------------------------
+# Mirror of bf_target for the OTHER direction. Since builders-as-tabs a builder shares
+# its orchestrator's workspace, so `--workspace $BF_ORCH_WS` is ambiguous and cmux can
+# deliver a builder's own report into its own prompt -- observed repeatedly on
+# 2026-09-12, where a converged PR sat unnoticed because its report never arrived.
+# BF_ORCH_SURFACE disambiguates. Ledgers written before this carry no surface and fall
+# back to the old workspace-only form, so builders spawned earlier keep working.
+bf_orch_target() {
+  if [ -n "${BF_ORCH_SURFACE:-}" ]; then
+    printf -- '--workspace %s --surface %s' "${BF_ORCH_WS:-}" "$BF_ORCH_SURFACE"
+  else
+    printf -- '--workspace %s' "${BF_ORCH_WS:-}"
+  fi
 }
 
 # True if the workspace ref still exists.

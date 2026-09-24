@@ -14,6 +14,11 @@
 #   ./relaunch-org-chats.sh --dry-run  # show what it would do
 #   ./relaunch-org-chats.sh PD OH      # only these orgs
 #   ./relaunch-org-chats.sh --force-main   # ALSO discard local commits/edits to reach main
+#   ./relaunch-org-chats.sh --safe-permissions  # launch with --permission-mode auto instead
+#
+# Relaunched chats run with --dangerously-skip-permissions: a babysitter is unattended,
+# and a session that stops on a permission prompt is a session that stops answering the
+# operator. --safe-permissions puts the prompts back for a run.
 #
 # An org with no chat workspace is CREATED from scratch (nothing to replace); an org that
 # already has one is replaced and its old session closed.
@@ -29,11 +34,13 @@ set -euo pipefail
 LAUNCH="$HOME/.claude/skills/babysit-chat/scripts/babysit.sh"
 STATE_DIR="$HOME/.claude/skills/babysit-chat/state"
 DRY=0; ORGS=(); SKIPPED=0; FORCE_MAIN=0
+LAUNCH_ARGS="--dangerously-skip-permissions"
 
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
     --force-main) FORCE_MAIN=1 ;;
+    --safe-permissions) LAUNCH_ARGS="" ;;
     -*) echo "unknown option: $a" >&2; exit 2 ;;
     *) ORGS+=("$(printf '%s' "$a" | tr '[:lower:]' '[:upper:]')") ;;
   esac
@@ -218,7 +225,7 @@ for org in "${ORGS[@]}"; do
   fi
 
   if [ "$DRY" = 1 ]; then
-    echo "would: new-workspace '$org Chat' at the top of folder '$ORG_FOLDER' running: $LAUNCH $org"
+    echo "would: new-workspace '$org Chat' at the top of folder '$ORG_FOLDER' running: $LAUNCH $org${LAUNCH_ARGS:+ $LAUNCH_ARGS}"
     [ "$fresh" = 0 ] && echo "       then close $old" || true
     continue
   fi
@@ -234,7 +241,7 @@ for org in "${ORGS[@]}"; do
   else echo "== $org: creating replacement in $ORG_FOLDER ($grp)..."; fi
   CMUX_QUIET=1 cmux new-workspace \
       --name "$org Chat" \
-      --command "$LAUNCH $org" \
+      --command "$LAUNCH $org${LAUNCH_ARGS:+ $LAUNCH_ARGS}" \
       --group "$grp" --group-placement top \
       --focus false
   if [ "$fresh" = 0 ]; then
@@ -246,5 +253,5 @@ done
 
 echo
 [ "$SKIPPED" -gt 0 ] && echo "$SKIPPED org(s) SKIPPED with their sessions left running -- see above."
-echo "Done. Each new pane runs: $LAUNCH <ORG>"
+echo "Done. Each new pane runs: $LAUNCH <ORG>${LAUNCH_ARGS:+ $LAUNCH_ARGS}"
 echo "Floor per turn: 172,862 -> 144,605 tokens."

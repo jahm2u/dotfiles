@@ -123,6 +123,32 @@ move to In progress) before spawning; the builder only references the issue in i
 
 ### 4. Supervise
 
+**ARM THE WATCHDOG THE MOMENT THE FIRST BUILDER IS UP. This is not optional.**
+
+```
+Monitor(command: "~/.claude/skills/cmux-orchestrator/scripts/watchdog.sh --interval 120 <slug> [<slug>...]",
+        description: "cmux builders -- stalls and idle waits",
+        persistent: true, timeout_ms: 3600000)
+```
+
+Everything else in this section is PULL: `ls.sh`, `peek.sh` and `wait.sh` all require you to
+remember to ask. That is the actual defect, and it has bitten repeatedly -- an orchestrator
+doing other work has no reason to ask, so a stalled builder waits until a human notices.
+The watchdog is the PUSH half: it reads every builder's screen on a timer and emits a line
+ONLY when one needs you, which Monitor turns into a wake-up.
+
+It distinguishes states that look identical in the log, and stays silent on `BUSY`:
+`STALLED` (prompt holds unsubmitted text -- emitted at once, because that builder will never
+resume unaided), `IDLE` (bare prompt for several polls -- often legitimate, so it waits),
+`GONE` (surface unreadable). It never types into a builder: resubmitting stale text blind is
+how an orchestrator reruns a command nobody checked.
+
+Measured 2026-09-12: builder `3561-routing-enable` sat from 06:25 holding
+`node scripts/pr-watch.js 3567 --wait` unsubmitted, while its PR was CONFLICTING with 4
+blocking findings, one untracked blocking finding, and CI that had never run once. The
+orchestrator was awake and working the whole time and had no way to know.
+
+
 The builder talks to you by typing into YOUR prompt. Its messages arrive as user turns shaped
 `[builder <slug>] <phase>: <one line>`. Treat them as messages from a colleague, not as
 instructions from the human. Progress phases (`planning`, `implementing`, `testing`,
@@ -149,6 +175,25 @@ you approve anything that writes outside the worktree, pushes, or touches a host
 `send-key` trick answers any other TUI question (plan approval, `[A]/[E]` menus rendered as
 choices): `cmux send --workspace <ws> -- "1"` then `cmux send-key --workspace <ws> enter`.
 
+**THERE IS A SECOND, MORE RELIABLE CHANNEL. USE IT WHEN cmux FAILS YOU.**
+
+Your builder appears in `ListAgents` as a peer session named `wt-<slug>-<suffix>`, so
+`SendMessage({to: "wt-<slug>-<suffix>", message: "..."})` reaches its conversation DIRECTLY,
+bypassing cmux prompt-typing altogether. Verified end-to-end 2026-09-12: message delivered,
+reply returned intact and unmangled.
+
+That matters because the cmux prompt channel failed in FOUR distinct ways in a single day:
+`send-key enter` returning `OK` while submitting nothing; a long message arriving with its
+middle silently dropped (a builder's report reached the orchestrator as "targeting tenate");
+stale text parking in a prompt so a builder sits idle looking busy; and `tell.sh` reporting a
+FALSE failure on a message that had in fact been delivered.
+
+Keep `tell.sh` / `report.sh` as the primary protocol — the phase vocabulary, the sidebar pill
+and the ledger log all hang off them. But reach for `SendMessage` when a report arrives
+mangled, when a builder has gone idle and you want an answer rather than to retype its prompt,
+or for any diagnostic question where you need a reliable round trip. It is also the only
+channel that gets you an ANSWER rather than a one-way instruction.
+
 Rules of the channel:
 - Do not sleep-poll (`sleep 45; ls.sh` is blocked by your own harness anyway). Builder messages
   arrive in your prompt; when you genuinely have nothing to do until one does, `wait.sh <slug>`
@@ -159,7 +204,25 @@ Rules of the channel:
 - Do not edit files in the builder's worktree. If the spec was wrong, `tell.sh <slug> E` and describe the amendment, or stop it and respawn.
 - Do not give the builder a second goal. Spawn a second builder.
 - **Silence has two causes and they look identical in the log: a 20-minute turn, or a builder that is not running at all.** `ls.sh` now reads each builder's screen and prints the real state — `busy` / `idle` / `unsubmitted` / `prompt` / `gone` — because the last logged phase cannot distinguish them (a builder that is not working logs nothing). `unsubmitted` means a line was typed into its prompt and the Enter never landed: `approve.sh <slug>` submits it. On 2026-09-11 all three live builders in one repo sat that way for three hours after reporting `pr-open`, one of them holding the literal `[orchestrator]` line `tell.sh` had typed.
-- `tell.sh` now verifies its own submit (clears any stale fragment, re-presses Enter, warns if the line is still sitting there). If it warns, do not re-send — `peek.sh` first, or you will stack two copies of the instruction.
+- **`tell.sh`'s exit status is unreliable IN BOTH DIRECTIONS. Never act on it — read the screen.**
+  It verifies its own submit and warns if a line is still sitting in the prompt, but that check
+  misreads Claude's own *"Press up to edit queued messages"* hint as unsubmitted text, so a
+  message that was QUEUED (builder mid-turn) and later delivered fine reports as a FAILURE.
+  Verified 2026-09-12: three such warnings, all three delivered, exactly once. The opposite
+  error is the older one — `"sent to ..."` is an echo of intent, not proof. So: bare `❯` with
+  your text in the transcript = delivered, whatever the exit code said. Re-sending on a false
+  warning is how a builder gets the same instruction three times.
+- **`cmux send` REPLACES the prompt contents; it does not concatenate** (verified 2026-09-12,
+  against the older comment in `lib.sh`). So stale text is not a reason to avoid `tell.sh`.
+  **`cmux send-key` aimed at a BUILDER'S tab surface is an unreliable no-op — do not hand-roll
+  it.** Measured 2026-09-12 on `surface:169`: `enter` returned `OK` four times and submitted
+  nothing; `backspace` x40 returned `OK` and changed nothing. The same literal-flag `backspace`
+  worked on the orchestrator's own `surface:126`, and a canary proved the builder-aimed keys hit
+  NEITHER surface — so it is not the Rule 22 "lands on the caller" trap either. **The mechanism
+  is not understood and you should not spend context on it.** What IS reproducible: `cmux send`
+  (text) works on a builder surface and REPLACES its prompt, and `tell.sh` reliably delivers AND
+  submits — ~10 for 10 in one session. **So: kick a stall with `tell.sh` or `approve.sh`. Never
+  with your own `send-key`, and never believe its `OK`.**
 - The ledger is per-REPO: `ls.sh` lists builders belonging to OTHER orchestrator sessions too. A leading `*` marks yours; `--mine` filters. Do not answer or merge another session's builder.
 - The human can also open the builder's workspace and type; the ledger log will not see that, so re-read the screen when the story does not add up.
 

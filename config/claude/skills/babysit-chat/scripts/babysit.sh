@@ -20,11 +20,13 @@
 #   babysit.sh --print            # show the command for every org
 #   babysit.sh --check            # branch state of every org checkout, launch nothing
 #   babysit.sh --check PD MT      # ...or just these; exit 1 if any would refuse
+#   babysit.sh PD --dangerously-skip-permissions   # never prompt for a tool call
 #
 # Every launch runs preflight() first: it REFUSES a checkout that is on `main`
 # or whose git admin dir is gone, and warns on a detached or badly stale one.
 #
-# Defaults to `--permission-mode auto` and `--model opus[1m]`. Without an
+# Defaults to `--permission-mode auto` and `--model opus[1m]`;
+# --dangerously-skip-permissions (or --permission-mode NAME) overrides the former. Without an
 # explicit --model these sessions silently launched on claude-fable-5-1.
 #
 # The 1M variant is NOT a luxury here, it is forced: the floor is ~163k (skill +
@@ -40,6 +42,10 @@ MCP_CONFIG="$HOME/.claude/babysit/mcp.json"
 REPO_ROOT="$HOME/repos/01_business/tp"
 ORGS=(TP PD EX MT OH)
 MODEL="opus[1m]"
+# Permission args for the launched session. Default is `auto`; the babysitter is
+# an unattended session in a chat loop, so --dangerously-skip-permissions swaps in
+# a mode that never stops to ask (relaunch-org-chats.sh passes it by default).
+PERM_ARGS=(--permission-mode auto)
 
 resolve_dir() {   # checkout names vary in case (Babaflow-TP vs BabaFlow-MT)
   local org="$1" d
@@ -117,8 +123,8 @@ EOF
 
 cmd_for() {
   local org="$1" dir; dir="$(resolve_dir "$org")" || { echo "no checkout for $org" >&2; return 1; }
-  printf 'cd %q && claude --mcp-config %q --strict-mcp-config --permission-mode auto%s %q\n' \
-    "$dir" "$MCP_CONFIG" "${MODEL:+ --model $MODEL}" "$(prompt_for "$org")"
+  printf 'cd %q && claude --mcp-config %q --strict-mcp-config %s%s %q\n' \
+    "$dir" "$MCP_CONFIG" "${PERM_ARGS[*]}" "${MODEL:+ --model $MODEL}" "$(prompt_for "$org")"
 }
 
 prompt_for() {
@@ -191,6 +197,10 @@ fi
 while [ $# -gt 0 ]; do
   case "$1" in
     --model) MODEL="${2:?--model needs a value}"; shift 2 ;;
+    # Mutually exclusive with --permission-mode: claude rejects both at once.
+    --dangerously-skip-permissions|--dangerous)
+      PERM_ARGS=(--dangerously-skip-permissions); shift ;;
+    --permission-mode) PERM_ARGS=(--permission-mode "${2:?--permission-mode needs a value}"); shift 2 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -207,5 +217,5 @@ preflight "$ORG" "$DIR" || exit 1
 
 cd "$DIR"
 exec claude --mcp-config "$MCP_CONFIG" --strict-mcp-config \
-     --permission-mode auto ${MODEL:+--model "$MODEL"} \
+     "${PERM_ARGS[@]}" ${MODEL:+--model "$MODEL"} \
      "$(prompt_for "$ORG")"

@@ -52,7 +52,9 @@ cmux set-status "bf-$BF_SLUG" "$PHASE" --workspace "$BF_ORCH_WS" --icon hammer -
 if [ "$INTERRUPT" = 1 ]; then
   cmux notify --workspace "$BF_ORCH_WS" --title "builder $BF_SLUG · $PHASE" --body "$MSG" >/dev/null || true
   if bf_ws_exists "$BF_ORCH_WS"; then
-    bf_say_to "$BF_ORCH_WS" "[builder $BF_SLUG] $PHASE: $MSG"
+    # bf_orch_target, not bf_say_to: a builder is a tab inside the orchestrator's own
+    # workspace, so a workspace-only ref can land this message in the BUILDER's prompt.
+    bf_send_line "$(bf_orch_target)" "[builder $BF_SLUG] $PHASE: $MSG"
   else
     echo "WARNING: orchestrator workspace $BF_ORCH_WS is gone; message kept in ledger log only" >&2
   fi

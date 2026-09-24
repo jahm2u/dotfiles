@@ -52,6 +52,10 @@ LEDGER=$(bf_ledger_file "$SLUG")
 [ ! -f "$LEDGER" ] || bf_die "ledger already exists for '$SLUG' ($LEDGER). Run the trash collector first, or pick another slug."
 
 ORCH_WS=$(bf_my_workspace) || bf_die "cannot identify the orchestrator's cmux workspace (not inside cmux?)"
+# Surface too: builders are tabs in this same workspace, so the workspace ref alone
+# cannot tell report.sh which prompt is the orchestrator's. Non-fatal if unavailable --
+# report.sh falls back to the workspace-only form.
+ORCH_SURFACE=$(bf_my_surface 2>/dev/null || echo "")
 WT="$ROOT/.claude/worktrees/wt-$SLUG"
 [ ! -e "$WT" ] || bf_die "worktree path already exists: $WT"
 # Slugs conventionally lead with the issue number already; never write fix/71-71-foo.
@@ -140,6 +144,7 @@ BF_BRANCH=$BRANCH
 BF_WORKTREE=$WT
 BF_SPEC=$SPEC_IN_WT
 BF_ORCH_WS=$ORCH_WS
+BF_ORCH_SURFACE=$ORCH_SURFACE
 BF_MODEL=$MODEL
 BF_MODE=$MODE
 BF_MCP=$MCP
@@ -180,7 +185,7 @@ tab)
   # reads are inlined into the command instead. They must be quoted: a spec path or branch
   # with a space would otherwise split into stray argv and the builder would boot without
   # its ledger.
-  ENVPFX="BF_SLUG='$SLUG' BF_LEDGER='$LEDGER' BF_ORCH_WS='$ORCH_WS' BF_WORKTREE='$WT'"
+  ENVPFX="BF_SLUG='$SLUG' BF_LEDGER='$LEDGER' BF_ORCH_WS='$ORCH_WS' BF_ORCH_SURFACE='$ORCH_SURFACE' BF_WORKTREE='$WT'"
   ENVPFX="$ENVPFX BF_SPEC='$SPEC_IN_WT' BF_BRANCH='$BRANCH' BF_ISSUE='$ISSUE'"
   CMD="$ENVPFX $CLAUDE_CMD"
   echo "==> cmux new-surface in $ORCH_WS ($CLAUDE_CMD)"
@@ -209,7 +214,7 @@ workspace)
   echo "==> cmux new-workspace ($CLAUDE_CMD)"
   OUT=$(cmux new-workspace --name "🔨 $SLUG" --description "builder · $BRANCH" \
     --cwd "$WT" --focus "$FOCUS" \
-    --env "BF_SLUG=$SLUG" --env "BF_LEDGER=$LEDGER" --env "BF_ORCH_WS=$ORCH_WS" \
+    --env "BF_SLUG=$SLUG" --env "BF_LEDGER=$LEDGER" --env "BF_ORCH_WS=$ORCH_WS" --env "BF_ORCH_SURFACE=$ORCH_SURFACE" \
     --env "BF_WORKTREE=$WT" --env "BF_SPEC=$SPEC_IN_WT" --env "BF_BRANCH=$BRANCH" --env "BF_ISSUE=$ISSUE" \
     --command "$CLAUDE_CMD")
   BUILDER_WS=$(echo "$OUT" | sed -n 's/^OK \(workspace:[0-9]*\).*/\1/p' | tail -1)

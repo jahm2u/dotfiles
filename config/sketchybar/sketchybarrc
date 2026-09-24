@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 # Auto-generated configuration switcher
-# Current config: desktop
+# Current config: desktop-privacy
 
 SKETCHYBAR_CONFIG="/Users/v/.config/sketchybar"
-source "$SKETCHYBAR_CONFIG/sketchybarrc-desktop"
+source "$SKETCHYBAR_CONFIG/sketchybarrc-desktop-privacy"
