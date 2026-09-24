@@ -92,7 +92,8 @@ ARGS=(--yolo -c check_for_update_on_startup=false -c "model=$MODEL" -c "model_re
   echo "echo '== codex review round $N: $BRANCH vs $BASE ($MODEL, effort $EFFORT) =='"
   # SHOW=1 (the tab) streams the transcript to the terminal; inline keeps it on disk only.
   printf '%s' "$(printf '%q ' "${CODEX[@]}" "${ARGS[@]}")"
-  echo "> $(q "$REVIEW") 2> >(if [ \"\${SHOW:-0}\" = 1 ]; then tee $(q "$TRANSCRIPT") >&2; else cat > $(q "$TRANSCRIPT"); fi)"
+  # </dev/null: with a non-tty stdin codex waits to read a prompt from it and never starts.
+  echo "</dev/null > $(q "$REVIEW") 2> >(if [ \"\${SHOW:-0}\" = 1 ]; then tee $(q "$TRANSCRIPT") >&2; else cat > $(q "$TRANSCRIPT"); fi)"
   echo 'rc=$?; sleep 1'
   echo "echo \$rc > $(q "$DONE").tmp && mv $(q "$DONE").tmp $(q "$DONE")"
   echo "echo; echo \"== review done (exit \$rc) ==\"; cat $(q "$REVIEW")"
