@@ -1397,8 +1397,16 @@ local volumeKeyTap = hs.eventtap.new({hs.eventtap.event.types.systemDefined}, fu
             return true
         end
 
-        -- Plain volume keys = adjust volume on current device (deferred)
+        -- Plain volume keys: only intercept for the LG Dual aggregate device,
+        -- where native macOS volume keys are disabled (aggregate limitation).
+        -- For every normal single device (laptop speakers, single LG, Mac mini
+        -- speakers, etc.) native volume control works fine, so pass through —
+        -- this keeps volume keys working normally on the laptop.
         if not mods.ctrl and not mods.alt and not mods.cmd then
+            local device = audioDevices[audioCycleIndex]
+            if not (device and device.isDual) then
+                return false
+            end
             if not data.down then return true end
             audioFileLog("TAP: vol " .. data.key .. " idx=" .. tostring(audioCycleIndex))
             local key = data.key
