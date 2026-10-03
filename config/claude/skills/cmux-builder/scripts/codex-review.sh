@@ -25,6 +25,10 @@
 #     answered with Enter (default = "Yes, continue"); codex then persists the trust itself.
 #   * The TUI also opens on an "Update available" menu: check_for_update_on_startup=false.
 #   * `codex review` prints the final review on STDOUT and its whole transcript on STDERR.
+#   * No `~/.local/bin/cg` on the MBP (2026-10-03): cg is only the cg.sh shell function there,
+#     which a script does not inherit, so a bare `codex` went to api.openai.com -> 401. The
+#     provider block cg.sh's wrapper prepends is re-created below from CG_ACTIVE/CG_KEY, and
+#     the key reaches the review tab (a fresh shell) through a 0600 file, never argv/scrollback.
 #
 # From a builder: call it by its literal path (a $VAR in the command defeats the pre-approved
 # allow-list) with a Bash timeout of 600000.
@@ -67,8 +71,25 @@ fi
 
 # The codex BINARY via the gateway helper when present. In an interactive zsh `codex` is a
 # function that routes through cg; a script does not inherit that function.
+# Without the binary, a shell that cg.sh put on the gateway (CG_ACTIVE + CG_KEY exported)
+# gets the same provider block its `codex` wrapper prepends -- same keys, BEFORE the subcommand.
+CG_PRE=() CG_SHIM=0 KEYFILE=""
 if [ -x "$HOME/.local/bin/cg" ]; then CODEX=("$HOME/.local/bin/cg" codex)
-else CODEX=("$(command -v codex)") || die "codex is not installed"; fi
+else
+  CODEX=("$(command -v codex)") || die "codex is not installed"
+  if [ -n "${CG_ACTIVE:-}" ] && [ -n "${CG_KEY:-}" ]; then
+    # cg.sh semantics: CG_CODEX_URL, when set, IS the codex base URL; else CG_URL + the path.
+    CG_PRE=(-c model_provider=teamclaude
+            -c model_providers.teamclaude.name=teamclaude
+            -c "model_providers.teamclaude.base_url=${CG_CODEX_URL:-${CG_URL:-https://claude.ipmedia.com.br}/backend-api/codex}"
+            -c model_providers.teamclaude.wire_api=responses
+            -c model_providers.teamclaude.requires_openai_auth=false
+            -c 'model_providers.teamclaude.env_http_headers={ "x-api-key" = "CG_KEY" }')
+    CG_SHIM=1
+  else
+    echo "WARNING: no ~/.local/bin/cg and this shell is not on the gateway (CG_ACTIVE/CG_KEY unset); codex will use its own auth" >&2
+  fi
+fi
 
 # Artifacts live beside the ledger (gitignored, in the PRIMARY checkout) so the worktree stays
 # clean for the collector; without a ledger they go to a temp dir.
@@ -78,18 +99,32 @@ mkdir -p "$OUTDIR"
 N=1; while [ -e "$OUTDIR/$SLUG.codex-review-$N.md" ]; do N=$((N + 1)); done
 P="$OUTDIR/$SLUG.codex-review-$N"
 REVIEW="$P.md" TRANSCRIPT="$P.log" DONE="$P.exit" RUNNER="$P.sh"
+# The review tab is a fresh shell without this shell's CG_KEY, and env_http_headers reads
+# the key from codex's ENVIRONMENT. So the runner exports it from a 0600 file beside the
+# other artifacts and deletes the file as soon as it has read it; this script removes it on
+# exit too. The key is never on a command line and never printed.
+if [ $CG_SHIM = 1 ]; then
+  KEYFILE="$P.key"
+  (umask 077; printf '%s' "$CG_KEY" > "$KEYFILE")
+  trap 'rm -f "$KEYFILE"' EXIT
+fi
 
 # Codex REVIEWS; the builder fixes. --yolo lets codex run code (it smoke-tests), so snapshot
 # the tree and flag anything it wrote -- a change the builder did not make must not be committed.
 TREE_BEFORE=$(git status --porcelain --untracked-files=all)
 
 q() { printf '%q' "$1"; }
-ARGS=(--yolo -c check_for_update_on_startup=false -c "model=$MODEL" -c "model_reasoning_effort=$EFFORT"
+# ${arr[@]+...}: bash 3.2 (macOS /bin/bash) trips `set -u` on an empty array otherwise.
+ARGS=(${CG_PRE[@]+"${CG_PRE[@]}"}
+      --yolo -c check_for_update_on_startup=false -c "model=$MODEL" -c "model_reasoning_effort=$EFFORT"
       review --base "$BASE")
 {
   echo '#!/usr/bin/env bash'
   echo "cd $(q "$WT") || { echo 97 > $(q "$DONE"); exit 97; }"
   echo "echo '== codex review round $N: $BRANCH vs $BASE ($MODEL, effort $EFFORT) =='"
+  if [ -n "$KEYFILE" ]; then
+    echo "[ -r $(q "$KEYFILE") ] && CG_KEY=\$(cat $(q "$KEYFILE")); export CG_KEY; rm -f $(q "$KEYFILE")"
+  fi
   # SHOW=1 (the tab) streams the transcript to the terminal; inline keeps it on disk only.
   printf '%s' "$(printf '%q ' "${CODEX[@]}" "${ARGS[@]}")"
   # </dev/null: with a non-tty stdin codex waits to read a prompt from it and never starts.
