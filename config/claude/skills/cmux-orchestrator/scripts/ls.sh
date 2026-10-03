@@ -31,7 +31,9 @@ shopt -s nullglob
 found=0
 for f in "$DIR"/*.env; do
   found=1
-  ( set -a; . "$f"; set +a
+  ( unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_TAB BF_BUILDER_AGENT
+    set -a; . "$f"; set +a
+    bf_herdr_env
     mine=" "; [ -n "$ME" ] && [ "${BF_ORCH_WS:-}" = "$ME" ] && mine="*"
     [ "$MINE_ONLY" = 1 ] && [ "$mine" != "*" ] && exit 0
     state=$(bf_builder_state)

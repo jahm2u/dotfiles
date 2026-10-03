@@ -22,7 +22,7 @@ control over cmux:
   worktree and branch.
 
 Ledger per builder: `<primary checkout>/_bmad/handoff/cmux/<slug>.env` + `.log` (gitignore it
-in each repo). Requires: running inside cmux (`cmux identify`), `gh` auth, and a project that
+in each repo). Requires: running inside cmux (`cmux identify`) or herdr (`HERDR_ENV=1`), `gh` auth, and a project that
 carries the `bmad-quick-dev` skill with its `spec-template.md`. Auto mode needs an Opus-class
 model; `--model haiku` falls back to whatever `--mode` you pass.
 Builders start with NO MCP servers (`--strict-mcp-config`): MCP tool descriptions are their
@@ -31,3 +31,7 @@ BabaFlow's loaded. `spawn.sh --mcp full` opts back in when the spec needs a brow
 Each repo's builders sit in one pinned, collapsible sidebar group, `🔨 <repo> builders`, with
 the orchestrator's workspace as the first item under the header and builders below it; the
 folder stays while the orchestrator is in it (`--group mine|none` to override).
+**herdr too:** run the orchestrator from a herdr pane (`HERDR_ENV=1`) and the same three skills
+drive herdr instead: builders become `🔨 <slug>` herdr tabs in the orchestrator's workspace, started
+as herdr agents `b-<slug>`, reports arrive via `herdr agent prompt`. The ledger's `BF_MUX` picks the
+backend per builder (absent = cmux), so cmux builders and herdr builders coexist.

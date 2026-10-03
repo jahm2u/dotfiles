@@ -8,4 +8,4 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [ $# -ge 1 ] || bf_die "usage: peek.sh <slug> [lines]"
 bf_load "$1"
 bf_builder_alive || bf_die "builder $(bf_builder_where) is gone"
-cmux read-screen $(bf_target) --lines "${2:-40}"
+bf_read "$(bf_target)" "${2:-40}"

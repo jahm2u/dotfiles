@@ -33,7 +33,7 @@ else typed into this terminal is the human looking over your shoulder; treat it 
 ## 0. Orient (before anything else)
 
 ```bash
-env | grep '^BF_'            # BF_SLUG BF_LEDGER BF_ORCH_WS BF_WORKTREE BF_SPEC BF_BRANCH BF_ISSUE
+env | grep '^BF_'            # BF_SLUG BF_LEDGER BF_ORCH_WS BF_WORKTREE BF_SPEC BF_BRANCH BF_ISSUE (+ BF_MUX=herdr in herdr)
 cd <literal BF_WORKTREE path> && pwd && git branch --show-current && git status --short
 ```
 
@@ -43,6 +43,10 @@ The shell cwd persists between your Bash calls but a wrong-tree run is the most 
 in this repo: prefix every git/test command with `cd <literal worktree path> &&`.
 
 Then: `report.sh started "on <branch>, reading spec"` (literal path to report.sh, literal branch).
+
+In herdr (`BF_MUX=herdr`) everything below is the same: report.sh and codex-review.sh detect the
+backend themselves (reports go in via `herdr agent prompt`, the `🔍 review` tab is a herdr tab).
+Never call cmux directly from a herdr builder.
 
 ## 1. Build with quick-dev, orchestrator as the human
 

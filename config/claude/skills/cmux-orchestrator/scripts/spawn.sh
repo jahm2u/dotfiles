@@ -14,6 +14,12 @@
 #   6. add the workspace to the "🔨 <repo> builders" sidebar group (created on first use)
 #   7. put a status pill on the ORCHESTRATOR's workspace so the human sees it in the sidebar
 # Prints: the builder workspace ref on the last line.
+#
+# herdr: run from a herdr pane (HERDR_ENV=1) and steps 5-7 happen in herdr instead -- the
+# builder is a new herdr TAB in the caller's workspace (`herdr tab create`, BF_* via --env),
+# Claude is started there with `herdr agent start` under an agent name (b-<slug>), and the
+# ledger records BF_MUX=herdr plus the server socket, tab, pane and agent name. Steps 1-4
+# are identical. --group does not apply (herdr has no sidebar folders).
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
@@ -51,7 +57,11 @@ ROOT=$(bf_primary_root)
 LEDGER=$(bf_ledger_file "$SLUG")
 [ ! -f "$LEDGER" ] || bf_die "ledger already exists for '$SLUG' ($LEDGER). Run the trash collector first, or pick another slug."
 
-ORCH_WS=$(bf_my_workspace) || bf_die "cannot identify the orchestrator's cmux workspace (not inside cmux?)"
+if bf_caller_is_herdr; then MUX=herdr; else MUX=cmux; fi
+export BF_MUX=$MUX
+ORCH_WS=$(bf_my_workspace) || bf_die "cannot identify the orchestrator's cmux workspace (not inside cmux or herdr?)"
+[ -n "$ORCH_WS" ] || bf_die "cannot identify the orchestrator's workspace"
+HERDR_SOCK=""; [ "$MUX" = herdr ] && HERDR_SOCK="${HERDR_SOCKET_PATH:-}"
 # Surface too: builders are tabs in this same workspace, so the workspace ref alone
 # cannot tell report.sh which prompt is the orchestrator's. Non-fatal if unavailable --
 # report.sh falls back to the workspace-only form.
@@ -153,6 +163,10 @@ BF_PR=
 BF_CREATED=$(bf_now)
 BF_BUILDER_WS=
 BF_BUILDER_SURFACE=
+BF_MUX=$MUX
+BF_HERDR_SOCKET=$HERDR_SOCK
+BF_BUILDER_TAB=
+BF_BUILDER_AGENT=
 LEDGER
 bf_logline "$SLUG" spawning "worktree=$WT branch=$BRANCH base=$BASE orch=$ORCH_WS"
 
@@ -171,7 +185,81 @@ case "$MODE" in
 esac
 CLAUDE_CMD="claude --model '$MODEL' $MODEFLAG --settings $SETTINGS $MCPFLAG -- '/cmux-builder'"
 
+# Gateway routing, PER PANE. A builder routes the way the pane that spawned it routes:
+# the MP hives export their own ANTHROPIC_* (their gateway, their key, their model
+# names) into each seat's shell, so if this shell carries them they are passed through
+# verbatim. Only a shell with no routing of its own falls back to `cg env`, which prints
+# this machine's stored key + pool as exports (no settings.json write). Nothing is
+# written globally: an `env` block in ~/.claude/settings.json beats a shell export, so
+# a global `cg on` on a box that also hosts hive seats would silently redirect them --
+# which is why such a box runs `cg off` and relies on this instead. Values never reach
+# the ledger or the log; the key must not end up in a file.
+GW_VARS=(ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_MODEL
+         ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
+         ANTHROPIC_DEFAULT_FABLE_MODEL CLAUDE_CODE_SUBAGENT_MODEL CG_ACTIVE CG_KEY_FILE)
+GW_SRC=""
+if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then GW_SRC="this pane's exports"
+elif GW_CG=$(command -v tpcg || command -v cg) && GW_OUT=$($GW_CG env); then eval "$GW_OUT"; GW_SRC="$GW_CG env"; fi   # cg env says on stderr why it refused (tpcg on a Mac where IPMedia's cg owns the name)
+GW_ENVS=()
+for v in "${GW_VARS[@]}"; do [ -n "${!v:-}" ] && GW_ENVS+=(--env "$v=${!v}"); done
+[ -n "$GW_SRC" ] && echo "==> gateway env for the builder from $GW_SRC (${ANTHROPIC_BASE_URL%%/teamclaude*})" \
+  || echo "==> no gateway env in this pane and no cg key: the builder uses its own login / global settings"
+
 BUILDER_WS="" BUILDER_SURFACE="" GROUP_REF=""
+if [ "$MUX" = herdr ]; then
+  # The claude argv as an array: herdr agent start passes it through verbatim, no shell
+  # quoting layer to get wrong. '/cmux-builder' is NOT in it -- it is submitted with
+  # `agent prompt` once herdr has seen Claude reach its input box.
+  CLAUDE_ARGS=(--model "$MODEL")
+  if [ "$MODE" = yolo ]; then CLAUDE_ARGS+=(--dangerously-skip-permissions); else CLAUDE_ARGS+=(--permission-mode "$MODE"); fi
+  CLAUDE_ARGS+=(--settings "$SETTINGS")
+  [ -n "$MCPFLAG" ] && CLAUDE_ARGS+=("$MCPFLAG")
+  ENVS=(--env "BF_SLUG=$SLUG" --env "BF_LEDGER=$LEDGER" --env "BF_ORCH_WS=$ORCH_WS" --env "BF_ORCH_SURFACE=$ORCH_SURFACE"
+        --env "BF_WORKTREE=$WT" --env "BF_SPEC=$SPEC_IN_WT" --env "BF_BRANCH=$BRANCH" --env "BF_ISSUE=$ISSUE"
+        --env "BF_MUX=herdr" --env "BF_HERDR_SOCKET=$HERDR_SOCK" ${GW_ENVS[@]+"${GW_ENVS[@]}"})
+  FOCUSFLAG=--no-focus; [ "$FOCUS" = true ] && FOCUSFLAG=--focus
+  case "$PLACE" in
+    tab)       OUT=$(herdr tab create --workspace "$ORCH_WS" --cwd "$WT" --label "🔨 $SLUG" "${ENVS[@]}" "$FOCUSFLAG") ;;
+    workspace) OUT=$(herdr workspace create --cwd "$WT" --label "🔨 $SLUG" "${ENVS[@]}" "$FOCUSFLAG") ;;
+    *) bf_die "--place must be tab|workspace";;
+  esac
+  read -r BUILDER_WS BUILDER_TAB BUILDER_SURFACE < <(printf '%s' "$OUT" | python3 -c '
+import json,sys
+r=json.load(sys.stdin)["result"]; p=r["root_pane"]
+print(p["workspace_id"], p["tab_id"], p["pane_id"])') || bf_die "could not parse herdr ids from: $OUT"
+  bf_set "$SLUG" BF_BUILDER_WS "$BUILDER_WS"
+  bf_set "$SLUG" BF_BUILDER_TAB "$BUILDER_TAB"
+  bf_set "$SLUG" BF_BUILDER_SURFACE "$BUILDER_SURFACE"
+  # herdr agent names: [a-z][a-z0-9_-]{0,31}, unique among live agents.
+  AGENT=$(printf 'b-%s' "$SLUG" | cut -c1-32 | sed 's/-*$//')
+  echo "==> herdr agent start $AGENT in $BUILDER_SURFACE (claude ${CLAUDE_ARGS[*]})"
+  sleep 1   # let the new tab's shell reach its prompt
+  if ! AOUT=$(herdr agent start "$AGENT" --kind claude --pane "$BUILDER_SURFACE" --timeout 90000 -- "${CLAUDE_ARGS[@]}" 2>&1); then
+    case "$AOUT" in
+      *agent_not_ready*) ;;   # started, but held at a startup dialog; handled below
+      *name*|*exists*|*duplicate*)
+        AGENT=$(printf 'b-%s' "$SLUG" | cut -c1-26 | sed 's/-*$//')-$((RANDOM % 9000 + 1000))
+        herdr agent start "$AGENT" --kind claude --pane "$BUILDER_SURFACE" --timeout 90000 -- "${CLAUDE_ARGS[@]}" >/dev/null \
+          || bf_die "herdr agent start failed twice: $AOUT";;
+      *) bf_die "herdr agent start failed: $AOUT";;
+    esac
+  fi
+  bf_set "$SLUG" BF_BUILDER_AGENT "$AGENT"
+  # A startup dialog (folder trust, a settings warning) blocks the first prompt. Wait for
+  # herdr to see an input-ready agent; if it never does, say exactly what to do.
+  ready=0
+  for i in $(seq 1 30); do
+    st=$(herdr agent get "$AGENT" 2>/dev/null | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; a=r.get("agent") or r; print(a.get("agent_status",""))' 2>/dev/null || true)
+    case "$st" in idle|done) ready=1; break;; esac
+    sleep 2
+  done
+  if [ $ready = 1 ] && herdr agent prompt "$AGENT" "/cmux-builder" >/dev/null 2>&1; then
+    echo "==> /cmux-builder submitted to $AGENT"
+  else
+    echo "WARNING: $AGENT is not at an input prompt (state: ${st:-?}); /cmux-builder NOT submitted." >&2
+    echo "         peek.sh $SLUG, clear the dialog (approve.sh $SLUG), then: herdr agent prompt $AGENT /cmux-builder" >&2
+  fi
+else
 case "$PLACE" in
 tab)
   # The builder is a TAB in this orchestrator's own workspace. cmux groups are flat --
@@ -182,7 +270,10 @@ tab)
   # sidebar itself cannot express.
   #
   # `new-surface` has NO --env flag, unlike new-workspace, so the BF_* the builder skill
-  # reads are inlined into the command instead. They must be quoted: a spec path or branch
+  # reads are inlined into the command instead. GW_ENVS deliberately are NOT: inlining
+  # them would type the gateway key into the terminal, where it stays in scrollback. A
+  # cmux tab builder routes through this machine's global settings (cg on), which is
+  # the right answer on a box that hosts no hive seats. They must be quoted: a spec path or branch
   # with a space would otherwise split into stray argv and the builder would boot without
   # its ledger.
   ENVPFX="BF_SLUG='$SLUG' BF_LEDGER='$LEDGER' BF_ORCH_WS='$ORCH_WS' BF_ORCH_SURFACE='$ORCH_SURFACE' BF_WORKTREE='$WT'"
@@ -216,7 +307,7 @@ workspace)
     --cwd "$WT" --focus "$FOCUS" \
     --env "BF_SLUG=$SLUG" --env "BF_LEDGER=$LEDGER" --env "BF_ORCH_WS=$ORCH_WS" --env "BF_ORCH_SURFACE=$ORCH_SURFACE" \
     --env "BF_WORKTREE=$WT" --env "BF_SPEC=$SPEC_IN_WT" --env "BF_BRANCH=$BRANCH" --env "BF_ISSUE=$ISSUE" \
-    --command "$CLAUDE_CMD")
+    ${GW_ENVS[@]+"${GW_ENVS[@]}"} --command "$CLAUDE_CMD")
   BUILDER_WS=$(echo "$OUT" | sed -n 's/^OK \(workspace:[0-9]*\).*/\1/p' | tail -1)
   [ -n "$BUILDER_WS" ] || bf_die "could not parse workspace ref from: $OUT"
   bf_set "$SLUG" BF_BUILDER_WS "$BUILDER_WS"
@@ -232,6 +323,7 @@ workspace)
   ;;
 *) bf_die "--place must be tab|workspace";;
 esac
+fi
 bf_set "$SLUG" BF_GROUP "$GROUP_REF"
 [ -n "$GROUP_REF" ] && echo "==> in sidebar group $GROUP_REF"
 # If this orchestrator IS an org chat, record the builder in that org's sidecar. The
@@ -250,8 +342,8 @@ fi
 bf_set "$SLUG" BF_STATUS "started"
 bf_logline "$SLUG" spawned "builder at ${BUILDER_SURFACE:-$BUILDER_WS}"
 
-cmux set-status "bf-$SLUG" "spawned" --workspace "$ORCH_WS" --icon hammer --color "#8fbcbb" --priority 50 >/dev/null || true
-cmux log --workspace "$ORCH_WS" --source orchestrator "spawned builder $SLUG at ${BUILDER_SURFACE:-$BUILDER_WS} ($BRANCH)" >/dev/null || true
+bf_pill "$SLUG" spawned "#8fbcbb" "$ORCH_WS"
+bf_wslog "$ORCH_WS" "" orchestrator "spawned builder $SLUG at ${BUILDER_SURFACE:-$BUILDER_WS} ($BRANCH)"
 
 echo "builder=${BUILDER_SURFACE:-$BUILDER_WS} place=$PLACE worktree=$WT branch=$BRANCH spec=$SPEC_IN_WT ledger=$LEDGER"
 echo "${BUILDER_SURFACE:-$BUILDER_WS}"

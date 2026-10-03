@@ -42,6 +42,11 @@ Claude, an editor, `top`, a server -- or the orchestrator's, builder's or caller
 printed as `LEFT` with the reason and stays open. Run it with `--dry-run` to see the verdicts
 first. A closed codex conversation reopens with `codex resume`.
 
+herdr builders (`BF_MUX=herdr` in the ledger): collect.sh closes the builder's herdr TAB
+(`BF_BUILDER_TAB`) and every `🔍 review` tab codex-review.sh recorded in `BF_REVIEW_TABS`, and nothing
+else. sweep-tabs.py is cmux-only and is skipped; any other herdr pane still sitting in the worktree is
+printed as a WARNING for you to close by hand.
+
 ## What it never does
 
 - Merge a PR, close an issue, or push anything except a remote-branch delete after a confirmed merge.

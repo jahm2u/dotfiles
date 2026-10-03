@@ -2,7 +2,8 @@
 # report.sh <phase> "<one-line message>" [--ping]
 #
 # The builder's only channel back to the orchestrator. Run from inside the builder's
-# cmux workspace (BF_SLUG / BF_LEDGER / BF_ORCH_WS come from the workspace env).
+# cmux workspace or herdr tab (BF_SLUG / BF_LEDGER / BF_ORCH_WS come from its env; the
+# ledger's BF_MUX picks cmux or herdr -- in herdr the line goes in via `herdr agent prompt`).
 #
 # Phases and what each one does:
 #   progress-only (log + sidebar pill, does NOT interrupt the orchestrator):
@@ -23,6 +24,7 @@ PHASE=$1; MSG=$2; PING=${3:-}
 : "${BF_LEDGER:?BF_LEDGER not set}"
 [ -f "$BF_LEDGER" ] || bf_die "ledger missing: $BF_LEDGER"
 set -a; . "$BF_LEDGER"; set +a
+bf_herdr_env   # herdr ledgers: point the CLI at the server this builder lives on
 
 case "$PHASE" in
   started|planning|implementing|testing|review-round|pushing) INTERRUPT=0;;
@@ -46,11 +48,11 @@ bf_set "$BF_SLUG" BF_STATUS "$PHASE"
 bf_logline "$BF_SLUG" "$PHASE" "$MSG"
 
 MY_WS=$(bf_my_workspace 2>/dev/null || echo "")
-[ -n "$MY_WS" ] && cmux log --workspace "$MY_WS" --level "$LEVEL" --source builder -- "$MSG" >/dev/null || true
-cmux set-status "bf-$BF_SLUG" "$PHASE" --workspace "$BF_ORCH_WS" --icon hammer --color "$COLOR" --priority 50 >/dev/null || true
+[ -n "$MY_WS" ] && bf_wslog "$MY_WS" "$LEVEL" builder "$MSG"
+bf_pill "$BF_SLUG" "$PHASE" "$COLOR" "$BF_ORCH_WS"
 
 if [ "$INTERRUPT" = 1 ]; then
-  cmux notify --workspace "$BF_ORCH_WS" --title "builder $BF_SLUG · $PHASE" --body "$MSG" >/dev/null || true
+  bf_notify "$BF_ORCH_WS" "builder $BF_SLUG · $PHASE" "$MSG"
   if bf_ws_exists "$BF_ORCH_WS"; then
     # bf_orch_target, not bf_say_to: a builder is a tab inside the orchestrator's own
     # workspace, so a workspace-only ref can land this message in the BUILDER's prompt.

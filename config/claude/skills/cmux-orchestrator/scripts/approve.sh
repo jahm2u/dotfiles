@@ -31,13 +31,16 @@ bf_load "$SLUG"
 bf_builder_alive || bf_die "builder $(bf_builder_where) is gone"
 
 prompt_on_screen() {
-  cmux read-screen $(bf_target) --lines 15 2>/dev/null | grep -qE 'Do you want to proceed|Do you want to make this edit|Esc to cancel'
+  bf_read "$(bf_target)" 15 | grep -qE 'Do you want to proceed|Do you want to make this edit|Esc to cancel'
 }
 answer() {
   local what
-  what=$(cmux read-screen $(bf_target) --lines 15 2>/dev/null | grep -vE '^\s*$' | grep -B1 -E 'Run shell command|Do you want' | head -2 | tr '\n' ' ' | cut -c1-160)
-  if [ "$ANSWER" = "no" ]; then cmux send $(bf_target) -- "2" >/dev/null; sleep 0.3; fi
-  cmux send-key $(bf_target) enter >/dev/null
+  what=$(bf_read "$(bf_target)" 15 | grep -vE '^\s*$' | grep -B1 -E 'Run shell command|Do you want' | head -2 | tr '\n' ' ' | cut -c1-160)
+  if [ "$ANSWER" = "no" ]; then
+    if bf_is_herdr; then bf_send_key "$(bf_target)" 2; else cmux send $(bf_target) -- "2" >/dev/null; fi
+    sleep 0.3
+  fi
+  bf_send_key "$(bf_target)" enter
   bf_logline "$SLUG" orchestrator "permission $ANSWER: $what"
   echo "$(date +%T) answered $ANSWER: $what"
 }
@@ -48,7 +51,7 @@ submit_stalled() {   # returns 0 if it submitted something
   [ -n "$left" ] || return 1
   echo "unsubmitted line sitting in the prompt: $left"
   for i in 1 2 3; do
-    cmux send-key $(bf_target) enter >/dev/null
+    bf_send_key "$(bf_target)" enter
     sleep 1
     [ -z "$(bf_prompt_text "$(bf_target)")" ] && {
       bf_logline "$SLUG" orchestrator "submitted stalled prompt line: $left"

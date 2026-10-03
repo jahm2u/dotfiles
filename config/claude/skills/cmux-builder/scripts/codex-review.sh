@@ -102,29 +102,46 @@ chmod +x "$RUNNER"
 logl() { [ -n "${BF_SLUG:-}" ] && bf_logline "$BF_SLUG" codex-review "$1" || true; }
 logl "round $N started ($MODEL/$EFFORT vs $BASE)"
 
-SURFACE="" WS=""
-if [ $TAB -eq 1 ] && WS=$(bf_my_workspace 2>/dev/null) && [ -n "$WS" ]; then
+# herdr: the caller is a herdr pane, so the review tab is a herdr tab in the caller's
+# workspace. RTAB is its tab id (closing the tab closes its pane); SURFACE is the pane.
+SURFACE="" WS="" RTAB="" HERDR=0
+bf_caller_is_herdr && HERDR=1
+r_key()   { if [ $HERDR = 1 ]; then herdr pane send-keys "$SURFACE" "$1" >/dev/null 2>&1; else cmux send-key --workspace "$WS" --surface "$SURFACE" "$1" >/dev/null 2>&1; fi; }
+r_read()  { if [ $HERDR = 1 ]; then herdr pane read "$SURFACE" --source recent --lines "$1" 2>/dev/null; else cmux read-screen --workspace "$WS" --surface "$SURFACE" --lines "$1" 2>/dev/null; fi; }
+r_close() { if [ $HERDR = 1 ]; then herdr tab close "$RTAB" >/dev/null 2>&1; else cmux close-surface --workspace "$WS" --surface "$SURFACE" >/dev/null 2>&1; fi; }
+if [ $TAB -eq 1 ] && [ $HERDR = 1 ]; then
+  WS=$HERDR_WORKSPACE_ID
+  OUT=$(herdr tab create --workspace "$WS" --cwd "$WT" --label "🔍 review $SLUG #$N" --no-focus 2>/dev/null || true)
+  read -r RTAB SURFACE < <(printf '%s' "$OUT" | python3 -c 'import json,sys; p=json.load(sys.stdin)["result"]["root_pane"]; print(p["tab_id"], p["pane_id"])' 2>/dev/null) || true
+  # Recorded (comma-separated: the ledger is SOURCED, so a space would break it) so the
+  # trash collector can close a review tab left open after a failure.
+  [ -n "$RTAB" ] && [ -n "${BF_SLUG:-}" ] && bf_set "$BF_SLUG" BF_REVIEW_TABS "$(grep '^BF_REVIEW_TABS=' "$(bf_ledger_file "$BF_SLUG")" 2>/dev/null | cut -d= -f2)${RTAB},"
+elif [ $TAB -eq 1 ] && WS=$(bf_my_workspace 2>/dev/null) && [ -n "$WS" ]; then
   OUT=$(cmux new-surface --type terminal --workspace "$WS" --focus false 2>/dev/null || true)
   SURFACE=$(echo "$OUT" | sed -n 's/^OK \(surface:[0-9]*\).*/\1/p' | tail -1)
 fi
 if [ -n "$SURFACE" ]; then
-  cmux rename-tab --workspace "$WS" --surface "$SURFACE" "🔍 review $SLUG #$N" >/dev/null 2>&1 || true
   sleep 0.5
-  # Short on purpose: a long `cmux send` loses its middle. The command lives in $RUNNER.
-  cmux send --workspace "$WS" --surface "$SURFACE" -- "SHOW=1 bash $(q "$RUNNER")" >/dev/null
-  sleep 0.7
-  cmux send-key --workspace "$WS" --surface "$SURFACE" enter >/dev/null
+  if [ $HERDR = 1 ]; then
+    herdr pane run "$SURFACE" "SHOW=1 bash $(q "$RUNNER")" >/dev/null
+  else
+    cmux rename-tab --workspace "$WS" --surface "$SURFACE" "🔍 review $SLUG #$N" >/dev/null 2>&1 || true
+    # Short on purpose: a long `cmux send` loses its middle. The command lives in $RUNNER.
+    cmux send --workspace "$WS" --surface "$SURFACE" -- "SHOW=1 bash $(q "$RUNNER")" >/dev/null
+    sleep 0.7
+    cmux send-key --workspace "$WS" --surface "$SURFACE" enter >/dev/null
+  fi
   # `send-key enter` can return OK and submit nothing. The transcript file appearing is the
   # proof it started; one more Enter, then give up on the tab and run inline.
   started=0
   for i in $(seq 1 30); do
     [ -e "$TRANSCRIPT" ] && { started=1; break; }
-    [ "$i" = 10 ] && cmux send-key --workspace "$WS" --surface "$SURFACE" enter >/dev/null 2>&1
+    [ "$i" = 10 ] && r_key enter
     sleep 0.5
   done
   if [ $started -eq 0 ]; then
     echo "WARNING: the review tab $SURFACE never started; closing it and running inline" >&2
-    cmux close-surface --workspace "$WS" --surface "$SURFACE" >/dev/null 2>&1 || true
+    r_close || true
     SURFACE=""
   else
     echo "==> codex review round $N running in tab $SURFACE ($MODEL, effort $EFFORT)"
@@ -145,10 +162,9 @@ while [ ! -e "$DONE" ]; do
   fi
   # Answer codex's startup dialogs if one ever renders in the tab (Enter = the default:
   # "Yes, continue" on trust; the update menu is already suppressed by config).
-  if [ -n "$SURFACE" ] && cmux read-screen --workspace "$WS" --surface "$SURFACE" --lines 30 2>/dev/null \
-       | grep -q "Do you trust the contents of this directory"; then
+  if [ -n "$SURFACE" ] && r_read 30 | grep -q "Do you trust the contents of this directory"; then
     echo "==> answering codex's trust prompt in $SURFACE"
-    cmux send-key --workspace "$WS" --surface "$SURFACE" enter >/dev/null 2>&1 || true
+    r_key enter || true
   fi
   sleep 3
 done
@@ -161,7 +177,7 @@ if [ "$RC" != 0 ] || [ ! -s "$REVIEW" ]; then
   exit 2
 fi
 if [ -n "$SURFACE" ] && [ $KEEP_TAB -eq 0 ]; then
-  cmux close-surface --workspace "$WS" --surface "$SURFACE" >/dev/null 2>&1 || true
+  r_close || true
 fi
 
 cat "$REVIEW"

@@ -96,13 +96,14 @@ if [ -n "${BF_BUILDER_WS:-}" ] && bf_builder_alive; then
   echo "==> closing builder $(bf_builder_where)"
   bf_say_to_builder "/exit"
   sleep 3
-  if [ -n "${BF_BUILDER_SURFACE:-}" ]; then
-    # Close the TAB only. Closing BF_BUILDER_WS here would close the orchestrator's own
-    # workspace, since in tab mode that field is the HOST workspace, not the builder's.
-    cmux close-surface --workspace "$BF_BUILDER_WS" --surface "$BF_BUILDER_SURFACE" >/dev/null || true
-  else
-    cmux close-workspace --workspace "$BF_BUILDER_WS" >/dev/null || true
-  fi
+  # Close the TAB only (bf_close_builder). Closing BF_BUILDER_WS here would close the
+  # orchestrator's own workspace, since in tab mode that field is the HOST workspace.
+  bf_close_builder
+fi
+# herdr: codex-review.sh records every review tab it opens; a failed round leaves its tab
+# open on purpose. Close those -- and only those -- now.
+if bf_is_herdr; then
+  for t in $(printf '%s' "${BF_REVIEW_TABS:-}" | tr ',' ' '); do herdr tab close "$t" >/dev/null 2>&1 && echo "==> closed review tab $t" || true; done
 fi
 # The builders folder goes when its last builder does (only the empty anchor left).
 bf_group_drop_if_empty "${BF_GROUP:-}" "${BF_ORCH_WS:-}" || true
@@ -111,7 +112,19 @@ bf_group_drop_if_empty "${BF_GROUP:-}" "${BF_ORCH_WS:-}" || true
 # deleted cwd. Close the provably disposable ones; anything else -- a Claude session above all --
 # is only reported. Then sweep trash stranded by collections that predate this step.
 SWEEP="$HOME/.claude/skills/cmux-trash-collector/scripts/sweep-tabs.py"
-if [ -d "$WT" ]; then (cd "$ROOT" && "$SWEEP" --dir "$WT") || echo "WARNING: tab sweep failed; check for tabs left in $WT" >&2; fi
+# sweep-tabs.py is cmux-only. For a herdr builder, list (never close) herdr panes still
+# sitting in the worktree -- the collector only closes tabs the ledger says it created.
+if bf_is_herdr; then
+  if [ -d "$WT" ]; then
+    herdr pane list 2>/dev/null | python3 -c '
+import json,sys
+wt=sys.argv[1]
+for p in json.load(sys.stdin)["result"]["panes"]:
+    c=p.get("foreground_cwd") or p.get("cwd") or ""
+    if c==wt or c.startswith(wt+"/"): print("WARNING: herdr pane %s is still in the worktree (%s) -- close it yourself if disposable" % (p["pane_id"], c))
+' "$WT" >&2 || true
+  fi
+elif [ -d "$WT" ]; then (cd "$ROOT" && "$SWEEP" --dir "$WT") || echo "WARNING: tab sweep failed; check for tabs left in $WT" >&2; fi
 
 # 4. worktree + branch
 if [ -d "$WT" ]; then
@@ -143,13 +156,13 @@ if [ $KEEP_BRANCH -eq 0 ] && git -C "$ROOT" ls-remote --exit-code --heads origin
   fi
 fi
 
-(cd "$ROOT" && "$SWEEP" --deleted) || true
+bf_is_herdr || (cd "$ROOT" && "$SWEEP" --deleted) || true
 
 # 5. bookkeeping
-cmux clear-status "bf-$SLUG" --workspace "$BF_ORCH_WS" >/dev/null 2>&1 || true
+bf_pill_clear "$SLUG" "$BF_ORCH_WS"
 bf_logline "$SLUG" collected "pr=${BF_PR:-none} state=$PR_STATE force=$FORCE archive=$ARCH"
 bf_set "$SLUG" BF_STATUS "collected"
 mv "$(bf_ledger_file "$SLUG")" "$ARCH/ledger.env"
 mv "$(bf_log_file "$SLUG")" "$ARCH/builder.log" 2>/dev/null || true
-cmux log --workspace "$BF_ORCH_WS" --level success --source collector -- "collected $SLUG (PR ${BF_PR:-none} $PR_STATE); archive $ARCH" >/dev/null 2>&1 || true
+bf_wslog "$BF_ORCH_WS" success collector "collected $SLUG (PR ${BF_PR:-none} $PR_STATE); archive $ARCH"
 echo "DONE: $SLUG collected. PR ${BF_PR:-none} ($PR_STATE). Archive: $ARCH"

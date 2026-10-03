@@ -35,7 +35,21 @@ State lives in the PRIMARY checkout at `_bmad/handoff/cmux/<slug>.env` (ledger) 
 
 ## Preconditions (check once, silently)
 
-- You are inside cmux: `cmux identify --json` prints a `caller.workspace_ref`. If not, stop and say so: the builder cannot talk back to a terminal that is not a cmux workspace.
+- You are inside cmux (`cmux identify --json` prints a `caller.workspace_ref`) OR inside herdr (`HERDR_ENV=1`, `HERDR_PANE_ID` set). If neither, stop and say so: the builder cannot talk back to a terminal that is not a cmux workspace or herdr pane.
+
+**herdr backend.** Run from a herdr pane and every script here drives herdr instead of cmux; nothing
+else in this procedure changes. spawn.sh records `BF_MUX=herdr` plus the server socket in the ledger
+and every other script dispatches on it (ledgers without `BF_MUX` are cmux). The builder is a herdr
+TAB `🔨 <slug>` in your workspace, started with `herdr agent start b-<slug> --kind claude` (agent name
+in `BF_BUILDER_AGENT`) and handed `/cmux-builder` once it is input-ready. Builder reports reach you via
+`herdr agent prompt <your pane>` -- delivered in one atomic paste+Enter, so the cmux Enter-retry
+caveats below do not apply; a report to a pane sitting at a dialog is retried ~70s, then kept in the
+ledger log only. herdr classifies the builder itself (idle/working/blocked/done), so `ls.sh` states
+come from herdr plus the screen (429s, unsubmitted text). To answer a TUI choice by hand use
+`herdr agent send-keys b-<slug> 1 enter`, never cmux. Your pane id is the address builders report to
+and it survives restarting Claude in that pane, so an in-place context rotation keeps them connected.
+There are no sidebar folders or pills in herdr: `--group` is ignored and phases show as a
+`bf-<slug>` token on your workspace.
 - `gh auth status` works and `git fetch origin` works from the primary checkout.
 - The project has the quick-dev skill (`.claude/skills/bmad-quick-dev/spec-template.md`). Its spec template is the contract between you and the builder.
 
@@ -245,6 +259,6 @@ confirms the issue closed, and reports `merged` then `done`. Then run `/cmux-tra
 
 ### 6. When it goes wrong
 
-- Builder process died (workspace shows a shell prompt): the worktree and branch are intact. Either `cmux send --workspace <ws> "claude --model opus --permission-mode auto --continue"` to resume the same session in place, or collect with `--force` and respawn.
+- Builder process died (workspace shows a shell prompt): the worktree and branch are intact. Either `cmux send --workspace <ws> "claude --model opus --permission-mode auto --continue"` (herdr: `herdr pane run <BF_BUILDER_SURFACE> "claude --model opus --permission-mode auto --continue"`) to resume the same session in place, or collect with `--force` and respawn.
 - You want to stop it: `tell.sh <slug> stop` (it reports `failed` and idles), then collect.
 - Two builders needed the same file: that is a split that should have happened at step 1; let the first merge, then `tell.sh <second> "rebase onto origin/main"`.

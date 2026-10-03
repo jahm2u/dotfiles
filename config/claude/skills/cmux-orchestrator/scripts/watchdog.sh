@@ -97,15 +97,21 @@ while :; do
   printf '%s\n' "$WATCH" | while IFS= read -r slug; do
     [ -n "$slug" ] || continue
     ( bf_load "$slug" ) >/dev/null 2>&1 || continue
+    # This loop body runs in ONE subshell for every slug, so a field absent from this
+    # ledger would keep the previous slug's value -- a pre-herdr ledger would inherit
+    # BF_MUX=herdr. Clear the per-builder fields first.
+    unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_WS BF_BUILDER_SURFACE BF_BUILDER_TAB BF_BUILDER_AGENT
     # shellcheck disable=SC1090
     . "$LEDGER_DIR/$slug.env" 2>/dev/null || continue
+    bf_herdr_env
     [ -n "${BF_BUILDER_WS:-}" ] || continue
 
     sf="$STATE_DIR/$slug"
     prev="$(cat "$sf.state" 2>/dev/null || echo "")"
     n="$(cat "$sf.count" 2>/dev/null || echo 0)"
 
-    screen="$(cmux read-screen --workspace "$BF_BUILDER_WS" --surface "$BF_BUILDER_SURFACE" --lines 40 2>/dev/null)"
+    if bf_is_herdr; then screen="$(bf_read "$BF_BUILDER_SURFACE" 40)"
+    else screen="$(cmux read-screen --workspace "$BF_BUILDER_WS" --surface "$BF_BUILDER_SURFACE" --lines 40 2>/dev/null)"; fi
     if [ -z "$screen" ]; then
       [ "$prev" = "GONE" ] || emit "$slug GONE -- surface $BF_BUILDER_SURFACE unreadable; builder exited or was collected"
       echo GONE >"$sf.state"; echo 0 >"$sf.count"; continue
