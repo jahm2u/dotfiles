@@ -95,7 +95,13 @@ bf_my_surface() {
 # Last N rendered lines of a target's terminal. The one read primitive every script uses.
 bf_read() { # target lines
   if bf_is_herdr; then
-    herdr pane read "$1" --source recent --lines "${2:-40}" 2>/dev/null
+    # Read with ANSI so Claude Code's prompt SUGGESTION can be dropped: it renders dim
+    # (ESC[2m ... ESC[0m) after the ❯ and is never typed, but a plain read shows it as
+    # input, so every poll of a healthy builder classified STALLED and ls.sh said
+    # "unsubmitted" (2026-10-04, found by a sibling session). Strip dim runs, then
+    # every remaining escape, so callers see the same plain text as before.
+    herdr pane read "$1" --source recent --lines "${2:-40}" --format ansi 2>/dev/null \
+      | perl -pe 's/\e\[2m.*?(?=\e\[|$)//g; s/\e\[[0-9;?]*[A-Za-z]//g'
   else
     cmux read-screen $1 --lines "${2:-40}" 2>/dev/null
   fi
