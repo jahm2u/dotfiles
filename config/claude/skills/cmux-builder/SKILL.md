@@ -1,6 +1,6 @@
 ---
 name: cmux-builder
-description: Run as the builder half of the cmux orchestrator loop — you were launched by spawn.sh inside a git worktree and a cmux workspace with BF_* environment variables set. Implement exactly one quick-dev spec, report every phase to the orchestrator over cmux, relay quick-dev checkpoints to it instead of deciding yourself, open the PR, drive the review loop, and merge only when told. Use when BF_SLUG is set in the environment or the first prompt is "/cmux-builder".
+description: Run as the builder half of the cmux orchestrator loop — you were launched by spawn.sh inside a git worktree and a cmux workspace with BF_* environment variables set. Implement exactly one bmad-build plan, report every phase to the orchestrator over cmux, relay bmad-build checkpoints to it instead of deciding yourself, open the PR, drive the review loop, and merge only when told. Use when BF_SLUG is set in the environment or the first prompt is "/cmux-builder".
 ---
 
 # cmux builder
@@ -33,7 +33,7 @@ else typed into this terminal is the human looking over your shoulder; treat it 
 ## 0. Orient (before anything else)
 
 ```bash
-env | grep '^BF_'            # BF_SLUG BF_LEDGER BF_ORCH_WS BF_WORKTREE BF_SPEC BF_BRANCH BF_ISSUE (+ BF_MUX=herdr in herdr)
+env | grep '^BF_'            # BF_SLUG BF_LEDGER BF_ORCH_WS BF_WORKTREE BF_SPEC BF_BRANCH BF_ISSUE BF_BMAD_ROOT (+ BF_MUX=herdr in herdr)
 cd <literal BF_WORKTREE path> && pwd && git branch --show-current && git status --short
 ```
 
@@ -48,38 +48,50 @@ In herdr (`BF_MUX=herdr`) everything below is the same: report.sh and codex-revi
 backend themselves (reports go in via `herdr agent prompt`, the `🔍 review` tab is a herdr tab).
 Never call cmux directly from a herdr builder.
 
-## 1. Build with quick-dev, orchestrator as the human
+## 1. Build with bmad-build, orchestrator as the human
 
-Read `$BF_SPEC` fully. Invoke the project's quick-dev skill with the spec path as its argument
-(the `bmad-quick-dev` skill; pass `$BF_SPEC`). It routes on the spec's `status`:
-`draft` → it plans (Code Map, Tasks, Verification) and halts at `[A] Approve | [E] Edit`;
-`ready-for-dev` → it implements straight away.
+Read `$BF_SPEC` fully: it is a `bmad-build` plan file (the frozen Intent and Boundaries block is
+the orchestrator's; Code Map, Tasks, Verification are yours to fill). Render the build skill
+against the BMAD root the orchestrator resolved -- NOT the nearest `_bmad/` above your cwd (a
+nested checkout's legacy `_bmad/` tree shadows the brain's and cannot render):
 
-At EVERY point where quick-dev says HALT and ask the human — the approve/edit checkpoint, the
+```bash
+uv run --no-cache <literal BF_BMAD_ROOT>/_bmad/scripts/render_skill.py --project-root <literal BF_BMAD_ROOT> --skill <literal BF_BMAD_ROOT>/.agents/skills/bmad-build
+```
+
+Read and follow the one `workflow.md` path it prints, with `$BF_SPEC` as the input. Step-01
+sees a file with `status` frontmatter and routes on it: `draft` → it plans (Code Map, Tasks,
+Verification) and halts at `[A] Approve | [E] Edit`; `ready-for-dev` → it implements straight
+away. The plan stays where spawn put it; `{output_folder}` paths the workflow names
+(`deferred-work.md`, review logs) resolve under the BMAD root. Add `--set workflow.route=oneshot|full`
+only when the spec says so (default `auto` picks by size). `bmad-build-auto` (never asks, halts
+`blocked`) is NOT what you run: the orchestrator is present, and the checkpoints below are the point.
+
+At EVERY point where bmad-build says HALT and ask the human — the approve/edit checkpoint, the
 split/keep question, an intent gap, a finding too big to patch, a loop that exceeded its budget
 — you do NOT answer it yourself. You:
 
-1. Gather EVERYTHING quick-dev wants answered at this halt into ONE numbered list and send it as
+1. Gather EVERYTHING bmad-build wants answered at this halt into ONE numbered list and send it as
    ONE `report.sh checkpoint "(1) … [S]/[K]; (2) … [A]/[E]"` (or `question` for intent gaps /
    Ask-First boundaries, `blocked` for environment problems). One round-trip, not one per question.
 2. End your turn and wait. The answer arrives as `[orchestrator] …` and may answer several items in
    one line (`K, A` or `1: K 2: A`). Apply ALL of them, in order, before reporting again. Never
    re-ask an item the line already answered.
 
-The 900–1600-token spec size is a proposal, not a gate: when the only thing quick-dev flags is the
+The 900–1600-token spec size is a proposal, not a gate: when the only thing bmad-build flags is the
 size and the spec is still one goal (the frozen intent block alone can be most of the budget),
 do not raise it as a question. Mention the count inside the approve checkpoint and move on.
 
 The spec's **Boundaries** are law. *Ask First* items → `question` and wait. *Never* items are
-out of scope even if a reviewer asks for them: report them as `defer` in quick-dev's
+out of scope even if a reviewer asks for them: report them as `defer` in bmad-build's
 classification and mention it in the PR body. If you discover the goal is really two goals,
 that is a `question`, not a decision.
 
-Send `planning` when quick-dev starts investigating, `implementing` when code changes start,
+Send `planning` when bmad-build starts investigating, `implementing` when code changes start,
 `testing` when the suites run. Keep the messages short and factual ("3 files, 2 tests added,
 backend suite green in 41s").
 
-Quick-dev's one-shot and step-05 endings say "offer to push" and HALT — you are past the human
+bmad-build's oneshot and step-05 endings say "offer to push" and HALT — you are past the human
 there; continue with section 2 instead of halting.
 
 ## 2. Two local reviews, then ship it
@@ -89,7 +101,8 @@ this order. Report each with `review-round` ("local claude: 2 major fixed", "cod
 
 1. **Local Claude review** -- one context-free adversarial review of the diff, in a fresh
    subagent (the `code-review` skill at medium, or the repo's own reviewer skill if its CLAUDE.md
-   names one). Fix every major+ at the root cause, commit. Once per PR, not per round.
+   names one). bmad-build's step-04 review lens IS this review when it ran against the final
+   committed diff; do not run it twice. Fix every major+ at the root cause, commit. Once per PR, not per round.
 2. **Local Codex review** -- run, with a 600000 ms Bash timeout:
    ```bash
    cd <literal worktree path> && ~/.claude/skills/cmux-builder/scripts/codex-review.sh
@@ -145,7 +158,7 @@ When pr-watch prints `CONVERGED` for the CURRENT head: `report.sh converged "PR 
 ## 5. Guardrails
 
 - Never touch `main`. `git push --force-with-lease origin <your branch>` after an amend of YOUR unmerged commits is fine and needs no question; `--force`, or any push to a branch that is not yours, is Never. Never write `.release-message`, never run `scripts/prod.sh` write commands or SSH anywhere. Those are Ask-First at best and usually Never.
-- Never expand scope to "while I'm here" work. Note it in `deferred-work.md` via quick-dev's classification and move on.
+- Never expand scope to "while I'm here" work. Note it in `deferred-work.md` via bmad-build's classification and move on.
 - Never spawn your own builders, run the orchestrator skill, or run `/cmux-trash-collector` — **on yourself least of all**. The collector types `/exit` into the session it is collecting and closes its workspace; run on yourself it kills you halfway through and leaves the worktree half-removed. Report `done` and let the orchestrator collect you. (`collect.sh` now refuses this, but do not rely on the guard.)
 - **A rate limit kills your turn and you cannot report it** — `report.sh` never runs, so your orchestrator keeps seeing your last phase and reads it as progress. If you come back from a `(429) … Retry in Ns`, your FIRST action is `report.sh blocked "rate limited, back after <N>s, tree is <clean|dirty>"`. Check the tree before assuming work was lost: a 429 after a push loses nothing.
 - If context passes ~70%, run the `handoff` skill (writes only under `_bmad/handoff/`), then `report.sh blocked "context at N%, handoff written; resume with --continue"`. The orchestrator can resume you in place.

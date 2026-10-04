@@ -4,6 +4,14 @@
 # Usage:
 #   spawn.sh --slug <kebab-slug> --spec <path-to-drafted-spec.md> [--issue <N>] \
 #            [--base origin/main] [--model opus[1m]] [--mode auto|acceptEdits|yolo] [--focus] [--spec-dir _bmad-output/implementation-artifacts] [--mcp none|full] [--place tab|workspace] [--group repo|mine|none]
+#            [--bmad-root <dir>] [--add-dir <dir>]...
+#
+# BMAD root: the nearest ancestor of the primary checkout (itself included) that carries the new
+# BMAD runtime (_bmad/scripts/render_skill.py + .agents/skills/bmad-build). Normally the company
+# brain (tp/baba-brain). It reaches the builder as BF_BMAD_ROOT and, when it is another repo, as
+# --add-dir (skills load only up to the cwd's repo root; --add-dir loads that dir's .claude/skills
+# and makes it writable under the builder's permission mode). --add-dir also names sibling
+# worktrees a spec writes into.
 #
 # What it does (idempotent per slug: refuses if a ledger already exists):
 #   1. git worktree add .claude/worktrees/wt-<slug> -b <branch> --no-track <base>   (Rule 20)
@@ -25,7 +33,8 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 . "$HERE/lib.sh"
 
-SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" MODE="auto" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts"
+SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" MODE="auto" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT=""
+ADD_DIRS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --slug) SLUG=$2; shift 2;;
@@ -38,7 +47,9 @@ while [ $# -gt 0 ]; do
     --spec-dir) SPEC_DIR=$2; shift 2;;
     --mcp) MCP=$2; shift 2;;   # none (default) | full
     --place) PLACE=$2; shift 2;; # tab (default: a tab in THIS workspace) | workspace (its own sidebar row)
-    --group) GROUP=$2; shift 2;; # repo (default: "🔨 <repo> builders" folder, orchestrator as its header) | mine (the orchestrator's own group) | none
+    --group) GROUP=$2; shift 2;;
+    --bmad-root) BMAD_ROOT=$2; shift 2;;
+    --add-dir) ADD_DIRS+=("$2"); shift 2;; # repo (default: "🔨 <repo> builders" folder, orchestrator as its header) | mine (the orchestrator's own group) | none
     *) bf_die "unknown arg $1";;
   esac
 done
@@ -50,10 +61,29 @@ if [ ! -f "$SPEC" ]; then
   alt="$(bf_primary_root)/$SPEC"; [ -f "$alt" ] && SPEC=$alt
 fi
 [ -f "$SPEC" ] || bf_die "--spec file not found: $SPEC (tried the cwd and the primary checkout; pass an absolute path)"
-grep -q '^status:' "$SPEC" || bf_die "spec has no 'status:' frontmatter (use the quick-dev spec template)"
+grep -q '^status:' "$SPEC" || bf_die "spec has no 'status:' frontmatter (use bmad-build's plan-template.md)"
 
 ORCH_CWD="$PWD"      # the orchestrator's own checkout; org chats run in Baba{F,f}low-<ORG>
 ROOT=$(bf_primary_root)
+command -v uv >/dev/null || bf_die "uv not found (brew install uv): bmad-build renders through it"
+if [ -z "$BMAD_ROOT" ]; then
+  d=$ROOT
+  while [ "$d" != / ]; do
+    if [ -f "$d/_bmad/scripts/render_skill.py" ]; then BMAD_ROOT=$d; break; fi
+    d=$(dirname "$d")
+  done
+fi
+[ -n "$BMAD_ROOT" ] && [ -f "$BMAD_ROOT/_bmad/scripts/render_skill.py" ] \
+  || bf_die "no BMAD runtime at or above $ROOT (run the bmad skill's setup in the brain, or pass --bmad-root). A legacy _bmad/ tree without scripts/render_skill.py does not count."
+BMAD_ROOT=$(cd "$BMAD_ROOT" && pwd -P)
+[ -d "$BMAD_ROOT/.agents/skills/bmad-build" ] || bf_die "$BMAD_ROOT has no .agents/skills/bmad-build"
+if [ "$BMAD_ROOT" != "$(cd "$ROOT" && pwd -P)" ]; then ADD_DIRS=("$BMAD_ROOT" ${ADD_DIRS[@]+"${ADD_DIRS[@]}"}); fi
+ADD_DIR_FLAGS=()
+for d in ${ADD_DIRS[@]+"${ADD_DIRS[@]}"}; do
+  [ -d "$d" ] || bf_die "--add-dir is not a directory: $d"
+  ADD_DIR_FLAGS+=(--add-dir "$(cd "$d" && pwd -P)")
+done
+echo "==> BMAD root $BMAD_ROOT${ADD_DIRS[@]+ (add-dir: ${ADD_DIRS[*]})}"
 LEDGER=$(bf_ledger_file "$SLUG")
 [ ! -f "$LEDGER" ] || bf_die "ledger already exists for '$SLUG' ($LEDGER). Run the trash collector first, or pick another slug."
 
@@ -167,6 +197,8 @@ BF_MUX=$MUX
 BF_HERDR_SOCKET=$HERDR_SOCK
 BF_BUILDER_TAB=
 BF_BUILDER_AGENT=
+BF_BMAD_ROOT=$BMAD_ROOT
+BF_ADD_DIRS='${ADD_DIRS[*]+${ADD_DIRS[*]}}'
 LEDGER
 bf_logline "$SLUG" spawning "worktree=$WT branch=$BRANCH base=$BASE orch=$ORCH_WS"
 
@@ -183,7 +215,8 @@ case "$MODE" in
   yolo) MODEFLAG="--dangerously-skip-permissions";;   # trusted spec in its isolated worktree: no prompts at all
   *)    MODEFLAG="--permission-mode $MODE";;
 esac
-CLAUDE_CMD="claude --model '$MODEL' $MODEFLAG --settings $SETTINGS $MCPFLAG -- '/cmux-builder'"
+ADDDIRSTR=""; for d in ${ADD_DIR_FLAGS[@]+"${ADD_DIR_FLAGS[@]}"}; do case "$d" in --add-dir) ADDDIRSTR="$ADDDIRSTR --add-dir";; *) ADDDIRSTR="$ADDDIRSTR '$d'";; esac; done
+CLAUDE_CMD="claude --model '$MODEL' $MODEFLAG --settings $SETTINGS $MCPFLAG$ADDDIRSTR -- '/cmux-builder'"
 
 # Gateway routing, PER PANE. A builder routes the way the pane that spawned it routes:
 # the MP hives export their own ANTHROPIC_* (their gateway, their key, their model
@@ -214,9 +247,10 @@ if [ "$MUX" = herdr ]; then
   if [ "$MODE" = yolo ]; then CLAUDE_ARGS+=(--dangerously-skip-permissions); else CLAUDE_ARGS+=(--permission-mode "$MODE"); fi
   CLAUDE_ARGS+=(--settings "$SETTINGS")
   [ -n "$MCPFLAG" ] && CLAUDE_ARGS+=("$MCPFLAG")
+  CLAUDE_ARGS+=(${ADD_DIR_FLAGS[@]+"${ADD_DIR_FLAGS[@]}"})
   ENVS=(--env "BF_SLUG=$SLUG" --env "BF_LEDGER=$LEDGER" --env "BF_ORCH_WS=$ORCH_WS" --env "BF_ORCH_SURFACE=$ORCH_SURFACE"
         --env "BF_WORKTREE=$WT" --env "BF_SPEC=$SPEC_IN_WT" --env "BF_BRANCH=$BRANCH" --env "BF_ISSUE=$ISSUE"
-        --env "BF_MUX=herdr" --env "BF_HERDR_SOCKET=$HERDR_SOCK" ${GW_ENVS[@]+"${GW_ENVS[@]}"})
+        --env "BF_MUX=herdr" --env "BF_HERDR_SOCKET=$HERDR_SOCK" --env "BF_BMAD_ROOT=$BMAD_ROOT" ${GW_ENVS[@]+"${GW_ENVS[@]}"})
   FOCUSFLAG=--no-focus; [ "$FOCUS" = true ] && FOCUSFLAG=--focus
   case "$PLACE" in
     tab)       OUT=$(herdr tab create --workspace "$ORCH_WS" --cwd "$WT" --label "🔨 $SLUG" "${ENVS[@]}" "$FOCUSFLAG") ;;
@@ -277,7 +311,7 @@ tab)
   # with a space would otherwise split into stray argv and the builder would boot without
   # its ledger.
   ENVPFX="BF_SLUG='$SLUG' BF_LEDGER='$LEDGER' BF_ORCH_WS='$ORCH_WS' BF_ORCH_SURFACE='$ORCH_SURFACE' BF_WORKTREE='$WT'"
-  ENVPFX="$ENVPFX BF_SPEC='$SPEC_IN_WT' BF_BRANCH='$BRANCH' BF_ISSUE='$ISSUE'"
+  ENVPFX="$ENVPFX BF_SPEC='$SPEC_IN_WT' BF_BRANCH='$BRANCH' BF_ISSUE='$ISSUE' BF_BMAD_ROOT='$BMAD_ROOT'"
   CMD="$ENVPFX $CLAUDE_CMD"
   echo "==> cmux new-surface in $ORCH_WS ($CLAUDE_CMD)"
   OUT=$(cmux new-surface --type terminal --workspace "$ORCH_WS" \
@@ -306,7 +340,7 @@ workspace)
   OUT=$(cmux new-workspace --name "🔨 $SLUG" --description "builder · $BRANCH" \
     --cwd "$WT" --focus "$FOCUS" \
     --env "BF_SLUG=$SLUG" --env "BF_LEDGER=$LEDGER" --env "BF_ORCH_WS=$ORCH_WS" --env "BF_ORCH_SURFACE=$ORCH_SURFACE" \
-    --env "BF_WORKTREE=$WT" --env "BF_SPEC=$SPEC_IN_WT" --env "BF_BRANCH=$BRANCH" --env "BF_ISSUE=$ISSUE" \
+    --env "BF_WORKTREE=$WT" --env "BF_SPEC=$SPEC_IN_WT" --env "BF_BRANCH=$BRANCH" --env "BF_ISSUE=$ISSUE" --env "BF_BMAD_ROOT=$BMAD_ROOT" \
     ${GW_ENVS[@]+"${GW_ENVS[@]}"} --command "$CLAUDE_CMD")
   BUILDER_WS=$(echo "$OUT" | sed -n 's/^OK \(workspace:[0-9]*\).*/\1/p' | tail -1)
   [ -n "$BUILDER_WS" ] || bf_die "could not parse workspace ref from: $OUT"

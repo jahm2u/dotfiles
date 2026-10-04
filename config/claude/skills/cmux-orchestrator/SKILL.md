@@ -6,7 +6,7 @@ description: Delegate one scoped piece of work to a fresh Claude builder running
 # cmux orchestrator
 
 You are the **orchestrator**: the long-lived session the human talks to. You never implement
-in a builder's worktree yourself. You write a small quick-dev spec, spawn a **builder**
+in a builder's worktree yourself. You write a small bmad-build spec, spawn a **builder**
 (a separate `claude` process in its own cmux workspace + git worktree, Opus, auto mode),
 answer its questions, decide when it merges, and then run the **trash collector**.
 
@@ -51,13 +51,13 @@ and it survives restarting Claude in that pane, so an in-place context rotation 
 There are no sidebar folders or pills in herdr: `--group` is ignored and phases show as a
 `bf-<slug>` token on your workspace.
 - `gh auth status` works and `git fetch origin` works from the primary checkout.
-- The project has the quick-dev skill (`.claude/skills/bmad-quick-dev/spec-template.md`). Its spec template is the contract between you and the builder.
+- A BMAD root is reachable from the primary checkout: the nearest ancestor (itself included) with `_bmad/scripts/render_skill.py` and `.agents/skills/bmad-build/`, normally the company brain (`tp/baba-brain`, set up once with the `bmad` skill), and `uv` is installed. `spawn.sh` resolves it (or takes `--bmad-root`), hands it to the builder as `BF_BMAD_ROOT` and as `--add-dir` when it is another repo (skills load only up to the cwd's repo root), and the builder renders `bmad-build` against it. A nested checkout's own legacy `_bmad/` (BabaFlow's bco/handoff tree) is NOT a root. The plan template `<root>/.agents/skills/bmad-build/plan-template.md` is the contract between you and the builder.
 
 ## Procedure
 
 ### 1. Scope: one builder = one single-goal spec
 
-Apply quick-dev's scope standard before writing anything: a spec is ONE user-facing goal that
+Apply bmad-build's scope standard before writing anything: a spec is ONE user-facing goal that
 could be reviewed and merged as one PR. If the ask contains two or more independently shippable
 deliverables, split it into two specs and two builders (or sequence them). Never hand a builder
 "and also…" work later; that is a second spawn.
@@ -68,25 +68,26 @@ Pick a slug: kebab-case, led by the issue number when there is one (`3403-lone-o
 
 ### 2. Draft the spec (the frozen half only)
 
-Write `_bmad/handoff/cmux/<slug>.spec.md` from the project's quick-dev `spec-template.md`.
-Fill ONLY the human-owned `<frozen-after-approval>` block and the frontmatter:
+Write `_bmad/handoff/cmux/<slug>.spec.md` from the BMAD root's `bmad-build/plan-template.md`.
+Fill ONLY the human-owned `<frozen-after-approval>` block and the frontmatter (copy every
+frontmatter key the template has; step-02 fills `route`, `risk`, `baseline_revision`):
 
 - frontmatter: `title`, `type`, `created`, `status: 'draft'`, `context:` (CLAUDE.md paths the builder must load beyond what the worktree already gives it — usually none).
 - **Intent**: Problem + Approach, two sentences each. Include the issue number and the concrete symptom you observed, not your theory of the cause, unless you verified it.
-- **Boundaries & Constraints** — this is where you keep the builder small:
+- **Boundaries & Constraints** — this is where you keep the builder small. The plan template has only *Always* and *Never*; keep the *Ask First* tier anyway, as its own line inside the block (the builder reads it as its question list and bmad-build carries it as frozen intent):
   - *Always*: the invariants (tests green, Conventional Commit with `Fixes #N`/`Refs #N`, `bot:hands-off` on the PR, root-cause fixes only).
   - *Ask First*: everything the builder must stop and ask you about. ALWAYS include: merging the PR, any DB migration, any change outside the files/subsystem named in Intent, touching prod (`prod.sh`, SSH, `.release-message`), and widening scope after a review finding.
   - *Never*: the non-goals, and the approaches you have already rejected (name them, so the builder does not rediscover them).
 - **I/O & Edge-Case Matrix** when the change has observable inputs/outputs; delete it otherwise.
 
 Leave Code Map, Tasks, Design Notes and Verification to the builder — investigating the code is
-its job, in its own context, not yours. `status: 'draft'` makes quick-dev run its planning step
+its job, in its own context, not yours. `status: 'draft'` makes bmad-build run its planning step
 and stop at the `[A] Approve | [E] Edit` checkpoint, which the builder relays to you. If you have
 already done the investigation and want to skip that round-trip, fill Tasks/Verification too and
 set `status: 'ready-for-dev'`.
 
 Keep YOUR frozen block under ~600 tokens. The builder's Code Map, Tasks and Verification have to
-fit alongside it inside quick-dev's 1600-token proposal; a 1,100-token intent block leaves the
+fit alongside it inside bmad-build's 1600-token proposal; a 1,100-token intent block leaves the
 builder choosing between an oversize spec and a split question back to you (all three AjudaDuda
 builders on 2026-09-07 hit exactly that). Spell out repo contracts LITERALLY in *Always* — the exact
 commit-footer token, the exact label name — because the builder reads the spec literally: "use
@@ -96,8 +97,14 @@ A spec that will not fit is a sign the goal is not single.
 ### 3. Spawn
 
 ```bash
-$S/spawn.sh --slug <slug> --spec "$(pwd)/_bmad/handoff/cmux/<slug>.spec.md" --issue <N>
+$S/spawn.sh --slug <slug> --spec "$(pwd)/_bmad/handoff/cmux/<slug>.spec.md" --issue <N> [--add-dir <sibling-worktree>]...
 ```
+
+Run it from the checkout the builder's worktree belongs to (`bf_primary_root` is the cwd's
+repo). `--issue` writes `Fixes #N` semantics into the branch name; for a ticket in ANOTHER repo
+leave it out and spell the cross-repo `Refs owner/repo#N` footer in the spec's *Always*. When the
+spec writes into a worktree of another repo (a brain PR beside a BabaFlow PR), create that
+worktree first and pass it as `--add-dir`, or the builder's edits there stop on prompts.
 
 Pass the spec as an absolute path (a relative one is also tried against the primary checkout).
 A slug that already leads with the issue number gives branch `fix/<slug>`; otherwise the number
@@ -180,7 +187,7 @@ interrupt you:
 
 | Phase | What it means | What you do |
 |-------|---------------|-------------|
-| `checkpoint` | quick-dev is waiting for `[A]`/`[E]`/`[S]`/`[K]` | Read the spec in the worktree (`peek.sh`, or open `$BF_SPEC` from `ls.sh <slug>`), then `tell.sh <slug> A` (or `E` followed by what to change) |
+| `checkpoint` | bmad-build is waiting for `[A]`/`[E]`/`[S]`/`[K]` | Read the spec in the worktree (`peek.sh`, or open `$BF_SPEC` from `ls.sh <slug>`), then `tell.sh <slug> A` (or `E` followed by what to change) |
 | `question` | an Ask-First boundary fired or intent is unclear | Answer in one line with `tell.sh`; if it needs the human, ask them and relay |
 | `blocked` | cannot proceed (auth, flaky CI, missing access) | Fix what is yours to fix, then `tell.sh <slug> continue`; or `tell.sh <slug> stop` |
 | `pr-open` | PR exists, review loop starting | Note the number — but do NOT stop watching. The review loop after it is the LONGEST part of the job, and a builder that stalls there logs nothing, so nothing will wake you. `wait.sh <slug> --for converged` blocks and exits 3 the moment the builder stops working |
