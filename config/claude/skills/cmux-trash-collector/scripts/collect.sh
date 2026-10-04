@@ -76,6 +76,10 @@ if [ -d "$WT" ]; then
   shopt -s nullglob
   for f in "$WT"/_bmad-output/implementation-artifacts/spec-"$SLUG"*.md; do
     cp "$f" "$ARCH/"
+    # The primary may have no _bmad-output yet (a brain-rooted builder on the new BMAD):
+    # without this the cp fails under set -e, after the archive copy but before the
+    # worktree is removed, and the collector looks like it did nothing (2026-10-04).
+    mkdir -p "$ROOT/_bmad-output/implementation-artifacts"
     dest="$ROOT/_bmad-output/implementation-artifacts/$(basename "$f")"
     [ -e "$dest" ] || cp "$f" "$dest"
   done
