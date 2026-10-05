@@ -71,7 +71,13 @@ At EVERY point where bmad-build says HALT and ask the human — the approve/edit
 split/keep question, an intent gap, a finding too big to patch, a loop that exceeded its budget
 — you do NOT answer it yourself. You:
 
-1. Gather EVERYTHING bmad-build wants answered at this halt into ONE numbered list and send it as
+0. **Sort the questions first (classify before asking).** For each one, ask: could running
+   something answer it? Behaviour of the code, the output of a command, a timing, whether a
+   test passes, what a file contains, what an API returns locally: RUN IT and record the
+   measured result in the plan instead of asking. Only product and preference calls (scope,
+   which of two acceptable designs, anything the spec marks Ask First) go to the orchestrator.
+   A question you could have answered by running something is a stall you chose.
+1. Gather EVERYTHING that is left for the orchestrator at this halt into ONE numbered list and send it as
    ONE `report.sh checkpoint "(1) … [S]/[K]; (2) … [A]/[E]"` (or `question` for intent gaps /
    Ask-First boundaries, `blocked` for environment problems). One round-trip, not one per question.
 2. End your turn and wait. The answer arrives as `[orchestrator] …` and may answer several items in
@@ -86,6 +92,11 @@ The spec's **Boundaries** are law. *Ask First* items → `question` and wait. *N
 out of scope even if a reviewer asks for them: report them as `defer` in bmad-build's
 classification and mention it in the PR body. If you discover the goal is really two goals,
 that is a `question`, not a decision.
+
+**Label every claim in every report and checkpoint** as `measured` (you ran it and read the
+result), `inferred` (follows from something you read or measured, say what), or `guess` (not
+checked). "Tests green" is measured only if you ran them at the head you are reporting. An
+unlabelled claim reads as a guess.
 
 Send `planning` when bmad-build starts investigating, `implementing` when code changes start,
 `testing` when the suites run. Keep the messages short and factual ("3 files, 2 tests added,
