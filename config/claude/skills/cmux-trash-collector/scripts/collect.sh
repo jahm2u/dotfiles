@@ -59,7 +59,7 @@ if [ "$PR_STATE" != "MERGED" ] && [ $FORCE -eq 0 ]; then
 fi
 DIRTY=""
 if [ -d "$WT" ]; then
-  DIRTY=$(git -C "$WT" status --porcelain 2>/dev/null || true)
+  DIRTY=$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null | grep -v " _bmad-output/implementation-artifacts/$(basename "$BF_SPEC")$" || true)
   if [ -n "$DIRTY" ] && [ $FORCE -eq 0 ]; then
     echo "$DIRTY"
     bf_die "worktree has uncommitted changes (above). Nothing removed. Show these to the human; --force discards them."
