@@ -133,7 +133,7 @@ elif [ -d "$WT" ]; then (cd "$ROOT" && "$SWEEP" --dir "$WT") || echo "WARNING: t
 # 4. worktree + branch
 if [ -d "$WT" ]; then
   echo "==> git worktree remove $WT"
-  if [ $FORCE -eq 1 ]; then git -C "$ROOT" worktree remove --force "$WT"; else git -C "$ROOT" worktree remove "$WT"; fi
+  git -C "$ROOT" worktree remove --force "$WT"
 fi
 git -C "$ROOT" worktree prune
 
