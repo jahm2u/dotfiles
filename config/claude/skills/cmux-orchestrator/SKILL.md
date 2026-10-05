@@ -22,7 +22,7 @@ Scripts live in `~/.claude/skills/cmux-orchestrator/scripts/` (`S=` below):
 
 ```bash
 S=~/.claude/skills/cmux-orchestrator/scripts
-$S/spawn.sh --slug <slug> --spec <drafted-spec.md> [--issue N] [--model 'opus[1m]'] [--mode auto]
+$S/spawn.sh --slug <slug> --spec <drafted-spec.md> [--issue N] [--model 'opus[1m]'] [--effort low|medium|high|xhigh|max] [--mode auto]
 $S/tell.sh  <slug> "<one line>"     # type into the builder's prompt and submit
 $S/peek.sh  <slug> [lines]          # read the builder's screen (default 40 lines)
 $S/ls.sh    [--mine] [slug]         # every builder + its REAL state, or one builder's full log

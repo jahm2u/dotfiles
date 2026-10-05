@@ -3,7 +3,7 @@
 #
 # Usage:
 #   spawn.sh --slug <kebab-slug> --spec <path-to-drafted-spec.md> [--issue <N>] \
-#            [--base origin/main] [--model opus[1m]] [--mode auto|acceptEdits|yolo] [--focus] [--spec-dir _bmad-output/implementation-artifacts] [--mcp none|full] [--place tab|workspace] [--group repo|mine|none]
+#            [--base origin/main] [--model opus[1m]] [--effort low|medium|high|xhigh|max] [--mode auto|acceptEdits|yolo] [--focus] [--spec-dir _bmad-output/implementation-artifacts] [--mcp none|full] [--place tab|workspace] [--group repo|mine|none]
 #            [--bmad-root <dir>] [--add-dir <dir>]...
 #
 # BMAD root: the nearest ancestor of the primary checkout (itself included) that carries the new
@@ -33,7 +33,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 . "$HERE/lib.sh"
 
-SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" MODE="auto" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT=""
+SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" EFFORT="" MODE="auto" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT=""
 ADD_DIRS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -42,6 +42,7 @@ while [ $# -gt 0 ]; do
     --issue) ISSUE=$2; shift 2;;
     --base) BASE=$2; shift 2;;
     --model) MODEL=$2; shift 2;;
+    --effort) EFFORT=$2; shift 2;;
     --mode) MODE=$2; shift 2;;
     --focus) FOCUS="true"; shift;;
     --spec-dir) SPEC_DIR=$2; shift 2;;
@@ -54,6 +55,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$SLUG" ] || bf_die "--slug required"
+case "$EFFORT" in ""|low|medium|high|xhigh|max) ;; *) bf_die "--effort must be low|medium|high|xhigh|max: $EFFORT";; esac
 [[ "$SLUG" =~ ^[a-z0-9][a-z0-9-]*$ ]] || bf_die "slug must be kebab-case: $SLUG"
 if [ ! -f "$SPEC" ]; then
   # a relative --spec is tried against the cwd first, then the primary checkout (orchestrators
@@ -186,6 +188,7 @@ BF_SPEC=$SPEC_IN_WT
 BF_ORCH_WS=$ORCH_WS
 BF_ORCH_SURFACE=$ORCH_SURFACE
 BF_MODEL=$MODEL
+BF_EFFORT=$EFFORT
 BF_MODE=$MODE
 BF_MCP=$MCP
 BF_STATUS=spawning
@@ -216,7 +219,8 @@ case "$MODE" in
   *)    MODEFLAG="--permission-mode $MODE";;
 esac
 ADDDIRSTR=""; for d in ${ADD_DIR_FLAGS[@]+"${ADD_DIR_FLAGS[@]}"}; do case "$d" in --add-dir) ADDDIRSTR="$ADDDIRSTR --add-dir";; *) ADDDIRSTR="$ADDDIRSTR '$d'";; esac; done
-CLAUDE_CMD="claude --model '$MODEL' $MODEFLAG --settings $SETTINGS $MCPFLAG$ADDDIRSTR -- '/cmux-builder'"
+EFFORTFLAG=""; [ -n "$EFFORT" ] && EFFORTFLAG=" --effort $EFFORT"
+CLAUDE_CMD="claude --model '$MODEL'$EFFORTFLAG $MODEFLAG --settings $SETTINGS $MCPFLAG$ADDDIRSTR -- '/cmux-builder'"
 
 # Gateway routing, PER PANE. A builder routes the way the pane that spawned it routes:
 # the MP hives export their own ANTHROPIC_* (their gateway, their key, their model
@@ -244,6 +248,7 @@ if [ "$MUX" = herdr ]; then
   # quoting layer to get wrong. '/cmux-builder' is NOT in it -- it is submitted with
   # `agent prompt` once herdr has seen Claude reach its input box.
   CLAUDE_ARGS=(--model "$MODEL")
+  [ -n "$EFFORT" ] && CLAUDE_ARGS+=(--effort "$EFFORT")
   if [ "$MODE" = yolo ]; then CLAUDE_ARGS+=(--dangerously-skip-permissions); else CLAUDE_ARGS+=(--permission-mode "$MODE"); fi
   CLAUDE_ARGS+=(--settings "$SETTINGS")
   [ -n "$MCPFLAG" ] && CLAUDE_ARGS+=("$MCPFLAG")
