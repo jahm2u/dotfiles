@@ -57,7 +57,7 @@ state change. The credentials call is cached for 1 hour in-process.
 ## Prerequisites
 
 - `NODEMAVEN_API_KEY` in the primary checkout's `.env`. **A git worktree has no `.env`**,
-  so run this from the primary checkout (`/Users/v/repos/01_business/tp/BabaFlow`) or the
+  so run this from the primary checkout (`/Users/v/repos/01_business/tp/baba-brain/repos/BabaFlow`) or the
   key silently resolves empty.
 - The service must be current. The endpoint moved once already (#3559): the credentials
   path is `/api/v2/base/users/me`, **not** `/v2/base/users/me`.
@@ -65,7 +65,7 @@ state change. The credentials call is cached for 1 hour in-process.
 ## Usage
 
 ```bash
-cd /Users/v/repos/01_business/tp/BabaFlow
+cd /Users/v/repos/01_business/tp/baba-brain/repos/BabaFlow
 node ~/.claude/skills/geo-probe/scripts/probe.js --country gb --url 'https://example.com/?c=...'
 # with a control, which is the point:
 node ~/.claude/skills/geo-probe/scripts/probe.js --country gb --control ca --url '<url>'

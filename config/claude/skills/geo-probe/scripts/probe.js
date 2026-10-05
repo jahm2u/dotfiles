@@ -12,7 +12,13 @@ const path = require('path');
 
 // This skill lives under ~/.claude/skills, which is a symlink into dotfiles — so node
 // resolves modules from THERE, not from the repo. Every require must be absolute.
-const REPO = process.env.BF_REPO || '/Users/v/repos/01_business/tp/BabaFlow';
+// BF_REPO wins; then the cwd when it is a BabaFlow checkout; then the brain's checkout
+// (baba-brain/repos/BabaFlow since the tp/ primaries were retired, 2026-10-05).
+const fs = require('fs');
+const REPO = process.env.BF_REPO
+  || [process.cwd(), '/Users/v/repos/01_business/tp/baba-brain/repos/BabaFlow']
+    .find((d) => fs.existsSync(path.join(d, 'src/services/proxy-service.js')));
+if (!REPO) throw new Error('no BabaFlow checkout found: run from one or set BF_REPO');
 require(path.join(REPO, 'node_modules/dotenv')).config({ path: path.join(REPO, '.env') });
 const proxyService = require(path.join(REPO, 'src/services/proxy-service'));
 // Requiring the package dir directly yields the ESM interop wrapper, whose callable
