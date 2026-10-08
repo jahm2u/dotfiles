@@ -86,7 +86,14 @@ picks up the new checkpoint exactly once.
    progress snapshot, and continuation prompt below are all written **after**
    the interview so they reflect the final state.
 4. **Write `HANDOFF-latest.json`** with the schema below.
-5. **Write `HANDOFF-latest.md`** as the narrative: numbered sections, "the big
+5. **Carry the roadmap forward.** If the previous `HANDOFF-latest.md` opens with
+   a roadmap (`## Now`, `## Next`, `## Waiting on Jeff`, `## Later`, `## Done since
+   last handoff` with progress bars), the project uses the handoff as its running
+   roadmap: keep those sections first, update the bars, move rows between them
+   (done rows go to "Done since last handoff", replacing the previous batch), and
+   mirror them in the JSON's `roadmap` object. The session narrative below them
+   stays short and holds only what the roadmap does not.
+   **Write `HANDOFF-latest.md`** as the narrative: numbered sections, "the big
    pains", landmines, exact commands/paths. Include a short
    "Decisions made at handoff" section listing the interview outcomes so the
    next session knows they were settled by the human, not assumed.
