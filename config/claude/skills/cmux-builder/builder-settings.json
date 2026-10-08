@@ -53,5 +53,6 @@
       "Bash(ssh:*)",
       "Bash(rm -rf:*)"
     ]
-  }
+  },
+  "promptSuggestionEnabled": false
 }
