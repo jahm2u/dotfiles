@@ -239,6 +239,14 @@ if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then GW_SRC="this pane's exports"
 elif GW_CG=$(command -v tpcg || command -v cg) && GW_OUT=$($GW_CG env); then eval "$GW_OUT"; GW_SRC="$GW_CG env"; fi   # cg env says on stderr why it refused (tpcg on a Mac where IPMedia's cg owns the name)
 GW_ENVS=()
 for v in "${GW_VARS[@]}"; do [ -n "${!v:-}" ] && GW_ENVS+=(--env "$v=${!v}"); done
+GH_OWNER=$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -nE 's#.*github\.com[:/]([^/]+)/.*#\1#p')
+if [ -z "${GH_TOKEN:-}" ] && [ -n "$GH_OWNER" ] && GH_PIN=$(gh auth token --user "$GH_OWNER" 2>/dev/null); then
+  GH_TOKEN=$GH_PIN
+fi
+if [ -n "${GH_TOKEN:-}" ]; then
+  GW_ENVS+=(--env "GH_TOKEN=$GH_TOKEN")
+  echo "==> gh for the builder pinned to ${GH_OWNER:-the caller GH_TOKEN}"
+fi
 [ -n "$GW_SRC" ] && echo "==> gateway env for the builder from $GW_SRC (${ANTHROPIC_BASE_URL%%/teamclaude*})" \
   || echo "==> no gateway env in this pane and no cg key: the builder uses its own login / global settings"
 
