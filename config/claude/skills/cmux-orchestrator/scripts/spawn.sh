@@ -80,6 +80,12 @@ fi
 BMAD_ROOT=$(cd "$BMAD_ROOT" && pwd -P)
 [ -d "$BMAD_ROOT/.agents/skills/bmad-build" ] || bf_die "$BMAD_ROOT has no .agents/skills/bmad-build"
 if [ "$BMAD_ROOT" != "$(cd "$ROOT" && pwd -P)" ]; then ADD_DIRS=("$BMAD_ROOT" ${ADD_DIRS[@]+"${ADD_DIRS[@]}"}); fi
+for DW in "$BMAD_ROOT/_bmad-output/deferred-work.md" "$ROOT/_bmad-output/deferred-work.md"; do
+  if [ -L "$DW" ]; then
+    DW_DIR=$(dirname "$(realpath "$DW")")
+    [ -d "$DW_DIR" ] && ADD_DIRS+=("$DW_DIR")
+  fi
+done
 ADD_DIR_FLAGS=()
 for d in ${ADD_DIRS[@]+"${ADD_DIRS[@]}"}; do
   [ -d "$d" ] || bf_die "--add-dir is not a directory: $d"
