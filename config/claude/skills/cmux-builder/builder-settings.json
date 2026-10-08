@@ -51,7 +51,11 @@
       "Bash(git switch main:*)",
       "Bash(scripts/prod.sh ssh:*)",
       "Bash(ssh:*)",
-      "Bash(rm -rf:*)"
+      "Bash(rm -rf:*)",
+      "Bash(git push --no-verify:*)",
+      "Bash(git commit --no-verify:*)",
+      "Bash(git push -q --no-verify:*)",
+      "Bash(git commit -n:*)"
     ]
   },
   "promptSuggestionEnabled": false
