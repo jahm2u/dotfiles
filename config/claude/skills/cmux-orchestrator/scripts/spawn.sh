@@ -294,6 +294,13 @@ print(p["workspace_id"], p["tab_id"], p["pane_id"])') || bf_die "could not parse
   done
   if [ $ready = 1 ] && herdr agent prompt "$AGENT" "/cmux-builder" >/dev/null 2>&1; then
     echo "==> /cmux-builder submitted to $AGENT"
+    for i in $(seq 1 10); do
+      sleep 3
+      st=$(herdr agent get "$AGENT" 2>/dev/null | python3 -c 'import json,sys; r=json.load(sys.stdin)["result"]; a=r.get("agent") or r; print(a.get("agent_status",""))' 2>/dev/null || true)
+      [ "$st" = "working" ] && break
+      herdr agent send-keys "$AGENT" enter >/dev/null 2>&1 && echo "==> $AGENT still $st after the submit; pressed enter again"
+    done
+    [ "$st" = "working" ] || echo "WARNING: $AGENT never started working (state: ${st:-?}); approve.sh $SLUG" >&2
   else
     echo "WARNING: $AGENT is not at an input prompt (state: ${st:-?}); /cmux-builder NOT submitted." >&2
     echo "         peek.sh $SLUG, clear the dialog (approve.sh $SLUG), then: herdr agent prompt $AGENT /cmux-builder" >&2
