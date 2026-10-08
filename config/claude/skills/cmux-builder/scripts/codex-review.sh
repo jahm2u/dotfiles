@@ -63,8 +63,8 @@ BRANCH=$(git branch --show-current)
 git fetch -q origin 2>/dev/null || echo "WARNING: git fetch failed; reviewing against the local $BASE" >&2
 # The review reads COMMITS. Uncommitted edits would be silently left out of it.
 # Untracked counts too: a new file never committed would silently fall outside the review.
-if [ -n "$(git status --porcelain -- . ':!_bmad-output')" ]; then
-  git status --short -- . ':!_bmad-output' >&2
+if [ -n "$(git status --porcelain -- . ':(exclude)_bmad-output')" ]; then
+  git status --short -- . ':(exclude)_bmad-output' >&2
   die "uncommitted changes (above) would not be reviewed. Commit first, then re-run."
 fi
 [ -n "$(git log --oneline "$BASE..HEAD" 2>/dev/null)" ] || die "no commits on $BRANCH beyond $BASE; nothing to review"
