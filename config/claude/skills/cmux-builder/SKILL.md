@@ -137,7 +137,7 @@ Then push and open the PR. The project's CLAUDE.md is in your worktree and appli
 
 - Commit with `git commit -F -` and a quoted heredoc. Footer: `Fixes #$BF_ISSUE` when the PR completes the issue, `Refs #$BF_ISSUE` when it is a part; blank line before the footer.
 - Gate every commit on HEAD having moved (commitlint can reject silently): `BEFORE=$(git rev-parse --short HEAD)`, commit, assert `git rev-parse --short HEAD` differs.
-- `report.sh pushing "…"` then `cd <literal worktree path> && git push -u origin <branch> --no-verify` with a 300000 ms timeout (Rule 2: CI is the gate; the local hook lies under load).
+- `report.sh pushing "…"` then `cd <literal worktree path> && git push -u origin <branch>` with a 300000 ms timeout. Never `--no-verify` (denied in builder-settings.json): the pre-push hook runs only lint and the comment ratchet; if it is red, fix the cause or report `blocked`.
 - Before the first push, run the repo's own commit-message checks locally (its commit-msg hook, any `scripts/*commit*` validator CI runs) against your commit. A red validate job on the PR costs an amend + force-push; a local run costs seconds.
 - `gh pr create --base main --head <branch> --title "<conventional>" --body "<what/why + Fixes/Refs footer>"`, then label it for a human merge: use the label the repo's CLAUDE.md names; if it names none, `gh label create bot:hands-off --color BFD4F2 --description "Human-driven PR: reviewer FYI only, no auto-merge" 2>/dev/null; gh pr edit <N> --add-label bot:hands-off`. Never improvise a label name.
 - `report.sh pr-open "PR #<N> <title>"` — include the literal `PR #<N>`; the ledger picks the number up from it (any phase that names `PR #<N>` first does).
