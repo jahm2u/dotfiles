@@ -154,6 +154,11 @@ if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
     git -C "$ROOT" branch -D "$BRANCH" >/dev/null && echo "==> deleted local branch $BRANCH (squash-merged branches need -D)"
   fi
 fi
+if [ "$PR_STATE" = "MERGED" ] || [ $FORCE -eq 1 ]; then
+  for RUN_ID in $(cd "$ROOT" && gh run list --branch "$BRANCH" --limit 20 --json databaseId,status --jq '.[] | select(.status != "completed") | .databaseId' 2>/dev/null); do
+    (cd "$ROOT" && gh run cancel "$RUN_ID" >/dev/null 2>&1) && echo "==> cancelled CI run $RUN_ID on $BRANCH (it held a runner after the merge)" || echo "WARNING: could not cancel CI run $RUN_ID"
+  done
+fi
 if [ $KEEP_BRANCH -eq 0 ] && git -C "$ROOT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
   if [ "$PR_STATE" = "MERGED" ] || [ $FORCE -eq 1 ]; then
     git -C "$ROOT" push -q origin --delete "$BRANCH" && echo "==> deleted remote branch $BRANCH" || echo "WARNING: could not delete remote branch $BRANCH"
