@@ -103,9 +103,20 @@ REVIEW="$P.md" TRANSCRIPT="$P.log" DONE="$P.exit" RUNNER="$P.sh"
 # the key from codex's ENVIRONMENT. So the runner exports it from a 0600 file beside the
 # other artifacts and deletes the file as soon as it has read it; this script removes it on
 # exit too. The key is never on a command line and never printed.
-if [ $CG_SHIM = 1 ]; then
+#
+# Same for a shell routed by `cg env` (ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY, settings.json
+# off): `cg codex` in the tab only routes when it sees that pair with ANTHROPIC_BASE_URL equal
+# to its CG_URL, so the runner gets the URLs below and ANTHROPIC_API_KEY through this file.
+KEYVAR=""
+CG_URL_EFF="${CG_URL:-$(tr -d '\r\n' < "$HOME/.config/claude-gateway/base" 2>/dev/null)}"
+if [ $CG_SHIM = 1 ]; then KEYVAR=CG_KEY
+elif [ "${CODEX[0]}" = "$HOME/.local/bin/cg" ] && [ -n "${ANTHROPIC_API_KEY:-}" ] \
+     && [ -n "$CG_URL_EFF" ] && [ "${ANTHROPIC_BASE_URL:-}" = "$CG_URL_EFF" ]; then
+  KEYVAR=ANTHROPIC_API_KEY; CG_URL=$CG_URL_EFF
+fi
+if [ -n "$KEYVAR" ]; then
   KEYFILE="$P.key"
-  (umask 077; printf '%s' "$CG_KEY" > "$KEYFILE")
+  (umask 077; printf '%s' "${!KEYVAR}" > "$KEYFILE")
   trap 'rm -f "$KEYFILE"' EXIT
 fi
 
@@ -122,8 +133,14 @@ ARGS=(${CG_PRE[@]+"${CG_PRE[@]}"}
   echo '#!/usr/bin/env bash'
   echo "cd $(q "$WT") || { echo 97 > $(q "$DONE"); exit 97; }"
   echo "echo '== codex review round $N: $BRANCH vs $BASE ($MODEL, effort $EFFORT) =='"
+  # The review tab is a fresh shell: carry this shell's gateway routing into it (URLs, not
+  # secrets), or `cg codex` there compares a different CG_URL with ANTHROPIC_BASE_URL, finds
+  # no match and execs plain codex -> 401 "Missing bearer" (kev-client-keys, 2026-10-08).
+  for v in CG_URL CG_CODEX_URL ANTHROPIC_BASE_URL; do
+    [ -n "${!v:-}" ] && echo "export $v=$(q "${!v}")"
+  done
   if [ -n "$KEYFILE" ]; then
-    echo "[ -r $(q "$KEYFILE") ] && CG_KEY=\$(cat $(q "$KEYFILE")); export CG_KEY; rm -f $(q "$KEYFILE")"
+    echo "[ -r $(q "$KEYFILE") ] && $KEYVAR=\$(cat $(q "$KEYFILE")); export $KEYVAR; rm -f $(q "$KEYFILE")"
   fi
   # SHOW=1 (the tab) streams the transcript to the terminal; inline keeps it on disk only.
   printf '%s' "$(printf '%q ' "${CODEX[@]}" "${ARGS[@]}")"

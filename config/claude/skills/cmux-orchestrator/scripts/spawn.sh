@@ -233,10 +233,18 @@ CLAUDE_CMD="claude --model '$MODEL'$EFFORTFLAG $MODEFLAG --settings $SETTINGS $M
 # the ledger or the log; the key must not end up in a file.
 GW_VARS=(ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_MODEL
          ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
-         ANTHROPIC_DEFAULT_FABLE_MODEL CLAUDE_CODE_SUBAGENT_MODEL CG_ACTIVE CG_KEY_FILE)
+         ANTHROPIC_DEFAULT_FABLE_MODEL CLAUDE_CODE_SUBAGENT_MODEL CG_ACTIVE CG_KEY_FILE CG_URL)
 GW_SRC=""
 if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then GW_SRC="this pane's exports"
-elif GW_CG=$(command -v tpcg || command -v cg) && GW_OUT=$($GW_CG env); then eval "$GW_OUT"; GW_SRC="$GW_CG env"; fi   # cg env says on stderr why it refused (tpcg on a Mac where IPMedia's cg owns the name)
+elif GW_CG=$(command -v tpcg || command -v cg) && GW_OUT=$($GW_CG env); then eval "$GW_OUT"; GW_SRC="$GW_CG env"
+  # Pin CG_URL to the URL cg just chose, so every cg the builder runs later (cg codex, and
+  # codex-review.sh's review tab) routes to the SAME place. Without it, a builder moved to
+  # another URL failed cg codex's ANTHROPIC_BASE_URL == CG_URL check and fell back to plain
+  # codex -> 401 (kev-client-keys, 2026-10-08). herdr tabs cannot reach the LAN address
+  # (macOS Local Network privacy, EHOSTUNREACH) but can reach tailscale, so the Mac's
+  # ~/.config/claude-gateway/base points at http://claude-gateway:3457.
+  CG_URL=${CG_URL:-$ANTHROPIC_BASE_URL}
+fi   # cg env says on stderr why it refused (tpcg on a Mac where IPMedia's cg owns the name)
 GW_ENVS=()
 for v in "${GW_VARS[@]}"; do [ -n "${!v:-}" ] && GW_ENVS+=(--env "$v=${!v}"); done
 GH_OWNER=$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -nE 's#.*github\.com[:/]([^/]+)/.*#\1#p')
