@@ -74,7 +74,9 @@ fi
 # Without the binary, a shell that cg.sh put on the gateway (CG_ACTIVE + CG_KEY exported)
 # gets the same provider block its `codex` wrapper prepends -- same keys, BEFORE the subcommand.
 CG_PRE=() CG_SHIM=0 KEYFILE=""
-if [ -x "$HOME/.local/bin/cg" ]; then CODEX=("$HOME/.local/bin/cg" codex)
+CG_BIN=""
+for c in "$HOME/.local/bin/cg" "$HOME/.local/bin/tpcg"; do [ -x "$c" ] && { CG_BIN=$c; break; }; done
+if [ -n "$CG_BIN" ]; then CODEX=("$CG_BIN" codex)
 else
   CODEX=("$(command -v codex)") || die "codex is not installed"
   if [ -n "${CG_ACTIVE:-}" ] && [ -n "${CG_KEY:-}" ]; then
@@ -87,7 +89,7 @@ else
             -c 'model_providers.teamclaude.env_http_headers={ "x-api-key" = "CG_KEY" }')
     CG_SHIM=1
   else
-    echo "WARNING: no ~/.local/bin/cg and this shell is not on the gateway (CG_ACTIVE/CG_KEY unset); codex will use its own auth" >&2
+    echo "WARNING: no ~/.local/bin/cg or tpcg and this shell is not on the gateway (CG_ACTIVE/CG_KEY unset); codex will use its own auth" >&2
   fi
 fi
 
@@ -110,7 +112,7 @@ REVIEW="$P.md" TRANSCRIPT="$P.log" DONE="$P.exit" RUNNER="$P.sh"
 KEYVAR=""
 CG_URL_EFF="${CG_URL:-$(tr -d '\r\n' < "$HOME/.config/claude-gateway/base" 2>/dev/null)}"
 if [ $CG_SHIM = 1 ]; then KEYVAR=CG_KEY
-elif [ "${CODEX[0]}" = "$HOME/.local/bin/cg" ] && [ -n "${ANTHROPIC_API_KEY:-}" ] \
+elif [ -n "$CG_BIN" ] && [ "${CODEX[0]}" = "$CG_BIN" ] && [ -n "${ANTHROPIC_API_KEY:-}" ] \
      && [ -n "$CG_URL_EFF" ] && [ "${ANTHROPIC_BASE_URL:-}" = "$CG_URL_EFF" ]; then
   KEYVAR=ANTHROPIC_API_KEY; CG_URL=$CG_URL_EFF
 fi
