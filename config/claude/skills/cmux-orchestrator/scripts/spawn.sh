@@ -24,7 +24,7 @@
 # Prints: the builder workspace ref on the last line.
 #
 # herdr: run from a herdr pane (HERDR_ENV=1) and steps 5-7 happen in herdr instead -- the
-# builder is a new herdr TAB in the caller's workspace (`herdr tab create`, BF_* via --env),
+# builder is a new herdr TAB in the caller's workspace, or in the workspace labelled $BF_HERDR_BUILDERS_WS (found or created),
 # Claude is started there with `herdr agent start` under an agent name (b-<slug>), and the
 # ledger records BF_MUX=herdr plus the server socket, tab, pane and agent name. Steps 1-4
 # are identical. --group does not apply (herdr has no sidebar folders).
@@ -274,7 +274,19 @@ if [ "$MUX" = herdr ]; then
         --env "BF_MUX=herdr" --env "BF_HERDR_SOCKET=$HERDR_SOCK" --env "BF_BMAD_ROOT=$BMAD_ROOT" ${GW_ENVS[@]+"${GW_ENVS[@]}"})
   FOCUSFLAG=--no-focus; [ "$FOCUS" = true ] && FOCUSFLAG=--focus
   case "$PLACE" in
-    tab)       OUT=$(herdr tab create --workspace "$ORCH_WS" --cwd "$WT" --label "🔨 $SLUG" "${ENVS[@]}" "$FOCUSFLAG") ;;
+    tab)
+      TAB_WS=$ORCH_WS
+      if [ -n "${BF_HERDR_BUILDERS_WS:-}" ]; then
+        TAB_WS=$(herdr workspace list | python3 -c 'import json,sys
+print(next((w["workspace_id"] for w in json.load(sys.stdin)["result"]["workspaces"] if w.get("label") == sys.argv[1]), ""))' "$BF_HERDR_BUILDERS_WS") \
+          || bf_die "could not read the herdr workspace list"
+      fi
+      if [ -n "$TAB_WS" ]; then
+        OUT=$(herdr tab create --workspace "$TAB_WS" --cwd "$WT" --label "🔨 $SLUG" "${ENVS[@]}" "$FOCUSFLAG")
+      else
+        OUT=$(herdr workspace create --cwd "$WT" --label "$BF_HERDR_BUILDERS_WS" "${ENVS[@]}" "$FOCUSFLAG")
+        RENAME_TAB=1
+      fi ;;
     workspace) OUT=$(herdr workspace create --cwd "$WT" --label "🔨 $SLUG" "${ENVS[@]}" "$FOCUSFLAG") ;;
     *) bf_die "--place must be tab|workspace";;
   esac
@@ -284,6 +296,7 @@ r=json.load(sys.stdin)["result"]; p=r["root_pane"]
 print(p["workspace_id"], p["tab_id"], p["pane_id"])') || bf_die "could not parse herdr ids from: $OUT"
   bf_set "$SLUG" BF_BUILDER_WS "$BUILDER_WS"
   bf_set "$SLUG" BF_BUILDER_TAB "$BUILDER_TAB"
+  [ -n "${RENAME_TAB:-}" ] && { herdr tab rename "$BUILDER_TAB" "🔨 $SLUG" >/dev/null || true; }
   bf_set "$SLUG" BF_BUILDER_SURFACE "$BUILDER_SURFACE"
   # herdr agent names: [a-z][a-z0-9_-]{0,31}, unique among live agents.
   AGENT=$(printf 'b-%s' "$SLUG" | cut -c1-32 | sed 's/-*$//')
