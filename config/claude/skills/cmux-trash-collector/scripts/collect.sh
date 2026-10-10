@@ -59,7 +59,7 @@ if [ "$PR_STATE" != "MERGED" ] && [ $FORCE -eq 0 ]; then
 fi
 DIRTY=""
 if [ -d "$WT" ]; then
-  DIRTY=$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null | grep -v " _bmad-output/implementation-artifacts/$(basename "$BF_SPEC")$" || true)
+  DIRTY=$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null | grep -v -e " _bmad-output/implementation-artifacts/$(basename "$BF_SPEC")$" -e " _bmad-output/deferred-work.local.md$" || true)
   if [ -n "$DIRTY" ] && [ $FORCE -eq 0 ]; then
     echo "$DIRTY"
     bf_die "worktree has uncommitted changes (above). Nothing removed. Show these to the human; --force discards them."
@@ -84,6 +84,14 @@ if [ -d "$WT" ]; then
     [ -e "$dest" ] || cp "$f" "$dest"
   done
   [ -f "$WT/_bmad-output/implementation-artifacts/deferred-work.md" ] && cp "$WT/_bmad-output/implementation-artifacts/deferred-work.md" "$ARCH/deferred-work.md"
+  LOCAL_DEFERRED="$WT/_bmad-output/deferred-work.local.md"
+  if [ -s "$LOCAL_DEFERRED" ]; then
+    cp "$LOCAL_DEFERRED" "$ARCH/deferred-work.local.md"
+    SHARED_DEFERRED="${BF_BMAD_ROOT:-$ROOT}/_bmad-output/deferred-work.md"
+    mkdir -p "$(dirname "$SHARED_DEFERRED")"
+    { printf '\n## %s -- %s (%s, PR #%s)\n' "$(date +%Y-%m-%d)" "$SLUG" "$(basename "$ROOT")" "${BF_PR:-none}"; cat "$LOCAL_DEFERRED"; } >> "$SHARED_DEFERRED"
+    echo "==> appended $(grep -c . "$LOCAL_DEFERRED") deferred-work lines to $SHARED_DEFERRED"
+  fi
   git -C "$WT" log --oneline "origin/main..HEAD" > "$ARCH/commits.txt" 2>/dev/null || true
   git -C "$WT" diff --stat "origin/main...HEAD" > "$ARCH/diffstat.txt" 2>/dev/null || true
   [ -n "$DIRTY" ] && git -C "$WT" diff > "$ARCH/UNCOMMITTED-DISCARDED.patch" 2>/dev/null || true

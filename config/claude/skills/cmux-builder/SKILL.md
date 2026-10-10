@@ -63,7 +63,11 @@ Read and follow the one `workflow.md` path it prints, with `$BF_SPEC` as the inp
 sees a file with `status` frontmatter and routes on it: `draft` → it plans (Code Map, Tasks,
 Verification) and halts at `[A] Approve | [E] Edit`; `ready-for-dev` → it implements straight
 away. The plan stays where spawn put it; `{output_folder}` paths the workflow names
-(`deferred-work.md`, review logs) resolve under the BMAD root. Add `--set workflow.route=oneshot|full`
+(review logs) resolve under the BMAD root. **Deferred work is the exception:** every entry bmad-build
+tells you to append to `{output_folder}/…/deferred-work.md` goes, same format, to
+`$BF_WORKTREE/_bmad-output/deferred-work.local.md` instead (create it; never commit it). The shared
+file is a symlink into `~/.claude`, and writing it stops you on a sensitive-file prompt with nobody
+there to approve; `collect.sh` appends your file to it at teardown. Add `--set workflow.route=oneshot|full`
 only when the spec says so (default `auto` picks by size). `bmad-build-auto` (never asks, halts
 `blocked`) is NOT what you run: the orchestrator is present, and the checkpoints below are the point.
 
@@ -169,7 +173,7 @@ When pr-watch prints `CONVERGED` for the CURRENT head: `report.sh converged "PR 
 ## 5. Guardrails
 
 - Never touch `main`. `git push --force-with-lease origin <your branch>` after an amend of YOUR unmerged commits is fine and needs no question; `--force`, or any push to a branch that is not yours, is Never. Never write `.release-message`, never run `scripts/prod.sh` write commands or SSH anywhere. Those are Ask-First at best and usually Never.
-- Never expand scope to "while I'm here" work. Note it in `deferred-work.md` via bmad-build's classification and move on.
+- Never expand scope to "while I'm here" work. Note it in `$BF_WORKTREE/_bmad-output/deferred-work.local.md` via bmad-build's classification and move on.
 - Never spawn your own builders, run the orchestrator skill, or run `/cmux-trash-collector` — **on yourself least of all**. The collector types `/exit` into the session it is collecting and closes its workspace; run on yourself it kills you halfway through and leaves the worktree half-removed. Report `done` and let the orchestrator collect you. (`collect.sh` now refuses this, but do not rely on the guard.)
 - **A rate limit kills your turn and you cannot report it** — `report.sh` never runs, so your orchestrator keeps seeing your last phase and reads it as progress. If you come back from a `(429) … Retry in Ns`, your FIRST action is `report.sh blocked "rate limited, back after <N>s, tree is <clean|dirty>"`. Check the tree before assuming work was lost: a 429 after a push loses nothing.
 - If context passes ~70%, run the `handoff` skill (writes only under `_bmad/handoff/`), then `report.sh blocked "context at N%, handoff written; resume with --continue"`. The orchestrator can resume you in place.

@@ -29,7 +29,7 @@ $C <slug> --keep-branch         # leave the remote branch (someone else still ne
    - PR number and state, what was archived (`_bmad/handoff/cmux/archive/<slug>/`: spec, builder log, ledger, commits, diffstat, deferred-work),
    - that the spec was also copied into the primary checkout's `_bmad-output/implementation-artifacts/` if it was not already there,
    - which branch/worktree/workspace were removed.
-5. If the builder left entries in `deferred-work.md`, read the archived copy and tell the user what was deferred; that is the only place those items now exist besides the merged PR body.
+5. If the builder left deferred work (`deferred-work.local.md` in its worktree), `collect.sh` archived it and appended it under a dated `## <date> -- <slug>` heading to the BMAD root's shared `_bmad-output/deferred-work.md`. Read the archived copy and tell the user what was deferred.
 
 ## Stray tabs
 
