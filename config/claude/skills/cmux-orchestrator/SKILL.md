@@ -169,6 +169,14 @@ Measured 2026-09-12: builder `3561-routing-enable` sat from 06:25 holding
 blocking findings, one untracked blocking finding, and CI that had never run once. The
 orchestrator was awake and working the whole time and had no way to know.
 
+**Anything timed outlives your session, so it never lives in it.** A later prod step, a
+recheck at 14:00, a "merge once CI finishes overnight": file it as a fleet order
+(`seatctl order ...`) or a launchd job, never `CronCreate` or `ScheduleWakeup`. Those die with
+the session, and the session does restart: in the fleet, `seatctl watch` checkpoints `baba`
+and the gardener at a context ceiling and starts them fresh (`BABA_CHECKPOINT` /
+`BABA_ROTATED`). Measured 2026-10-14: `baba` reached 84% of its window holding prod step
+order #186 only as an in-session schedule; a restart would have dropped it silently.
+
 
 **Review order is fixed: local Claude review -> local Codex review -> PR (CT210 reviewer).**
 Before `pr-open` the builder runs one `/code-review` subagent pass, then
