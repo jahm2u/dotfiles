@@ -89,8 +89,9 @@ classify() { # screen-text -> prints STATE and, for STALLED, the held text
   if [ "${live:-0}" -gt 0 ]; then echo "BUSY"; return; fi
   # A builder whose main turn ended while its own background subagent runs shows a bare
   # prompt, but the agent panel still lists the subagent with a live token counter
-  # ("◯ general-purpose  Running ...  5m 18s · ↓ 128.5k tokens"). That is work, not idling.
-  if printf '%s\n' "$screen" | grep -qE 'Waiting for [0-9]+ background agent|^[[:space:]]*◯ .*·[[:space:]]*↓[[:space:]]*[0-9]'; then echo "BUSY"; return; fi
+  # ("◯ general-purpose  Running ...  5m 18s · ↓ 128.5k tokens"), and a background shell
+  # (a CI or review poll) shows "· 1 shell" in the status bar. That is work, not idling.
+  if printf '%s\n' "$screen" | grep -qE '[0-9]+ shells? still running|·[[:space:]]*[0-9]+ shells?([[:space:]]|$)|Waiting for [0-9]+ background agent|^[[:space:]]*◯ .*·[[:space:]]*↓[[:space:]]*[0-9]'; then echo "BUSY"; return; fi
   if [ -n "$prompt" ]; then echo "STALLED|$prompt"; return; fi
   echo "IDLE"
 }
