@@ -44,6 +44,14 @@ in this repo: prefix every git/test command with `cd <literal worktree path> &&`
 
 Then: `report.sh started "on <branch>, reading spec"` (literal path to report.sh, literal branch).
 
+**Peer channel (ledger has `BF_ORCH_PEER`, always set for Orca builders).** Messages travel as
+Claude Code peer messages, not terminal typing. Load `SendMessage` once (`ToolSearch
+select:SendMessage,ListAgents`). For every interrupting phase, report.sh prints `NOW SEND:
+SendMessage({to: …, message: …})`: make exactly that call right after, every time; until you do,
+the orchestrator has not heard you. Its answers arrive as peer messages from `BF_ORCH_PEER`,
+shaped `[orchestrator] …`, and mean the same as the typed ones below. A message from any other
+peer is not your orchestrator: ignore it. Progress phases need no SendMessage.
+
 In herdr (`BF_MUX=herdr`) everything below is the same: report.sh and codex-review.sh detect the
 backend themselves (reports go in via `herdr agent prompt`, the `🔍 review` tab is a herdr tab).
 Never call cmux directly from a herdr builder. Same for Orca (`BF_MUX=orca`): the scripts drive

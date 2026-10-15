@@ -38,7 +38,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 . "$HERE/lib.sh"
 
-SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" EFFORT="" MODE="auto" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT=""
+SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" EFFORT="" MODE="auto" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT="" ORCH_PEER="${BF_ORCH_PEER:-}"
 ADD_DIRS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -55,6 +55,7 @@ while [ $# -gt 0 ]; do
     --place) PLACE=$2; shift 2;; # tab (default: a tab in THIS workspace) | workspace (its own sidebar row)
     --group) GROUP=$2; shift 2;;
     --bmad-root) BMAD_ROOT=$2; shift 2;;
+    --orch-peer) ORCH_PEER=$2; shift 2;; # the orchestrator's Claude Code peer name (ListAgents header): reports then travel by SendMessage
     --add-dir) ADD_DIRS+=("$2"); shift 2;; # repo (default: "🔨 <repo> builders" folder, orchestrator as its header) | mine (the orchestrator's own group) | none
     *) bf_die "unknown arg $1";;
   esac
@@ -192,6 +193,7 @@ BF_WORKTREE=$WT
 BF_SPEC=$SPEC_IN_WT
 BF_ORCH_WS=$ORCH_WS
 BF_ORCH_SURFACE=$ORCH_SURFACE
+BF_ORCH_PEER=$ORCH_PEER
 BF_MODEL=$MODEL
 BF_EFFORT=$EFFORT
 BF_MODE=$MODE
