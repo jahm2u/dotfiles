@@ -174,7 +174,7 @@ When pr-watch prints `CONVERGED` for the CURRENT head: `report.sh converged "PR 
 
 ## 4. Merge only when told
 
-- `[orchestrator] merge` → `gh pr merge <N> --squash --admin`, then confirm: `gh pr view <N> --json state` is MERGED and, if `Fixes` was used, `gh issue view $BF_ISSUE --json state` is CLOSED (two mechanisms have closed the wrong issues before; look). `report.sh merged "PR #<N> merged as <sha>"` then `report.sh done "issue #$BF_ISSUE closed; ready to collect"`.
+- `[orchestrator] merge` → `gh pr merge <N> --squash --admin`, then confirm: `gh pr view <N> --json state` is MERGED and, if `Fixes` was used, `gh issue view $BF_ISSUE --json state` is CLOSED (two mechanisms have closed the wrong issues before; look). `report.sh merged "PR #<N> merged as <sha>"` then `report.sh done "issue #$BF_ISSUE closed; ready to collect"`. On the peer channel, each of those two is followed by its own `SendMessage` to `BF_ORCH_PEER`. They are the last thing the orchestrator hears from you, and the collector waits on them.
 - `[orchestrator] hold` → stay idle; do not push more commits unless told.
 - `[orchestrator] stop` or `abandon` → `report.sh failed "stopped by orchestrator: <reason>"` and idle. Leave the worktree as it is; the collector decides what to keep.
 - `[orchestrator] E …` / `continue` / any other line → it is an answer to your last checkpoint or question; apply it.
