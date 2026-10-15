@@ -53,7 +53,11 @@ bf_pill "$BF_SLUG" "$PHASE" "$COLOR" "$BF_ORCH_WS"
 
 if [ "$INTERRUPT" = 1 ]; then
   bf_notify "$BF_ORCH_WS" "builder $BF_SLUG · $PHASE" "$MSG"
-  if bf_ws_exists "$BF_ORCH_WS"; then
+  if [ -n "${BF_ORCH_PEER:-}" ]; then
+    # Peer channel: the builder's Claude delivers the line itself with SendMessage. Typing
+    # into the orchestrator's terminal as well would deliver it twice.
+    echo "NOW SEND: SendMessage({to: \"$BF_ORCH_PEER\", message: \"[builder $BF_SLUG] $PHASE: $MSG\"})"
+  elif bf_ws_exists "$BF_ORCH_WS"; then
     # bf_orch_target, not bf_say_to: a builder is a tab inside the orchestrator's own
     # workspace, so a workspace-only ref can land this message in the BUILDER's prompt.
     bf_send_line "$(bf_orch_target)" "[builder $BF_SLUG] $PHASE: $MSG"

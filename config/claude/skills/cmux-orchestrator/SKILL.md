@@ -109,6 +109,11 @@ A spec that will not fit is a sign the goal is not single.
 
 ### 3. Spawn
 
+**Under Orca, always pass `--orch-peer <your name>`**: the name in the `ListAgents` header
+("This session is <name>"). The ledger records it as `BF_ORCH_PEER`. Builders then report with
+`SendMessage` to you, and report.sh stops typing into your terminal. Typing into Orca prompts
+was the unreliable part. Builders appear in `ListAgents` as `wt-<slug>-<suffix>`.
+
 ```bash
 $S/spawn.sh --slug <slug> --spec "$(pwd)/_bmad/handoff/cmux/<slug>.spec.md" --issue <N> [--add-dir <sibling-worktree>]...
 ```
@@ -225,6 +230,13 @@ background) keeps answering Yes until the builder is finished. Read what it is a
 you approve anything that writes outside the worktree, pushes, or touches a host. The same
 `send-key` trick answers any other TUI question (plan approval, `[A]/[E]` menus rendered as
 choices): `cmux send --workspace <ws> -- "1"` then `cmux send-key --workspace <ws> enter`.
+
+**Peer-channel builders (`BF_ORCH_PEER` in the ledger) talk ONLY over SendMessage.** Answer them
+with `SendMessage({to: "wt-<slug>-<suffix>", message: "[orchestrator] <answer>"})`, then
+`tell.sh <slug> --log-only "<answer>"` so the ledger log stays whole. Never `tell.sh` them
+without `--log-only`: that types into their prompt too and delivers the answer twice. To move a
+live builder onto the channel, set `BF_ORCH_PEER` in its ledger with
+`bf_set <slug> BF_ORCH_PEER <name>` (lib.sh), then tell it once by SendMessage.
 
 **THERE IS A SECOND, MORE RELIABLE CHANNEL. USE IT WHEN cmux FAILS YOU.**
 
