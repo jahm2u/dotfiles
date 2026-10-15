@@ -47,6 +47,10 @@ herdr builders (`BF_MUX=herdr` in the ledger): collect.sh closes the builder's h
 else. sweep-tabs.py is cmux-only and is skipped; any other herdr pane still sitting in the worktree is
 printed as a WARNING for you to close by hand.
 
+Orca builders (`BF_MUX=orca`): collect.sh closes the builder's Orca tab and the recorded `🔍 review`
+tabs (`orca terminal close --tab`). Every Orca tab reports the orchestrator's worktree as its cwd,
+so stray tabs inside `wt-<slug>` cannot be detected; the sweep is skipped.
+
 ## What it never does
 
 - Merge a PR, close an issue, or push anything except a remote-branch delete after a confirmed merge.

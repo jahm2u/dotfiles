@@ -28,6 +28,11 @@
 # Claude is started there with `herdr agent start` under an agent name (b-<slug>), and the
 # ledger records BF_MUX=herdr plus the server socket, tab, pane and agent name. Steps 1-4
 # are identical. --group does not apply (herdr has no sidebar folders).
+#
+# Orca: run from an Orca terminal (TERM_PROGRAM=Orca) and the builder is a new Orca terminal
+# TAB in the orchestrator's Orca worktree, titled "🔨 <slug>" (the title doubles as the phase
+# pill). The ledger records BF_MUX=orca, the terminal handle and its paneKey. --place and
+# --group do not apply.
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
@@ -89,7 +94,7 @@ echo "==> BMAD root $BMAD_ROOT${ADD_DIRS[@]+ (add-dir: ${ADD_DIRS[*]})}"
 LEDGER=$(bf_ledger_file "$SLUG")
 [ ! -f "$LEDGER" ] || bf_die "ledger already exists for '$SLUG' ($LEDGER). Run the trash collector first, or pick another slug."
 
-if bf_caller_is_herdr; then MUX=herdr; else MUX=cmux; fi
+if bf_caller_is_herdr; then MUX=herdr; elif bf_caller_is_orca; then MUX=orca; else MUX=cmux; fi
 export BF_MUX=$MUX
 ORCH_WS=$(bf_my_workspace) || bf_die "cannot identify the orchestrator's cmux workspace (not inside cmux or herdr?)"
 [ -n "$ORCH_WS" ] || bf_die "cannot identify the orchestrator's workspace"
@@ -259,7 +264,43 @@ fi
   || echo "==> no gateway env in this pane and no cg key: the builder uses its own login / global settings"
 
 BUILDER_WS="" BUILDER_SURFACE="" GROUP_REF=""
-if [ "$MUX" = herdr ]; then
+if [ "$MUX" = orca ]; then
+  # The builder is a tab in the ORCHESTRATOR's Orca worktree (Orca only creates terminals in
+  # worktrees it has registered; wt-<slug> is not one), and its command cd's into the builder
+  # worktree. `terminal create` has no --env, and its --command is TYPED into the shell, so
+  # anything inlined lands in scrollback. The BF_* plus the gateway/gh variables therefore go
+  # in a 0600 file the command sources and deletes before claude starts -- that keeps the
+  # gateway key out of the terminal, which the cmux tab mode could only do by dropping it.
+  [ "$PLACE" = tab ] || echo "NOTE: --place $PLACE is ignored under Orca; the builder is a tab" >&2
+  ENVF=$(mktemp "${TMPDIR:-/tmp}/bf-env-$SLUG.XXXXXX"); chmod 600 "$ENVF"
+  {
+    for kv in "BF_SLUG=$SLUG" "BF_LEDGER=$LEDGER" "BF_ORCH_WS=$ORCH_WS" "BF_ORCH_SURFACE=$ORCH_SURFACE" \
+              "BF_WORKTREE=$WT" "BF_SPEC=$SPEC_IN_WT" "BF_BRANCH=$BRANCH" "BF_ISSUE=$ISSUE" \
+              "BF_MUX=orca" "BF_BMAD_ROOT=$BMAD_ROOT"; do
+      printf 'export %s=%q\n' "${kv%%=*}" "${kv#*=}"
+    done
+    for e in ${GW_ENVS[@]+"${GW_ENVS[@]}"}; do
+      [ "$e" = --env ] && continue
+      printf 'export %s=%q\n' "${e%%=*}" "${e#*=}"
+    done
+  } > "$ENVF"
+  CMD="cd '$WT' && . '$ENVF' && rm -f '$ENVF' && $CLAUDE_CMD"
+  FOCUSFLAG=(); [ "$FOCUS" = true ] && FOCUSFLAG=(--focus)
+  echo "==> orca terminal create in ${ORCH_WS##*::} ($CLAUDE_CMD)"
+  OUT=$(bf_orca terminal create --worktree "id:$ORCH_WS" --title "🔨 $SLUG" --command "$CMD" ${FOCUSFLAG[@]+"${FOCUSFLAG[@]}"} --json) \
+    || { rm -f "$ENVF"; bf_die "orca terminal create failed: $OUT"; }
+  read -r BUILDER_SURFACE PANE_KEY < <(printf '%s' "$OUT" | python3 -c '
+import json,sys
+t=json.load(sys.stdin)["result"]["terminal"]; print(t["handle"], t.get("paneKey",""))') \
+    || { rm -f "$ENVF"; bf_die "could not parse orca terminal handle from: $OUT"; }
+  BUILDER_WS=$ORCH_WS   # the HOST worktree, as in cmux tab mode
+  bf_set "$SLUG" BF_BUILDER_WS "$BUILDER_WS"
+  bf_set "$SLUG" BF_BUILDER_SURFACE "$BUILDER_SURFACE"
+  bf_set "$SLUG" BF_BUILDER_TAB "$PANE_KEY"
+  # The env file is removed by the command itself; if the shell never ran it, do not leave
+  # a key on disk past a minute.
+  ( sleep 60; rm -f "$ENVF" ) >/dev/null 2>&1 &
+elif [ "$MUX" = herdr ]; then
   # The claude argv as an array: herdr agent start passes it through verbatim, no shell
   # quoting layer to get wrong. '/cmux-builder' is NOT in it -- it is submitted with
   # `agent prompt` once herdr has seen Claude reach its input box.
@@ -417,7 +458,7 @@ fi
 bf_set "$SLUG" BF_STATUS "started"
 bf_logline "$SLUG" spawned "builder at ${BUILDER_SURFACE:-$BUILDER_WS}"
 
-bf_pill "$SLUG" spawned "#8fbcbb" "$ORCH_WS"
+BF_BUILDER_SURFACE=$BUILDER_SURFACE bf_pill "$SLUG" spawned "#8fbcbb" "$ORCH_WS"
 bf_wslog "$ORCH_WS" "" orchestrator "spawned builder $SLUG at ${BUILDER_SURFACE:-$BUILDER_WS} ($BRANCH)"
 
 echo "builder=${BUILDER_SURFACE:-$BUILDER_WS} place=$PLACE worktree=$WT branch=$BRANCH spec=$SPEC_IN_WT ledger=$LEDGER"

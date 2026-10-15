@@ -35,7 +35,7 @@ State lives in the PRIMARY checkout at `_bmad/handoff/cmux/<slug>.env` (ledger) 
 
 ## Preconditions (check once, silently)
 
-- You are inside cmux (`cmux identify --json` prints a `caller.workspace_ref`) OR inside herdr (`HERDR_ENV=1`, `HERDR_PANE_ID` set). If neither, stop and say so: the builder cannot talk back to a terminal that is not a cmux workspace or herdr pane.
+- You are inside cmux (`cmux identify --json` prints a `caller.workspace_ref`), herdr (`HERDR_ENV=1`, `HERDR_PANE_ID` set) OR Orca (`TERM_PROGRAM=Orca`, `ORCA_TERMINAL_HANDLE` set). If none, stop and say so: the builder cannot talk back to a terminal that is not a cmux workspace, herdr pane or Orca terminal.
 
 **herdr backend.** Run from a herdr pane and every script here drives herdr instead of cmux; nothing
 else in this procedure changes. spawn.sh records `BF_MUX=herdr` plus the server socket in the ledger
@@ -50,6 +50,19 @@ come from herdr plus the screen (429s, unsubmitted text). To answer a TUI choice
 and it survives restarting Claude in that pane, so an in-place context rotation keeps them connected.
 There are no sidebar folders or pills in herdr: `--group` is ignored and phases show as a
 `bf-<slug>` token on your workspace.
+
+**Orca backend.** Run from an Orca terminal (`TERM_PROGRAM=Orca`) and the scripts drive Orca.app's
+CLI (`bf_orca` in lib.sh calls the bundled CLI directly, because `/usr/local/bin/orca` breaks when it
+is installed as a copy). spawn.sh records `BF_MUX=orca`; the builder is an Orca terminal TAB
+`🔨 <slug>` in YOUR Orca worktree (Orca only opens terminals in worktrees it registered, and
+`wt-<slug>` is not one), whose command cd's into the builder worktree. BF_* plus the gateway/gh env
+travel in a 0600 file the tab sources and deletes, so no key lands in scrollback. Messages go
+through `orca terminal send --enter --wait-submit` (`turn_started` = submitted; otherwise a
+screen check, then one `--retry-request` reissue). `ls.sh` takes `busy` from `orca worktree ps`
+agent state for the tab's paneKey (`BF_BUILDER_TAB`) and everything else from the screen. No
+sidebar pills: the phase is written into the builder's tab title (`🔨 <slug> · <phase>`), and
+interrupts also raise a macOS notification. `--place` and `--group` are ignored. By hand:
+`bf_orca terminal read --terminal <handle> --screen`, `bf_orca terminal send --terminal <handle> --text 1 --enter`.
 - `gh auth status` works and `git fetch origin` works from the primary checkout.
 - A BMAD root is reachable from the primary checkout: the nearest ancestor (itself included) with `_bmad/scripts/render_skill.py` and `.agents/skills/bmad-build/`, normally the company brain (`tp/baba-brain`, set up once with the `bmad` skill), and `uv` is installed. `spawn.sh` resolves it (or takes `--bmad-root`), hands it to the builder as `BF_BMAD_ROOT` and as `--add-dir` when it is another repo (skills load only up to the cwd's repo root), and the builder renders `bmad-build` against it. A nested checkout's own legacy `_bmad/` (BabaFlow's bco/handoff tree) is NOT a root. The plan template `<root>/.agents/skills/bmad-build/plan-template.md` is the contract between you and the builder.
 

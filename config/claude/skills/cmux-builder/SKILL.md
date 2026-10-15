@@ -46,7 +46,8 @@ Then: `report.sh started "on <branch>, reading spec"` (literal path to report.sh
 
 In herdr (`BF_MUX=herdr`) everything below is the same: report.sh and codex-review.sh detect the
 backend themselves (reports go in via `herdr agent prompt`, the `🔍 review` tab is a herdr tab).
-Never call cmux directly from a herdr builder.
+Never call cmux directly from a herdr builder. Same for Orca (`BF_MUX=orca`): the scripts drive
+Orca's CLI, the review tab is an Orca terminal tab; never call cmux or herdr from an Orca builder.
 
 ## 1. Build with bmad-build, orchestrator as the human
 

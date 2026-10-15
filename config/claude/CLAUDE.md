@@ -35,6 +35,9 @@ folder stays while the orchestrator is in it (`--group mine|none` to override).
 drive herdr instead: builders become `🔨 <slug>` herdr tabs in the orchestrator's workspace, started
 as herdr agents `b-<slug>`, reports arrive via `herdr agent prompt`. The ledger's `BF_MUX` picks the
 backend per builder (absent = cmux), so cmux builders and herdr builders coexist.
+**Orca too:** run the orchestrator from an Orca.app terminal (`TERM_PROGRAM=Orca`) and builders
+become `🔨 <slug>` Orca terminal tabs in the orchestrator's Orca worktree (`BF_MUX=orca`); phases
+show in the tab title. lib.sh's `bf_orca` calls the app's bundled CLI, since `/usr/local/bin/orca` is broken.
 
 # Gemini API key (machine-wide)
 

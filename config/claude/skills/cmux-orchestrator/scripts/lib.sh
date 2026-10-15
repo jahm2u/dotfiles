@@ -72,16 +72,45 @@ bf_logline() { # slug phase msg
 # outside herdr entirely, still reaches the right server.
 bf_mux() { echo "${BF_MUX:-cmux}"; }
 bf_is_herdr() { [ "${BF_MUX:-cmux}" = herdr ]; }
+bf_is_orca() { [ "${BF_MUX:-cmux}" = orca ]; }
 bf_caller_is_herdr() { [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ]; }
+bf_caller_is_orca() { [ "${TERM_PROGRAM:-}" = Orca ] && [ -n "${ORCA_TERMINAL_HANDLE:-}" ]; }
 bf_herdr_env() { # point the herdr CLI at the ledger's server
   if bf_is_herdr && [ -n "${BF_HERDR_SOCKET:-}" ]; then export HERDR_SOCKET_PATH="$BF_HERDR_SOCKET"; fi
   return 0
+}
+
+# --- Orca (stablyai Orca.app) -----------------------------------------------------------
+# Third backend. In Orca a "workspace" is an Orca worktree id (ORCA_WORKTREE_ID, of the form
+# <repo-id>::<path>) and a "surface" is a runtime terminal handle (term_<uuid>). Builders are
+# tabs created in the ORCHESTRATOR's worktree: `orca terminal create` only accepts worktrees
+# Orca has registered, and the builder's .claude/worktrees/wt-<slug> is a plain git worktree
+# it does not know. The tab's command cd's into the builder worktree first.
+# The ledger also keeps the tab's paneKey (<tabId>:<leafId>) in BF_BUILDER_TAB: that is the key
+# `orca worktree ps` reports agent state under (working / idle / ...), via Orca's Claude hook.
+#
+# /usr/local/bin/orca resolves the app from its own symlink and fails when it was installed as
+# a copy ("Unable to determine Orca.app path"), so this calls the bundled CLI directly.
+bf_orca() {
+  local app="${ORCA_APP:-/Applications/Orca.app}"
+  ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Orca" "$app/Contents/Resources/app.asar.unpacked/out/cli/index.js" "$@"
+}
+# Run an orca command with --json and print one python expression over its "result".
+bf_orca_q() { # expr orca-args...
+  local expr=$1; shift
+  bf_orca "$@" --json 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+if not d.get("ok"): sys.exit(1)
+r=d["result"]
+print('"$expr"')'
 }
 
 # Workspace ref of the terminal this script runs in (e.g. workspace:16, or w1 in herdr).
 # Keyed on the CALLER's terminal, not the ledger: ls.sh compares it against BF_ORCH_WS.
 bf_my_workspace() {
   if bf_caller_is_herdr; then echo "$HERDR_WORKSPACE_ID"; return 0; fi
+  if bf_caller_is_orca; then echo "$ORCA_WORKTREE_ID"; return 0; fi
   cmux identify --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["caller"]["workspace_ref"])'
 }
 
@@ -89,11 +118,17 @@ bf_my_workspace() {
 # orchestrator's workspace, so a workspace ref alone no longer identifies which you mean.
 bf_my_surface() {
   if bf_caller_is_herdr; then echo "$HERDR_PANE_ID"; return 0; fi
+  if bf_caller_is_orca; then echo "$ORCA_TERMINAL_HANDLE"; return 0; fi
   cmux identify --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["caller"]["surface_ref"])'
 }
 
 # Last N rendered lines of a target's terminal. The one read primitive every script uses.
 bf_read() { # target lines
+  if bf_is_orca; then
+    # --screen is the rendered frame; the default stream read stacks every repaint of a TUI.
+    bf_orca_q 'chr(10).join(r["terminal"]["tail"][-'"${2:-40}"':])' terminal read --terminal "$1" --screen
+    return 0
+  fi
   if bf_is_herdr; then
     # Read with ANSI so Claude Code's prompt SUGGESTION can be dropped: it renders dim
     # (ESC[2m ... ESC[0m) after the ❯ and is never typed, but a plain read shows it as
@@ -118,8 +153,51 @@ bf_prompt_text() { # target-flags
 
 # Press one key in a target (enter, esc, 2, ...).
 bf_send_key() { # target key
+  if bf_is_orca; then
+    # orca terminal send has no named keys: Enter is --enter, the rest are raw bytes.
+    case "$2" in
+      enter) bf_orca terminal send --terminal "$1" --text "" --enter --json >/dev/null 2>&1 ;;
+      esc|escape) bf_orca terminal send --terminal "$1" --text $'\e' --json >/dev/null 2>&1 ;;
+      *) bf_orca terminal send --terminal "$1" --text "$2" --json >/dev/null 2>&1 ;;
+    esac
+    return $?
+  fi
   if bf_is_herdr; then herdr pane send-keys "$1" "$2" >/dev/null 2>&1
   else cmux send-key $1 "$2" >/dev/null; fi
+}
+
+# Orca delivery. `terminal send --text --enter --wait-submit` writes text + Enter and, for a
+# pane Orca recognises as an agent, reports the stages it observed; `turn_started` means the
+# prompt was submitted. A message sent while the builder is mid-turn is queued by Claude and
+# never shows turn_started within the wait, so the fallback is the same screen check as cmux:
+# a clear prompt (or Claude's "queued" hint, which bf_prompt_text drops) means delivered.
+# Otherwise reissue ONCE with --retry-request: Orca dedupes on that id, so a submit that did
+# land is not typed twice. Long text goes to a file, as for the other backends.
+bf_orca_send_line() { # handle text
+  local h="$1" text="$2" f out stages req left
+  if [ "${#text}" -gt 800 ]; then
+    f="${TMPDIR:-/tmp}/bf-msg-$(date +%s)-$$.md"
+    printf '%s\n' "$text" > "$f"
+    text="${text:0:160}... [message too long for the prompt; read it in full: $f]"
+  fi
+  out=$(bf_orca terminal send --terminal "$h" --text "$text" --enter --wait-submit 6 --json 2>&1) || {
+    echo "WARNING: orca terminal send to $h failed: ${out:0:200}" >&2; return 1; }
+  read -r stages req < <(printf '%s' "$out" | python3 -c '
+import json,sys
+d=json.load(sys.stdin); p=(d.get("result",{}).get("send") or {}).get("prompt") or {}
+print(",".join(p.get("stages",[])) + ("|"+p.get("provider","") if p.get("provider") in ("unsupported","old-host") else ""), p.get("requestId","-"))' 2>/dev/null) || true
+  case "$stages" in *turn_started*|*"|unsupported"|*"|old-host") return 0;; esac
+  sleep 1
+  left="$(bf_prompt_text "$h")"
+  [ -z "$left" ] && return 0
+  if [ -n "$req" ] && [ "$req" != - ]; then
+    bf_orca terminal send --terminal "$h" --text "$text" --enter --retry-request "$req" --wait-submit 6 --json >/dev/null 2>&1 || true
+    sleep 1
+    left="$(bf_prompt_text "$h")"
+    [ -z "$left" ] && return 0
+  fi
+  echo "WARNING: prompt still holds unsubmitted text on $h: $left" >&2
+  return 1
 }
 
 # herdr delivery. `herdr agent prompt` writes text + Enter as one ordered submission
@@ -191,6 +269,7 @@ bf_herdr_send_line() { # pane text
 bf_send_line() { # target-flags text
   local target="$1" text="$2" i left
   if bf_is_herdr; then bf_herdr_send_line "$target" "$text"; return $?; fi
+  if bf_is_orca; then bf_orca_send_line "$target" "$text"; return $?; fi
   cmux send-key $target ctrl+u >/dev/null 2>&1 || true
   cmux send $target -- "$text" >/dev/null
   sleep 0.7
@@ -204,8 +283,8 @@ bf_send_line() { # target-flags text
   return 1
 }
 
-bf_say_to() { # workspace-ref text (herdr: a pane id or agent name)
-  if bf_is_herdr; then bf_send_line "$1" "$2"; return $?; fi
+bf_say_to() { # workspace-ref text (herdr: a pane id or agent name; orca: a terminal handle)
+  if bf_is_herdr || bf_is_orca; then bf_send_line "$1" "$2"; return $?; fi
   bf_send_line "--workspace $1" "$2"
 }
 
@@ -217,7 +296,7 @@ bf_say_to() { # workspace-ref text (herdr: a pane id or agent name)
 # BF_ORCH_SURFACE disambiguates. Ledgers written before this carry no surface and fall
 # back to the old workspace-only form, so builders spawned earlier keep working.
 bf_orch_target() {
-  if bf_is_herdr; then printf '%s' "${BF_ORCH_SURFACE:-}"; return 0; fi
+  if bf_is_herdr || bf_is_orca; then printf '%s' "${BF_ORCH_SURFACE:-}"; return 0; fi
   if [ -n "${BF_ORCH_SURFACE:-}" ]; then
     printf -- '--workspace %s --surface %s' "${BF_ORCH_WS:-}" "$BF_ORCH_SURFACE"
   else
@@ -228,6 +307,7 @@ bf_orch_target() {
 # True if the workspace ref still exists.
 bf_ws_exists() {
   if bf_is_herdr; then herdr workspace get "$1" >/dev/null 2>&1; return $?; fi
+  if bf_is_orca; then bf_orca worktree show --worktree "id:$1" --json >/dev/null 2>&1; return $?; fi
   cmux list-workspaces 2>/dev/null | grep -q "^\*\? *$1 "
 }
 
@@ -242,7 +322,7 @@ bf_ws_exists() {
 # either shape so no call site has to know which it is -- that is what keeps builders
 # spawned before this change supervisable by the scripts after it.
 bf_target() {
-  if bf_is_herdr; then printf '%s' "${BF_BUILDER_SURFACE:-}"; return 0; fi
+  if bf_is_herdr || bf_is_orca; then printf '%s' "${BF_BUILDER_SURFACE:-}"; return 0; fi
   if [ -n "${BF_BUILDER_SURFACE:-}" ]; then
     printf -- '--workspace %s --surface %s' "$BF_BUILDER_WS" "$BF_BUILDER_SURFACE"
   else
@@ -254,6 +334,12 @@ bf_target() {
 bf_builder_alive() {
   if bf_is_herdr; then
     [ -n "${BF_BUILDER_SURFACE:-}" ] && herdr pane get "$BF_BUILDER_SURFACE" >/dev/null 2>&1
+    return $?
+  fi
+  if bf_is_orca; then
+    # A closed tab's handle still answers `terminal show` for a while, with connected=false.
+    [ -n "${BF_BUILDER_SURFACE:-}" ] || return 1
+    [ "$(bf_orca_q 'r["terminal"].get("connected")' terminal show --terminal "$BF_BUILDER_SURFACE")" = True ]
     return $?
   fi
   if [ -n "${BF_BUILDER_SURFACE:-}" ]; then
@@ -274,6 +360,7 @@ bf_rate_limit_note() {
 
 # Human-readable location, for messages.
 bf_builder_where() {
+  if bf_is_orca; then echo "${BF_BUILDER_SURFACE:-unknown} (orca tab in ${BF_BUILDER_WS##*::})"; return 0; fi
   if bf_is_herdr; then echo "${BF_BUILDER_SURFACE:-unknown} (herdr${BF_BUILDER_TAB:+ tab $BF_BUILDER_TAB} in ${BF_BUILDER_WS:-?})"; return 0; fi
   if [ -n "${BF_BUILDER_SURFACE:-}" ]; then echo "$BF_BUILDER_SURFACE (tab in $BF_BUILDER_WS)"
   else echo "${BF_BUILDER_WS:-unknown}"; fi
@@ -301,7 +388,18 @@ bf_builder_state() {
   local scr left
   bf_builder_alive || { echo gone; return 0; }
   if bf_is_herdr; then bf_herdr_builder_state; return 0; fi
-  scr="$(cmux read-screen $(bf_target) --lines 18 2>/dev/null)"
+  if bf_is_orca; then
+    scr="$(bf_read "$BF_BUILDER_SURFACE" 18)"
+    # Orca's Claude hook reports agent state per paneKey; trust "working" from it, and let
+    # the screen heuristics below decide everything else (they also catch a 429 kill first).
+    if ! printf '%s' "$scr" | grep -qE 'API Error.*429|\(429\)|accounts exhausted|usage limit reached' \
+       && [ -n "${BF_BUILDER_TAB:-}" ] \
+       && [ "$(bf_orca_q 'next((a.get("state","") for w in r["worktrees"] for a in (w.get("agents") or []) if a.get("paneKey")=="'"$BF_BUILDER_TAB"'"),"")' worktree ps)" = working ]; then
+      echo busy; return 0
+    fi
+  else
+    scr="$(cmux read-screen $(bf_target) --lines 18 2>/dev/null)"
+  fi
   case "$scr" in
     *"Do you want to proceed"*|*"Do you want to make this edit"*) echo prompt; return 0;;
   esac
@@ -353,7 +451,13 @@ print(a.get("agent_status") or a.get("status") or "unknown")' 2>/dev/null) || { 
 # Cosmetic, never fatal. cmux: a pill on the orchestrator's sidebar row, a macOS
 # notification, a line in the workspace log. herdr: a token on the orchestrator's
 # workspace (display-only metadata) and a herdr notification; it has no log feed.
+# orca: no status/log CLI, so the phase goes into the builder's TAB TITLE and the
+# notification is a plain macOS one.
 bf_pill() { # slug phase color orch-ws
+  if bf_is_orca; then
+    [ -n "${BF_BUILDER_SURFACE:-}" ] && bf_orca terminal rename --terminal "$BF_BUILDER_SURFACE" --title "🔨 $1 · $2" --json >/dev/null 2>&1
+    return 0
+  fi
   if bf_is_herdr; then
     herdr workspace report-metadata "$4" --source "bf-$1" --token "bf-$1=$2" >/dev/null 2>&1 || true
   else
@@ -361,6 +465,7 @@ bf_pill() { # slug phase color orch-ws
   fi
 }
 bf_pill_clear() { # slug orch-ws
+  bf_is_orca && return 0
   if bf_is_herdr; then
     herdr workspace report-metadata "$2" --source "bf-$1" --clear-token "bf-$1" >/dev/null 2>&1 || true
   else
@@ -368,6 +473,14 @@ bf_pill_clear() { # slug orch-ws
   fi
 }
 bf_notify() { # orch-ws title body
+  if bf_is_orca; then
+    osascript - "$2" "$3" >/dev/null 2>&1 <<'OSA' || true
+on run argv
+  display notification (item 2 of argv) with title (item 1 of argv)
+end run
+OSA
+    return 0
+  fi
   if bf_is_herdr; then
     herdr notification show "$2" --body "$3" --sound request >/dev/null 2>&1 || true
   else
@@ -376,6 +489,7 @@ bf_notify() { # orch-ws title body
 }
 bf_wslog() { # ws level source msg
   bf_is_herdr && return 0
+  bf_is_orca && return 0
   if [ -n "$2" ]; then cmux log --workspace "$1" --level "$2" --source "$3" -- "$4" >/dev/null 2>&1 || true
   else cmux log --workspace "$1" --source "$3" -- "$4" >/dev/null 2>&1 || true; fi
 }
@@ -383,6 +497,10 @@ bf_wslog() { # ws level source msg
 # Close what a builder occupies. Tab mode closes the TAB only -- in tab mode BF_BUILDER_WS
 # is the orchestrator's own (host) workspace, so closing it would kill the orchestrator.
 bf_close_builder() {
+  if bf_is_orca; then
+    [ -n "${BF_BUILDER_SURFACE:-}" ] && bf_orca terminal close --terminal "$BF_BUILDER_SURFACE" --tab --json >/dev/null 2>&1
+    return 0
+  fi
   if bf_is_herdr; then
     if [ -n "${BF_BUILDER_TAB:-}" ]; then herdr tab close "$BF_BUILDER_TAB" >/dev/null 2>&1 || true
     elif [ -n "${BF_BUILDER_WS:-}" ] && [ "${BF_BUILDER_WS}" != "${BF_ORCH_WS:-}" ]; then

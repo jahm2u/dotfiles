@@ -110,7 +110,7 @@ while :; do
     prev="$(cat "$sf.state" 2>/dev/null || echo "")"
     n="$(cat "$sf.count" 2>/dev/null || echo 0)"
 
-    if bf_is_herdr; then screen="$(bf_read "$BF_BUILDER_SURFACE" 40)"
+    if bf_is_herdr || bf_is_orca; then screen="$(bf_read "$BF_BUILDER_SURFACE" 40)"
     else screen="$(cmux read-screen --workspace "$BF_BUILDER_WS" --surface "$BF_BUILDER_SURFACE" --lines 40 2>/dev/null)"; fi
     if [ -z "$screen" ]; then
       [ "$prev" = "GONE" ] || emit "$slug GONE -- surface $BF_BUILDER_SURFACE unreadable; builder exited or was collected"

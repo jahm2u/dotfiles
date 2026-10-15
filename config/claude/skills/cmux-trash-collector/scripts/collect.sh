@@ -116,6 +116,8 @@ fi
 # open on purpose. Close those -- and only those -- now.
 if bf_is_herdr; then
   for t in $(printf '%s' "${BF_REVIEW_TABS:-}" | tr ',' ' '); do herdr tab close "$t" >/dev/null 2>&1 && echo "==> closed review tab $t" || true; done
+elif bf_is_orca; then
+  for t in $(printf '%s' "${BF_REVIEW_TABS:-}" | tr ',' ' '); do bf_orca terminal close --terminal "$t" --tab --json >/dev/null 2>&1 && echo "==> closed review tab $t" || true; done
 fi
 # The builders folder goes when its last builder does (only the empty anchor left).
 bf_group_drop_if_empty "${BF_GROUP:-}" "${BF_ORCH_WS:-}" || true
@@ -136,6 +138,10 @@ for p in json.load(sys.stdin)["result"]["panes"]:
     if c==wt or c.startswith(wt+"/"): print("WARNING: herdr pane %s is still in the worktree (%s) -- close it yourself if disposable" % (p["pane_id"], c))
 ' "$WT" >&2 || true
   fi
+elif bf_is_orca; then
+  # Orca tabs all report the orchestrator's worktree as their cwd, so a tab left in the
+  # builder worktree cannot be told apart from here. Nothing to sweep; say so.
+  [ -d "$WT" ] && echo "note: orca -- check for stray tabs that cd'd into $WT" >&2 || true
 elif [ -d "$WT" ]; then (cd "$ROOT" && "$SWEEP" --dir "$WT") || echo "WARNING: tab sweep failed; check for tabs left in $WT" >&2; fi
 
 # 4. worktree + branch
@@ -173,7 +179,7 @@ if [ $KEEP_BRANCH -eq 0 ] && git -C "$ROOT" ls-remote --exit-code --heads origin
   fi
 fi
 
-bf_is_herdr || (cd "$ROOT" && "$SWEEP" --deleted) || true
+bf_is_herdr || bf_is_orca || (cd "$ROOT" && "$SWEEP" --deleted) || true
 
 # 5. bookkeeping
 bf_pill_clear "$SLUG" "$BF_ORCH_WS"

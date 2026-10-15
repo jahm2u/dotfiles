@@ -37,7 +37,7 @@ answer() {
   local what
   what=$(bf_read "$(bf_target)" 15 | grep -vE '^\s*$' | grep -B1 -E 'Run shell command|Do you want' | head -2 | tr '\n' ' ' | cut -c1-160)
   if [ "$ANSWER" = "no" ]; then
-    if bf_is_herdr; then bf_send_key "$(bf_target)" 2; else cmux send $(bf_target) -- "2" >/dev/null; fi
+    if bf_is_herdr || bf_is_orca; then bf_send_key "$(bf_target)" 2; else cmux send $(bf_target) -- "2" >/dev/null; fi
     sleep 0.3
   fi
   bf_send_key "$(bf_target)" enter

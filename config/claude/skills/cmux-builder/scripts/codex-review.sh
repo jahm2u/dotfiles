@@ -158,12 +158,20 @@ logl "round $N started ($MODEL/$EFFORT vs $BASE)"
 
 # herdr: the caller is a herdr pane, so the review tab is a herdr tab in the caller's
 # workspace. RTAB is its tab id (closing the tab closes its pane); SURFACE is the pane.
-SURFACE="" WS="" RTAB="" HERDR=0
+SURFACE="" WS="" RTAB="" HERDR=0 ORCA=0
 bf_caller_is_herdr && HERDR=1
-r_key()   { if [ $HERDR = 1 ]; then herdr pane send-keys "$SURFACE" "$1" >/dev/null 2>&1; else cmux send-key --workspace "$WS" --surface "$SURFACE" "$1" >/dev/null 2>&1; fi; }
-r_read()  { if [ $HERDR = 1 ]; then herdr pane read "$SURFACE" --source recent --lines "$1" 2>/dev/null; else cmux read-screen --workspace "$WS" --surface "$SURFACE" --lines "$1" 2>/dev/null; fi; }
-r_close() { if [ $HERDR = 1 ]; then herdr tab close "$RTAB" >/dev/null 2>&1; else cmux close-surface --workspace "$WS" --surface "$SURFACE" >/dev/null 2>&1; fi; }
-if [ $TAB -eq 1 ] && [ $HERDR = 1 ]; then
+bf_caller_is_orca && ORCA=1
+r_key()   { if [ $HERDR = 1 ]; then herdr pane send-keys "$SURFACE" "$1" >/dev/null 2>&1; elif [ $ORCA = 1 ]; then BF_MUX=orca bf_send_key "$SURFACE" "$1"; else cmux send-key --workspace "$WS" --surface "$SURFACE" "$1" >/dev/null 2>&1; fi; }
+r_read()  { if [ $HERDR = 1 ]; then herdr pane read "$SURFACE" --source recent --lines "$1" 2>/dev/null; elif [ $ORCA = 1 ]; then BF_MUX=orca bf_read "$SURFACE" "$1"; else cmux read-screen --workspace "$WS" --surface "$SURFACE" --lines "$1" 2>/dev/null; fi; }
+r_close() { if [ $HERDR = 1 ]; then herdr tab close "$RTAB" >/dev/null 2>&1; elif [ $ORCA = 1 ]; then bf_orca terminal close --terminal "$SURFACE" --tab --json >/dev/null 2>&1; else cmux close-surface --workspace "$WS" --surface "$SURFACE" >/dev/null 2>&1; fi; }
+if [ $TAB -eq 1 ] && [ $ORCA = 1 ]; then
+  # orca: a terminal tab in the caller's Orca worktree; its --command is typed into the new
+  # shell, so this is the whole launch (no separate send + Enter step below).
+  WS=$ORCA_WORKTREE_ID
+  OUT=$(bf_orca terminal create --worktree "id:$WS" --title "🔍 review $SLUG #$N" --command "cd $(q "$WT") && SHOW=1 bash $(q "$RUNNER")" --json 2>/dev/null || true)
+  SURFACE=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["terminal"]["handle"])' 2>/dev/null || true)
+  [ -n "$SURFACE" ] && [ -n "${BF_SLUG:-}" ] && bf_set "$BF_SLUG" BF_REVIEW_TABS "$(grep '^BF_REVIEW_TABS=' "$(bf_ledger_file "$BF_SLUG")" 2>/dev/null | cut -d= -f2)${SURFACE},"
+elif [ $TAB -eq 1 ] && [ $HERDR = 1 ]; then
   WS=$HERDR_WORKSPACE_ID
   OUT=$(herdr tab create --workspace "$WS" --cwd "$WT" --label "🔍 review $SLUG #$N" --no-focus 2>/dev/null || true)
   read -r RTAB SURFACE < <(printf '%s' "$OUT" | python3 -c 'import json,sys; p=json.load(sys.stdin)["result"]["root_pane"]; print(p["tab_id"], p["pane_id"])' 2>/dev/null) || true
@@ -176,7 +184,8 @@ elif [ $TAB -eq 1 ] && WS=$(bf_my_workspace 2>/dev/null) && [ -n "$WS" ]; then
 fi
 if [ -n "$SURFACE" ]; then
   sleep 0.5
-  if [ $HERDR = 1 ]; then
+  if [ $ORCA = 1 ]; then :   # launched by terminal create --command above
+  elif [ $HERDR = 1 ]; then
     herdr pane run "$SURFACE" "SHOW=1 bash $(q "$RUNNER")" >/dev/null
   else
     cmux rename-tab --workspace "$WS" --surface "$SURFACE" "🔍 review $SLUG #$N" >/dev/null 2>&1 || true
