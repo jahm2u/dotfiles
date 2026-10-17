@@ -74,6 +74,63 @@
         },
         "required": []
       },
+      "output": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "number"
+            },
+            "pid": {
+              "type": "number"
+            },
+            "cpu": {
+              "type": "number"
+            },
+            "mem": {
+              "type": "number"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "prefPane",
+                "app",
+                "binary",
+                "aggregatedApp"
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "processName": {
+              "type": "string"
+            },
+            "appName": {
+              "type": "string"
+            },
+            "childProcessCount": {
+              "type": "number"
+            },
+            "childProcessIds": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "pid",
+            "cpu",
+            "mem",
+            "type",
+            "path",
+            "processName",
+            "appName"
+          ]
+        }
+      },
       "confirmation": false
     },
     {
