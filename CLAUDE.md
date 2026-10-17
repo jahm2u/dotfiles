@@ -481,11 +481,47 @@ herdr (0.9.3, must match on both Macs) on the mini lists three saved SSH machine
 **machines** sidebar. All three go through ssh host `mbp` (`~/.ssh/config`: HostName
 `ts-macbook-pro`, user `v`, port 22, i.e. over Tailscale):
 
-| Sidebar label | herdr session on the MBP | What runs there |
-|---------------|--------------------------|-----------------|
-| mbp orgs | `orgs` | org-seat: seat, baba, the TP/PD/EX/MT/OH chat babysitters, gardener, watchdog, builders |
-| dev hive | `dev-crew` | dev crew agents |
-| mkt crew | `mkt-crew` | marketing crew agents |
+| Sidebar label | herdr session on the MBP | Repo on the MBP (live checkout) | Brought up by |
+|---------------|--------------------------|----------------------------------|---------------|
+| mbp orgs | `orgs` | `~/repos/01_business/tp/baba-brain` (+ `repos/baba-fleet`) | `org-seat/scripts/up.sh`, LaunchAgent `com.babafleet.orgs-keeper` (every 60 s) |
+| dev hive | `dev-crew` | `~/repos/01_business/mp/hive-dev-crew` (`github.com/jeffheartmp/hive-dev-crew`) | `bin/crew up --window`, LaunchAgent `com.jeffheartmp.dev-crew.login` (at login) |
+| mkt crew | `mkt-crew` | `~/repos/01_business/mp/hive-paid-traffic` (`github.com/jeffheartmp/hive-paid-traffic`) | `bin/hive up --janela`, LaunchAgent `com.ipmedia.hive-paid-traffic.login` (at login) |
+
+What each crew is:
+
+- **orgs** (TP business, workspace "Baba"): `seat` is Jeff's single point of contact, `baba` the
+  chief of staff, `tp` `pd` `ex` `mt` `oh` each babysit one partner's Telegram channel from a
+  BabaFlow liaison checkout, `gardener` tends the brain, and workspace "builders" holds
+  `b-<slug>` cmux-style builders.
+- **dev-crew** (MeuPatrocínio): Jeff's dev-leadership crew. It watches how the dev team works,
+  keeps the record, and prepares 1:1s, reviews, incidents, RFCs and hiring. Fixed seats
+  `observer`, `chief-of-staff`, `tech-lead`, `shepherd`, plus bench seats (`qa-lead`,
+  `crew-dev`...) leased by order (`crew.toml [layout]`, `[bench]`). Holds 1:1 notes and DMs,
+  so the repo is private. About 35 `com.jeffheartmp.dev-crew.*` launchd jobs (memory
+  reviews, reports, watchdog, nightly housekeeping), generated from `crew.toml` by
+  `bin/crew install-schedule`.
+- **mkt-crew** (MeuPatrocínio paid traffic, Meta ads): seven *seats* (pm, strategist,
+  operator, web-dev, web-design, finance, martech), each filled by an agent persona (Rivo,
+  Hopkins, Ogilvy, Angela, Wanamaker, Nightingale...) or a person; also front-desk,
+  gardener and ops-manager. The `operator` seats run Codex, the rest Claude. Seat table in
+  `docs/seats.md`, desk manuals in `seats/<seat>/DESK.md`. Launchd jobs
+  `com.ipmedia.hive-paid-traffic.*` (operator slots 05:00/12:30/16:30/21:00, Slack, queues,
+  nightly `faxina`).
+
+Rules shared by both MeuPatrocínio crews (see each repo's `CLAUDE.md`): the MBP checkout is
+the live one, so an edit takes effect on the next boot or run, and there is no copy on the
+mini. Commit as **jeffheartmp** (`~/.gitconfig-mp`), not jahm2u, and push. To change them from
+the mini, commit and push there, then `git pull --ff-only` on the MBP. Their human docs live in
+the brain repo `jeffheartmp/hive` (`dev-crew/`, `paid-traffic/`). Agents talk across sessions
+and Macs with `fleet-tell` (`~/.local/bin/fleet-tell` → `baba-fleet/bin/fleet-tell`;
+`fleet-tell --list`).
+
+Known stale bits (2026-10-17): both crew `CLAUDE.md` files place the brain at
+`/Volumes/Workspace/repos/01_business/mp/hive` on the mini, a path on the failed external
+drive, and the mini has no `01_business/mp/` at all. `hive-paid-traffic/CLAUDE.md` names the
+session `hive-paid-traffic`, but `bin/hive` uses `mkt-crew`. A leftover `hive-paid-traffic`
+herdr session (one idle Claude in `~`) still runs. Also on the MBP and down: `dev-crew-drill`,
+`cw-test`, `cwq`, `dcrp-probe`.
 
 Session sockets live on the MBP at `~/.config/herdr/sessions/<session>/herdr.sock`.
 The `orgs` session is started and kept alive by
@@ -493,6 +529,16 @@ The `orgs` session is started and kept alive by
 run every 60 s by the `com.babafleet.orgs-keeper` LaunchAgent. It only runs on
 `ORGS_HOST` (default `ts-MacBook-Pro`). The same agent is installed on the mini, where it
 refuses by design, so **never expect `orgs` to run on the mini**.
+
+### The MBP must not sleep
+
+All three sessions die whenever the MBP sleeps. Amphetamine (5.3.2, session at launch,
+"Allow Closed-Display Sleep" off) only blocks *idle* sleep. Closing the lid still sleeps the
+Mac (`pmset -g log`: `Entering Sleep state due to 'Clamshell Sleep'`) unless an external
+display is attached or closed-display mode is active, and that needs the separate **Amphetamine
+Enhancer** helper, which was not installed on 2026-10-17. Check: `ssh mbp 'pmset -g | grep
+-E "SleepDisabled|sleep "; pmset -g log | grep Clamshell | tail -3'`. `SleepDisabled 1` means
+lid-closed sleep is off.
 
 ### When the sidebar says "reconnecting"
 
