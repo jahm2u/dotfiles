@@ -148,6 +148,12 @@ this order. Report each with `review-round` ("local claude: 2 major fixed", "cod
 
 Then push and open the PR. The project's CLAUDE.md is in your worktree and applies in full. In particular:
 
+- If the spec names a demo (`demos/<slug>.json`) and the repo has `scripts/demo/record.js`: bring up the
+  Rule 19 stack, `npm run demo:seed`, then `npm run demo:record -- demos/<slug>.json --out /tmp/demo-<slug>`
+  (exit 1 = stack down: fix the stack, never record without it). Look at the GIF. Upload the mp4 with
+  `node scripts/release-media.js /tmp/demo-<slug>/<slug>-360.mp4` from the PRIMARY checkout (it needs its
+  `.env`; one API login per upload, 5 per 15 min) and put the printed URL under `## Release Media` in the
+  PR body. Never commit the recordings. Guide: brain `docs/babaflow/guides/dev/demo-recorder.md`.
 - Commit with `git commit -F -` and a quoted heredoc. Footer: `Fixes #$BF_ISSUE` when the PR completes the issue, `Refs #$BF_ISSUE` when it is a part; blank line before the footer.
 - Gate every commit on HEAD having moved (commitlint can reject silently): `BEFORE=$(git rev-parse --short HEAD)`, commit, assert `git rev-parse --short HEAD` differs.
 - `report.sh pushing "…"` then `cd <literal worktree path> && git push -u origin <branch>` with a 300000 ms timeout. Never `--no-verify` (denied in builder-settings.json): the pre-push hook runs only lint and the comment ratchet; if it is red, fix the cause or report `blocked`.
@@ -168,6 +174,13 @@ disposition (`gh api repos/<owner>/<repo>/pulls/<N>/comments/<id>/replies -f bod
 re-run `codex-review.sh` on the fix (it is cheap and catches what the fix broke; the local
 Claude review is NOT repeated per round), then push and loop. A major that requires leaving the spec's boundaries is a `question` to the orchestrator.
 If `mergeable` is CONFLICTING, merge `origin/main` into the branch.
+
+**Prod proof for an external write.** If the change exists to write somewhere outside the app (S3,
+Telegram, a box over SSH, a provider callback or webhook URL), green tests are not proof: release
+media merged green and 502'd/413'd on prod (IAM prefix, nginx 1 MB body cap), and SMS webhook URLs
+pointed at a path nginx 405s. Before `converged`, name in the report the one production-path
+measurement that shows the write lands (or, when that needs prod access the spec makes Ask First,
+ask for it as a `question` with the exact command). No proof named = not converged.
 
 When pr-watch prints `CONVERGED` for the CURRENT head: `report.sh converged "PR #<N> converged at
 <sha>; <k> rounds"`. Then wait. Do not merge.
