@@ -11,11 +11,19 @@
         <string>HOME_DIR/.config/sketchybar/helpers/cleanup-tm-snapshots.sh</string>
     </array>
 
-    <key>WatchPaths</key>
-    <array>
-        <!-- Triggers when Time Machine completes a backup -->
-        <string>/var/db/.TimeMachine.Results.plist</string>
-    </array>
+    <!-- Hourly, matching Time Machine's snapshot cadence. A WatchPaths trigger on
+         /var/db/.TimeMachine.Results.plist never fires on macOS 26 (file is gone). -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
 
     <key>StandardOutPath</key>
     <string>HOME_DIR/.config/sketchybar/logs/tm-cleanup-stdout.log</string>
