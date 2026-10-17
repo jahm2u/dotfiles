@@ -374,8 +374,19 @@ def _find_tool(name: str) -> str | None:
     return None
 
 
+# m1ddc 1.2.0 (latest) segfaults now and then in getOnlineDisplayInfos: when a display
+# lookup misses it hands a NULL path to IORegistryEntryCopyFromPath. Polled every publish
+# (30 s) that was ~50 crash reports a day. Brightness only changes through handle_brightness
+# or the display's own buttons, so read it at most every 10 min and keep the last good value.
+BRIGHTNESS_POLL_SECONDS = 600
+_brightness_cache = {"value": None, "at": 0.0}
+
+
 def collect_brightness() -> dict:
     """Get display brightness. Tries m1ddc (Apple Silicon external), falls back to brightness CLI."""
+    if time.time() - _brightness_cache["at"] < BRIGHTNESS_POLL_SECONDS:
+        return {"brightness": _brightness_cache["value"]}
+    _brightness_cache["at"] = time.time()
     # m1ddc: works with external displays on Apple Silicon (Mac Mini, etc.)
     m1ddc = _find_tool("m1ddc")
     if m1ddc:
@@ -384,7 +395,11 @@ def collect_brightness() -> dict:
             result = _run_as_user([m1ddc, "display", "1", "get", "luminance"])
             if result and result.returncode == 0:
                 val = int(result.stdout.strip())
-                return {"brightness": max(0, min(100, val))}
+                _brightness_cache["value"] = max(0, min(100, val))
+                return {"brightness": _brightness_cache["value"]}
+            if _brightness_cache["value"] is not None:
+                # Crashed or failed: keep reporting the last good reading
+                return {"brightness": _brightness_cache["value"]}
         except (ValueError, AttributeError):
             pass
     # Fallback: brightness CLI (works with built-in displays / older Macs)
@@ -1249,6 +1264,8 @@ def handle_brightness(payload: str) -> None:
         # Syntax: m1ddc display N set luminance X (display selector goes BEFORE command)
         for did in display_ids:
             _run_as_user([m1ddc, "display", did, "set", "luminance", str(level)])
+        # We know the new level; no need for another m1ddc read
+        _brightness_cache["value"], _brightness_cache["at"] = level, time.time()
     else:
         # Fallback: brightness CLI uses 0.0-1.0 float
         brightness_cli = _find_tool("brightness")
