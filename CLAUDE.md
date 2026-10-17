@@ -540,6 +540,11 @@ Enhancer** helper, which was not installed on 2026-10-17. Check: `ssh mbp 'pmset
 -E "SleepDisabled|sleep "; pmset -g log | grep Clamshell | tail -3'`. `SleepDisabled 1` means
 lid-closed sleep is off.
 
+**Fixed 2026-10-17 with `sudo pmset -a disablesleep 1`** (verified: lid closed, still reachable
+over SSH). This disables sleep everywhere, battery included, so don't carry it closed in a
+bag; undo with `sudo pmset -a disablesleep 0`. A macOS update can reset it, so re-check
+`SleepDisabled` after one.
+
 ### When the sidebar says "reconnecting"
 
 Work down the chain. Each step only makes sense once the one before it passes:
