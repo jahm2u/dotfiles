@@ -89,6 +89,7 @@ components → cache/API → event trigger → widget update
 | **Calendar** | 15 min | `sync-calendars.sh` | Sync iCal → khal → meeting widget | `meeting.sh`, LaunchAgent: `calendar-sync` |
 | **Todoist** | 30 sec | `todoist-precache.sh` | Precache tasks → instant popup | `todoist_popup.sh`, `todoist.sh`, LaunchAgent: `todoist-precache` |
 | **Meeting Prep** | On-click | `meeting-prep.sh` | AI-powered meeting note generation | `classify-meeting.py`, `analyze-meeting-history.py`, `generate-meeting-note.py` |
+| **TM Snapshot Cleanup** | 1 hour | `cleanup-tm-snapshots.sh` | Thin Time Machine local snapshots; "Disk low" notification under 40 GB | LaunchAgent: `tm-snapshot-cleanup`, log `tm-cleanup.log` |
 
 ### Component Details
 
@@ -115,7 +116,19 @@ components → cache/API → event trigger → widget update
 
 ### LaunchAgent Operations
 
-**Service Names:** `calendar-sync` | `todoist-precache`
+**Service Names:** `calendar-sync` | `todoist-precache` | `tm-snapshot-cleanup`
+
+**Disk filling up:** run `/disk-cleanup` (skill in `config/claude/skills/disk-cleanup/`). Its
+`scan.sh` triages every git worktree under `~/repos` and `~/work` as SAFE / ASK / KEEP (merged
+PR at HEAD, uncommitted work, unpushed commits, live processes) and lists regenerable caches;
+`remove.sh` removes only what you approve. Time Machine local snapshots pin every deleted file
+for up to a day (87 GB on 2026-10-17). They can't be disabled while Time Machine is on, so the
+hourly agent thins them whenever the external backup is under 24 h old. Its old trigger watched
+`/var/db/.TimeMachine.Results.plist`, which macOS 26 no longer writes, so it never ran.
+
+**Loading agents from Claude Code:** Claude's shell can run in launchd's *Background* session
+(`launchctl managername`), where `launchctl load` lands outside your login session and
+`bootstrap gui/$UID` fails with error 125. Load agents from Terminal.app instead, or log in again.
 
 ```bash
 # Check status (replace {SERVICE} with service name)
@@ -506,6 +519,7 @@ curl -H "Authorization: Bearer $TODOIST_API_TOKEN" https://api.todoist.com/rest/
 | **Volume keys disabled** | No-volume icon on LG Dual | `dualVolumeTap` eventtap must be running; check Hammerspoon console for errors |
 | **Meeting prep no file** | "File not found after 10s" in log | Jonas API not writing to Docker volume; check Docker mount and Jonas logs |
 | **Meeting prep wrong vault** | Obsidian "file not found" error | Verify `VAULT_NAME="kb"` in `meeting-prep.sh` matches actual vault folder name |
+| **Disk full but `diskutil` shows far more free** | `df` free ≪ "Container Free Space" | TM local snapshots pin deleted files: `tmutil thinlocalsnapshots / 999999999999 4`, then check `tm-cleanup.log` |
 
 **Force Complete Resync (Calendar Example):**
 ```bash

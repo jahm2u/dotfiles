@@ -132,3 +132,6 @@ config/claude/skills/.trash/
 config/claude/.last-*
 config/claude/mcp-needs-auth-cache.json
 config/claude/settings.json.new.*
+
+# Installed by `npx skills` into ~/.agents, linked in locally; not part of this repo
+config/claude/skills/find-skills
