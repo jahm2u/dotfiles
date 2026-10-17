@@ -458,6 +458,67 @@ Single debounced screen watcher (3-second delay) handles monitor plug/unplug:
 ### Device Filtering
 The following devices are excluded from the picker: Microsoft Teams Audio, Jump Desktop Audio, krisp speaker, and any Multi-Output/Aggregate/LG Dual system devices (the manual "LG Dual" entry is constructed separately).
 
+## Machines, Tailscale & herdr
+
+### Machines (one tailnet: `jeff.hamersly@gmail.com`, `*.taild9b9f0.ts.net`)
+
+| Tailscale name | What it is |
+|----------------|------------|
+| `mini-2024` | This Mac mini (desk machine, wired Ethernet). Runs the herdr *client* |
+| `ts-macbook-pro` | MacBook Pro (`ssh mbp`). Hosts the herdr sessions below |
+| `mini-mp`, `mox` | Other Mac mini / Linux box (`mox` = staging) |
+| `claude-gateway` | Linux box on the LAN (192.168.0.224), `tag:claude-gw` |
+| `db-gateway` | Linux DB gateway |
+
+Everything is in one tailnet. There are no separate org tailnets: "mbp orgs", "dev hive"
+and "mkt crew" are **herdr sessions**, not Tailscale devices. On the mini, Tailscale is
+the Homebrew `tailscaled` running as root (state in `/Library/Tailscale`, log
+`/opt/homebrew/var/log/tailscaled.log`), not the App Store app.
+
+### herdr remote sessions
+
+herdr (0.9.3, must match on both Macs) on the mini lists three saved SSH machines in its
+**machines** sidebar. All three go through ssh host `mbp` (`~/.ssh/config`: HostName
+`ts-macbook-pro`, user `v`, port 22, i.e. over Tailscale):
+
+| Sidebar label | herdr session on the MBP | What runs there |
+|---------------|--------------------------|-----------------|
+| mbp orgs | `orgs` | org-seat: seat, baba, the TP/PD/EX/MT/OH chat babysitters, gardener, watchdog, builders |
+| dev hive | `dev-crew` | dev crew agents |
+| mkt crew | `mkt-crew` | marketing crew agents |
+
+Session sockets live on the MBP at `~/.config/herdr/sessions/<session>/herdr.sock`.
+The `orgs` session is started and kept alive by
+`baba-fleet/liaisons/org-seat/scripts/up.sh` (idempotent; starts only what is missing),
+run every 60 s by the `com.babafleet.orgs-keeper` LaunchAgent. It only runs on
+`ORGS_HOST` (default `ts-MacBook-Pro`). The same agent is installed on the mini, where it
+refuses by design, so **never expect `orgs` to run on the mini**.
+
+### When the sidebar says "reconnecting"
+
+Work down the chain. Each step only makes sense once the one before it passes:
+
+```bash
+tailscale status | grep ts-macbook-pro     # 1. MBP online in the tailnet? "offline, last seen" = fix it ON the MBP (menu bar icon)
+tailscale ping -c1 ts-macbook-pro          # 2. reachable?
+nc -z -G 4 ts-macbook-pro 22               # 3. SSH port open? (times out for a minute or so while the MBP wakes)
+herdr machine status                       # 4. per-session: reachable / error
+herdr machine reconnect "mbp orgs"         #    re-auth one machine interactively if needed
+ssh mbp 'export PATH=/opt/homebrew/bin:$PATH; bash ~/repos/01_business/tp/baba-brain/repos/baba-fleet/liaisons/org-seat/scripts/up.sh --no-attach'
+                                           # 5. orgs server down: start what's missing
+```
+
+`herdr machine status` reporting `orgs` as "remote Herdr server is stopped or
+incompatible" right after `up.sh` is normal: the server restarts its panes and comes
+back by itself within a few minutes. Check the session directly instead of restarting
+again: `ssh mbp 'HERDR_SOCKET_PATH=~/.config/herdr/sessions/orgs/herdr.sock /opt/homebrew/bin/herdr agent list'`.
+
+**Incident 2026-10-17:** the mini reset unexpectedly at 09:22 (no panic report; firmware held panic telemetry). Afterwards the MBP stayed
+offline in Tailscale for about 35 minutes until it was reconnected on the MBP itself.
+Port 22 then timed out briefly, dev hive and mkt crew came back on their own, and `orgs`
+needed one `up.sh` and a few minutes. Nothing on the mini was broken: when all three
+sessions say "reconnecting" at once, look at the MBP first.
+
 ## Development & Troubleshooting
 
 ### Common Commands
