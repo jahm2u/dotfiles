@@ -55,14 +55,24 @@ the video, and check with him there.
    finishes. Show the edge a reviewer would try: a back tap, the "Outro" path. **Show
    the error states too** (Jeff, 2026-10-17): a failed request and its retry, invalid
    input, a server refusal (e.g. e-mail in use), offline, whichever the flow has.
+   **Show the whole viewport the whole time** (Jeff, 2026-10-18): no crops or cuts to one
+   panel. To show a detail, zoom in smoothly from the full view, hold, and zoom back out to
+   the full view (animated, e.g. ffmpeg `zoompan`), never a hard cut to a zoomed crop.
 4. `screencast_stop`. Keep it under ~90 s and 50 MB (re-encode with ffmpeg if not).
-   Check the shape before reporting: `ffprobe -show_entries stream=width,height,sample_aspect_ratio`
+   Check the raw shape: `ffprobe -show_entries stream=width,height,sample_aspect_ratio`
    must give a phone ratio (~390x844) with SAR 1:1. A stretched or squashed recording (Jeff,
    2026-10-17: "weirdly stretched") means the capture size and the emulated viewport disagree;
-   re-record. `tg_review.py send` now re-encodes to square pixels and passes width/height.
-   Save it outside `/tmp` (`~/Movies/duda-review/`): `/tmp` is wiped on restart.
+   re-record. Save everything outside `/tmp` (`~/Movies/<name>-review/`): `/tmp` is wiped on restart.
+4a. **Every video Jeff gets is the composed layout** (Jeff, 2026-10-18): landscape 1920x1080,
+   the walkthrough's steps on the left (current one highlighted, done ones checked), the raw
+   recording in an iPhone frame on the right. Write a steps file with the time each step
+   starts in the raw recording (`steps.txt`: `title: ...`, then `0:00 -> Abre o app`, `0:07 -> ...`;
+   or JSON `{"title": ..., "steps": [{"start": 0, "text": ...}]}`), 3-8 short steps, then:
+   `python3 ~/.claude/skills/ux-video-review/scripts/compose_phone_video.py --video raw.mp4 --steps steps.txt --out final.mp4 [--title "..."]`
+   (`--self-test` checks the script). ffprobe the **final**: 1920x1080, SAR 1:1, same length
+   as the raw. The final is what gets reviewed, committed and sent.
 4b. **Codex reviews the video before Jeff does** (Jeff, 2026-10-17: "have codex review
-   and fix any bad shit"). Extract frames (`ffmpeg -i v.mp4 -vf fps=1 f%03d.png`), have
+   and fix any bad shit"). Extract frames of the final (`ffmpeg -i final.mp4 -vf fps=1 f%03d.png`), have
    Codex review them for anything broken, ugly, confusing or off-copy, fix what it finds,
    re-record, repeat until clean. Only then report `video:`.
    **Do not hand-roll `codex exec` for this** (2026-10-18): a builder's own script hits
@@ -70,8 +80,9 @@ the video, and check with him there.
    builder's Bash, a 401 (no gateway key there), and the tab hangs. Until a shared frame
    script exists on `codex-review.sh`'s route, the frame review is a fresh **Claude
    subagent** given the contact sheet and the same checklist (broken, ugly, confusing,
-   off-copy, error states shown). Never move the gateway key into a file to make Codex work.
-5. Commit it to a `pr-media/<slug>` branch (never the PR branch), link it in the PR
+   off-copy, error states shown, step highlighted matches what the phone shows). Never move
+   the gateway key into a file to make Codex work.
+5. Commit the final to a `pr-media/<slug>` branch (never the PR branch), link it in the PR
    body, and report the local path.
 
 ## 2. Send (orchestrator)
