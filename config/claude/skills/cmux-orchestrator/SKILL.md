@@ -291,6 +291,12 @@ Rules of the channel:
 
 ### 5. Merge decision and hand-off
 
+**UI PRs wait for Jeff's eyes.** If the spec changes anything a user sees, spawn the builder
+with `--mcp full`, and when its `pr-open` carries `video: <path>`, run `/ux-video-review`: send the
+video to Jeff on Telegram, wait for his reply, relay his notes as one numbered list, and send a new
+video after the fixes. Do not merge a UI PR before he answers (or the skill's wait rule says so),
+and never promote one to production on silence.
+
 The builder never merges on its own. When it reports `converged`, check `node scripts/pr-watch.js
 <N>` yourself if you want a second look (the caveats in CLAUDE.md Rule 5 apply: `CONVERGED` is
 not "no open thread"), then `tell.sh <slug> merge`. The builder merges with `--squash --admin`,
@@ -299,6 +305,7 @@ confirms the issue closed, and reports `merged` then `done`. Then run `/cmux-tra
 
 ### 6. When it goes wrong
 
-- Builder process died (workspace shows a shell prompt): the worktree and branch are intact. Either `cmux send --workspace <ws> "claude --model opus --permission-mode auto --continue"` (herdr: `herdr pane run <BF_BUILDER_SURFACE> "claude --model opus --permission-mode auto --continue"`) to resume the same session in place, or collect with `--force` and respawn.
+- Builder process died (workspace shows a shell prompt): the worktree and branch are intact. Either `cmux send --workspace <ws> "claude --model opus --permission-mode auto --continue"` (herdr: `herdr pane run <BF_BUILDER_SURFACE> "claude --model opus --permission-mode auto --continue"`) to resume the same session in place, or collect and respawn.
+- Builder's worktree is gone (machine restart wiped it, or it was collected by mistake) but its branch is on origin and its transcript exists: `ORCH_PEER=<your ListAgents name> scripts/resume.sh <slug> [<session-id>]` recreates the worktree at the same path, restores the ledger from the archive pointed at you, and opens a 🔨 tab running `claude --resume` in the builder's own conversation (Orca; prints the command for cmux/herdr). Then SendMessage it what happened and its next step. `collect.sh --force` no longer deletes the remote branch of an unmerged PR, so this path stays open.
 - You want to stop it: `tell.sh <slug> stop` (it reports `failed` and idles), then collect.
 - Two builders needed the same file: that is a split that should have happened at step 1; let the first merge, then `tell.sh <second> "rebase onto origin/main"`.

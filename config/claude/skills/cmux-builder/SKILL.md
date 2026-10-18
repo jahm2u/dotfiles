@@ -154,12 +154,23 @@ Then push and open the PR. The project's CLAUDE.md is in your worktree and appli
 - Before the first push, run the repo's own commit-message checks locally (its commit-msg hook, any `scripts/*commit*` validator CI runs) against your commit. A red validate job on the PR costs an amend + force-push; a local run costs seconds.
 - `gh pr create --base main --head <branch> --title "<conventional>" --body "<what/why + Fixes/Refs footer>"`, then label it for a human merge: use the label the repo's CLAUDE.md names; if it names none, `gh label create bot:hands-off --color BFD4F2 --description "Human-driven PR: reviewer FYI only, no auto-merge" 2>/dev/null; gh pr edit <N> --add-label bot:hands-off`. Never improvise a label name. Always also add `owner:orchestrator` (`gh label create owner:orchestrator --color 5319E7 2>/dev/null; gh pr edit <N> --add-label owner:orchestrator`): the org seat's `seatctl merge` skips PRs with it, so only the orchestrator decides the merge.
 - `report.sh pr-open "PR #<N> <title>"` — include the literal `PR #<N>`; the ledger picks the number up from it (any phase that names `PR #<N>` first does).
+- **UI change?** (anything a user sees or how a screen moves) Record the flow as a phone-size video per `~/.claude/skills/ux-video-review/SKILL.md` §1 before `pr-open`, and put `video: <local mp4 path>` in the `pr-open` report. Re-record after any UI fix and report the new path. Without the browser (spawned without `--mcp full`), report `blocked: need --mcp full for the UX video`.
+- **Admin/frontend diff that changes no UX flow?** No video and no screenshots, but you still verify the behaviour the spec names (for example, which requests are sent) in a real browser before `pr-open`, and put the measured result in the PR body. Without the MCP, use the playwright/puppeteer already in the repo's `node_modules` against the local stack. "Browser not available" is never a reason to skip it (Jeff, 2026-10-17, #4488).
 
 ## 3. Review loop until converged
 
 ```bash
+# BabaFlow (it has its own reviewer-aware watcher):
 cd <literal worktree path> && node scripts/pr-watch.js <N> --wait
+# every other repo (ajudaduda included) — ships with this skill:
+cd <literal worktree path> && ~/.claude/skills/cmux-builder/scripts/pr-watch.sh <N> --wait
 ```
+
+`pr-watch.sh` prints `CONVERGED` when every check on the head is green, the reviewer bot's newest
+review is on the head with `critical=0 high=0`, and the PR is not conflicting. Medium/low findings
+are printed, not blocking: disposition them. `NOT-CONVERGED <why>` names what to fix. Run it in the
+background (`run_in_background`), never in a foreground sleep loop. `--reviewer LOGIN` (or
+`PR_WATCH_REVIEWER`) pins the reviewer when a repo has more than one bot.
 
 Each round: `report.sh review-round "round k: <blocking> blocking / <minor> minor"`. Fix every major+
 at the root cause inside the spec's boundaries; sub-major findings are acknowledged, not fixed,
@@ -169,7 +180,7 @@ re-run `codex-review.sh` on the fix (it is cheap and catches what the fix broke;
 Claude review is NOT repeated per round), then push and loop. A major that requires leaving the spec's boundaries is a `question` to the orchestrator.
 If `mergeable` is CONFLICTING, merge `origin/main` into the branch.
 
-When pr-watch prints `CONVERGED` for the CURRENT head: `report.sh converged "PR #<N> converged at
+When pr-watch (`.js` or `.sh`) prints `CONVERGED` for the CURRENT head: `report.sh converged "PR #<N> converged at
 <sha>; <k> rounds"`. Then wait. Do not merge.
 
 ## 4. Merge only when told

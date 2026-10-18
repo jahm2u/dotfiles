@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# collect.sh <slug> [--force] [--keep-branch]
+# collect.sh <slug> [--force] [--keep-branch]   (--force never deletes the remote branch of a PR that is not merged)
 #
 # Retire one builder after its work has landed:
 #   1. refuse unless the PR is MERGED (or --force) and the worktree is clean (or --force)
@@ -168,14 +168,19 @@ if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
     git -C "$ROOT" branch -D "$BRANCH" >/dev/null && echo "==> deleted local branch $BRANCH (squash-merged branches need -D)"
   fi
 fi
-if [ "$PR_STATE" = "MERGED" ] || [ $FORCE -eq 1 ]; then
+# Only after a merge: --force on an OPEN PR must not cancel its CI or delete its
+# remote branch (deleting the head branch closes the PR on GitHub; 2026-10-18 it
+# closed 11 open PRs during a worktree cleanup).
+if [ "$PR_STATE" = "MERGED" ]; then
   for RUN_ID in $(cd "$ROOT" && gh run list --branch "$BRANCH" --limit 20 --json databaseId,status --jq '.[] | select(.status != "completed") | .databaseId' 2>/dev/null); do
     (cd "$ROOT" && gh run cancel "$RUN_ID" >/dev/null 2>&1) && echo "==> cancelled CI run $RUN_ID on $BRANCH (it held a runner after the merge)" || echo "WARNING: could not cancel CI run $RUN_ID"
   done
 fi
 if [ $KEEP_BRANCH -eq 0 ] && git -C "$ROOT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-  if [ "$PR_STATE" = "MERGED" ] || [ $FORCE -eq 1 ]; then
+  if [ "$PR_STATE" = "MERGED" ]; then
     git -C "$ROOT" push -q origin --delete "$BRANCH" && echo "==> deleted remote branch $BRANCH" || echo "WARNING: could not delete remote branch $BRANCH"
+  else
+    echo "==> kept remote branch $BRANCH (PR ${BF_PR:-?} is $PR_STATE, not merged)"
   fi
 fi
 
