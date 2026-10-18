@@ -63,6 +63,5 @@ An OpenAI API key lives at `~/.config/openai/api-key` (mode 600, one line; copie
 because Codex logs in through ChatGPT. Read it as `$(tr -d '[:space:]' < ~/.config/openai/api-key)`,
 and send it as `Authorization: Bearer`.
 
-Gemini also generates images, and it is the one that keeps a character consistent from a reference
-picture: `~/.local/bin/duda/gemini-img.py <ref.png> <out.png> "<prompt>"` (default model
-`gemini-2.5-flash-image`). Never print or commit either key.
+For mascot/widget art (consistent character poses as transparent cutouts, status-coloured previews) use
+the `mascot-art` skill, which wraps both keys. Never print or commit either key.
