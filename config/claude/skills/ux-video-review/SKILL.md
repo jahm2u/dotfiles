@@ -59,6 +59,12 @@ the video, and check with him there.
    and fix any bad shit"). Extract frames (`ffmpeg -i v.mp4 -vf fps=1 f%03d.png`), have
    Codex review them for anything broken, ugly, confusing or off-copy, fix what it finds,
    re-record, repeat until clean. Only then report `video:`.
+   **Do not hand-roll `codex exec` for this** (2026-10-18): a builder's own script hits
+   Codex's "Update available" menu (no `check_for_update_on_startup=false`) and, from a
+   builder's Bash, a 401 (no gateway key there), and the tab hangs. Until a shared frame
+   script exists on `codex-review.sh`'s route, the frame review is a fresh **Claude
+   subagent** given the contact sheet and the same checklist (broken, ugly, confusing,
+   off-copy, error states shown). Never move the gateway key into a file to make Codex work.
 5. Commit it to a `pr-media/<slug>` branch (never the PR branch), link it in the PR
    body, and report the local path.
 
