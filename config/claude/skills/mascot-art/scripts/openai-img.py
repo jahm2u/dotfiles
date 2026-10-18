@@ -19,9 +19,19 @@ body += f"--{b}--\r\n".encode()
 req = urllib.request.Request("https://api.openai.com/v1/images/edits", data=body,
                              headers={"Authorization": f"Bearer {key}",
                                       "Content-Type": f"multipart/form-data; boundary={b}"})
-try:
-    res = json.load(urllib.request.urlopen(req, timeout=300))
-except urllib.error.HTTPError as e:
-    sys.exit(f"openai {e.code}: {e.read()[:300]!r}")
+import time
+for attempt in range(3):
+    try:
+        res = json.load(urllib.request.urlopen(req, timeout=300))
+        break
+    except urllib.error.HTTPError as e:
+        if e.code < 500 and e.code != 429:
+            sys.exit(f"openai {e.code}: {e.read()[:300]!r}")
+        err = f"openai {e.code}"
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        err = str(e)
+    time.sleep(5 * (attempt + 1))
+else:
+    sys.exit(f"openai failed after 3 tries: {err}")
 open(out, "wb").write(base64.b64decode(res["data"][0]["b64_json"]))
 print("wrote", out)
