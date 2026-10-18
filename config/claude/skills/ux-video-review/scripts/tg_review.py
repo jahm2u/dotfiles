@@ -94,13 +94,27 @@ fi
 '''
 
 
+def blank_lead(video):
+    """Seconds of blank (all-white or all-black) frames at the start. Telegram uses the
+    first frame as the preview, so a recording that opens on a loading page arrives as an
+    empty thumbnail (Jeff, 2026-10-18, #503 v4: "the preview here is a bit broken")."""
+    lead = 0.0
+    for vf in ("negate,blackdetect=d=0:pic_th=0.98", "blackdetect=d=0:pic_th=0.98"):
+        err = subprocess.run(["ffmpeg", "-hide_banner", "-i", video, "-vf", vf, "-an", "-f", "null", "-"],
+                             capture_output=True, text=True, timeout=300).stderr
+        m = re.search(r"black_start:0(?:\.0+)?\s+black_end:([\d.]+)", err)
+        if m:
+            lead = max(lead, float(m.group(1)))
+    return lead
+
+
 def normalize(video):
     """Re-encode to square pixels, even dimensions, yuv420p and faststart, and return
     (path, width, height). Telegram stretches a video sent without width/height or with a
     non-square sample aspect ratio (Jeff, 2026-10-17: the #437 video was "weirdly stretched";
     the O7 v6 file had SAR 42200:29523)."""
     out = os.path.join(tempfile.gettempdir(), f"tgnorm-{uuid.uuid4().hex[:8]}.mp4")
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", video,
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-ss", f"{blank_lead(video):.2f}", "-i", video,
                     "-vf", "scale=trunc(iw*sar/2)*2:trunc(ih/2)*2,setsar=1",
                     "-c:v", "libx264", "-crf", "26", "-pix_fmt", "yuv420p",
                     "-movflags", "+faststart", "-an", out], check=True, timeout=600)
