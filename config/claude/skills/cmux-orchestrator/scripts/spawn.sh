@@ -299,6 +299,10 @@ t=json.load(sys.stdin)["result"]["terminal"]; print(t["handle"], t.get("paneKey"
   bf_set "$SLUG" BF_BUILDER_WS "$BUILDER_WS"
   bf_set "$SLUG" BF_BUILDER_SURFACE "$BUILDER_SURFACE"
   bf_set "$SLUG" BF_BUILDER_TAB "$PANE_KEY"
+  # Name the orchestrator's own tab too, so it reads apart from the 🔨 builders beside it
+  # (Jeff, 2026-10-18). Re-applied on every spawn; harmless when it already matches.
+  [ -n "$ORCH_SURFACE" ] && bf_orca terminal rename --terminal "$ORCH_SURFACE" \
+    --title "🎛 orchestrator · $(basename "$ROOT")" --json >/dev/null 2>&1 || true
   # The env file is removed by the command itself; if the shell never ran it, do not leave
   # a key on disk past a minute.
   ( sleep 60; rm -f "$ENVF" ) >/dev/null 2>&1 &
