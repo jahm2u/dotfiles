@@ -1,6 +1,6 @@
 ---
 name: ux-video-review
-description: Get Jeff's feedback on a UI change by video on Telegram. Record the changed flow at phone size with real taps (Chrome DevTools screencast), send the mp4 to Jeff's Telegram DM with a short pt-BR/English caption of what to look at, read his replies, and turn them into fixes before merge. Use whenever a PR changes what a user sees or how a screen moves (any UX change in ajudaduda's PWA or mobile, marketing, onboarding), when Jeff says "send me a video", "show me on telegram", or when an orchestrator reaches the merge gate of a UI PR.
+description: Get Jeff's feedback on a UI change by video on Telegram. Record the changed flow at phone size with real taps (Chrome DevTools screencast), send the mp4 to Jeff on Telegram (AjudaDuda: the ajudaduda dev group) with a short pt-BR/English caption of what to look at, read his replies, and turn them into fixes before merge. Use whenever a PR changes what a user sees or how a screen moves (any UX change in ajudaduda's PWA or mobile, marketing, onboarding), when Jeff says "send me a video", "show me on telegram", or when an orchestrator reaches the merge gate of a UI PR.
 ---
 
 # UX video review
@@ -23,6 +23,12 @@ own telegram"): the mp4 and caption are piped to CT 205 and `curl` runs there wi
 the box; temp files go to CT 205's `/tmp`, never `/opt/duda`. `--via baba` uses Baba's bot
 instead. Neither path calls `getUpdates` (the prod bot long-polls; a second poller would
 steal its updates).
+
+**AjudaDuda videos and questions go to the ajudaduda dev Telegram group** (Jeff, 2026-10-18:
+his channel now), never his bot DM: a DM to the Duda bot is answered by the Coach. `--via duda`
+sends to the group by default (`OPS_ALERT_CHAT_ID`, read on CT 205 like the token); `--to dm`
+exists only for an explicit ask. His group messages are stored since ajudaduda #485: read them
+on CT 205 with `docker exec -w /app casa-tarefas npx tsx src/cli.ts review-replies --since <iso>`.
 
 **Replies.** A DM to the Duda bot is answered by the Coach and not stored where this skill
 can read it, so `replies` (which reads Baba's DM store) only sees answers sent to Baba's
