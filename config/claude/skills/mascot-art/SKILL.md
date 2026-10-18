@@ -54,3 +54,11 @@ The model may still bake in borders or rounded corners, or forget the transparen
   - custody day away;
   - streak milestone.
 - **Review:** new art goes to the ajudaduda dev Telegram group as a contact sheet before a builder wires it in (`ux-video-review` covers sending).
+
+## Widget layout (what worked, 2026-10-18 mock: `~/Movies/duda-review/widget-art/mock2.html`)
+
+Copy Duolingo's composition. A small character in a corner looked bad.
+
+- **Top, centered:** an icon plus a big number ("★ 3/5"), then one short line ("Faltam 2, vamos!"). Use live text in a round, heavy font.
+- **Bottom ~65%:** a **head-and-shoulders close-up**, cropped by the bottom edge. Generate busts with "close-up of head and shoulders, cut off at the chest by the bottom edge" and size them by height (about 112 px in a 170 px widget), so the head never covers the text.
+- **Background per state:** a radial gradient, plus a few props drawn in code (light rays in the morning, stars and a moon at night, low flames when overdue, confetti when done, rolling hills on a day away). Saturated colours while there's something to do; pale pastel with a coloured number when done or away.
