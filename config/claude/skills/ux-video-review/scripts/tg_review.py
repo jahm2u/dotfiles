@@ -77,15 +77,17 @@ def tagged(text, tag):
 DUDA_SEND = r'''
 set -eu
 val() { sed -nE "s/^$1=['\"]?([^'\"]*)['\"]?\$/\1/p" /opt/duda/.env | tail -1; }
-TELEGRAM_BOT_TOKEN=$(val TELEGRAM_BOT_TOKEN); TELEGRAM_ADMIN_ID=$(val TELEGRAM_ADMIN_ID)
-[ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_ADMIN_ID:-}" ] || { echo "NO-DUDA-CREDS"; exit 3; }
+TELEGRAM_BOT_TOKEN=$(val TELEGRAM_BOT_TOKEN)
+# group = the ajudaduda dev Telegram group (Jeff 2026-10-18: his channel now); dm = his bot DM
+if [ "${4:-group}" = dm ]; then CHAT=$(val TELEGRAM_ADMIN_ID); else CHAT=$(val OPS_ALERT_CHAT_ID); fi
+[ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${CHAT:-}" ] || { echo "NO-DUDA-CREDS"; exit 3; }
 F=$1; CAP=$(cat /tmp/duda-review-caption.txt); rm -f /tmp/duda-review-caption.txt
 if [ "$F" = "-" ]; then
   curl -sS --max-time 60 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-    --data-urlencode "chat_id=$TELEGRAM_ADMIN_ID" --data-urlencode "text=$CAP" -d disable_web_page_preview=true
+    --data-urlencode "chat_id=$CHAT" --data-urlencode "text=$CAP" -d disable_web_page_preview=true
 else
   curl -sS --max-time 300 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendVideo" \
-    -F "chat_id=$TELEGRAM_ADMIN_ID" -F "caption=$CAP" -F supports_streaming=true \
+    -F "chat_id=$CHAT" -F "caption=$CAP" -F supports_streaming=true \
     -F "width=$2" -F "height=$3" -F "video=@$F"
   rm -f "$F"
 fi
@@ -108,7 +110,7 @@ def normalize(video):
     return out, int(dims[0]), int(dims[1])
 
 
-def duda(video, text):
+def duda(video, text, to="group"):
     """Send through the Duda production bot on CT 205: the token never leaves the box."""
     def push(local_bytes, remote):
         subprocess.run(["ssh", "-o", "BatchMode=yes", "mox", f"pct exec 205 -- sh -c 'cat > {remote}'"],
@@ -122,7 +124,7 @@ def duda(video, text):
         os.remove(norm)
     push(DUDA_SEND.encode(), "/tmp/duda-review-send.sh")
     p = subprocess.run(["ssh", "-o", "BatchMode=yes", "mox",
-                        f"pct exec 205 -- sh /tmp/duda-review-send.sh {target} {w} {h}; pct exec 205 -- rm -f /tmp/duda-review-send.sh"],
+                        f"pct exec 205 -- sh /tmp/duda-review-send.sh {target} {w} {h} {to}; pct exec 205 -- rm -f /tmp/duda-review-send.sh"],
                        capture_output=True, text=True, timeout=600)
     try:
         res = json.loads(p.stdout.strip().splitlines()[0])
@@ -136,7 +138,7 @@ def duda(video, text):
 def cmd_send(a):
     if a.via == "duda":
         stamp = now_iso(); cap = tagged(a.caption, a.tag)[:1000]
-        print(f"SENT {duda(a.video, cap)} {stamp} via duda"); return
+        print(f"SENT {duda(a.video, cap, a.to)} {stamp} via duda to {a.to}"); return
     norm, w, h = normalize(a.video)
     data = open(norm, "rb").read()
     os.remove(norm)
@@ -156,7 +158,7 @@ def cmd_send(a):
 def cmd_text(a):
     if a.via == "duda":
         stamp = now_iso()
-        print(f"SENT {duda(None, tagged(a.message, a.tag)[:4000])} {stamp} via duda"); return
+        print(f"SENT {duda(None, tagged(a.message, a.tag)[:4000], a.to)} {stamp} via duda to {a.to}"); return
     _, chat = env()
     text = tagged(a.message, a.tag)[:4000]
     stamp = now_iso()
@@ -204,6 +206,8 @@ def main():
     for p in (s, t):
         p.add_argument("--via", choices=["duda", "baba"], default="duda",
                        help="duda = the Duda production bot on CT 205 (default, Jeff 2026-10-17); baba = Baba's bot")
+        p.add_argument("--to", choices=["group", "dm"], default="group",
+                       help="duda only: group = the ajudaduda dev Telegram group (default, Jeff 2026-10-18); dm = Jeff's bot DM")
     r = sub.add_parser("replies"); r.add_argument("--since", required=True); r.add_argument("--wait", type=int, default=0)
     a = ap.parse_args()
     {"send": cmd_send, "text": cmd_text, "replies": cmd_replies}[a.cmd](a)
