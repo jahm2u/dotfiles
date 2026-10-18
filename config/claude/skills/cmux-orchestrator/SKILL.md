@@ -63,7 +63,11 @@ agent state for the tab's paneKey (`BF_BUILDER_TAB`) and everything else from th
 sidebar pills: the phase is written into the builder's tab title (`🔨 <slug> · <phase>`), and
 interrupts also raise a macOS notification. Your own tab is titled `🎛 orchestrator · <repo>`:
 spawn.sh renames it on every spawn; a resumed session that has not spawned yet sets it with
-`. $S/lib.sh && bf_orca terminal rename --terminal "$ORCA_TERMINAL_HANDLE" --title "🎛 orchestrator · <repo>"`. `--place` and `--group` are ignored. By hand:
+`. $S/lib.sh && bf_orca terminal rename --terminal "$ORCA_TERMINAL_HANDLE" --title "🎛 orchestrator · <repo>"`.
+Claude Code sets the tab title itself (spinner + session name) and wins over Orca's rename,
+so `~/.claude/settings.json` sets `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`; it applies to
+sessions started after it. In a session started before, the title reverts: have the human type
+`/rename 🎛 orchestrator · <repo>` so Claude Code's own title says it. A rename loop does not help. `--place` and `--group` are ignored. By hand:
 `bf_orca terminal read --terminal <handle> --screen`, `bf_orca terminal send --terminal <handle> --text 1 --enter`.
 - `gh auth status` works and `git fetch origin` works from the primary checkout.
 - A BMAD root is reachable from the primary checkout: the nearest ancestor (itself included) with `_bmad/scripts/render_skill.py` and `.agents/skills/bmad-build/`, normally the company brain (`tp/baba-brain`, set up once with the `bmad` skill), and `uv` is installed. `spawn.sh` resolves it (or takes `--bmad-root`), hands it to the builder as `BF_BMAD_ROOT` and as `--add-dir` when it is another repo (skills load only up to the cwd's repo root), and the builder renders `bmad-build` against it. A nested checkout's own legacy `_bmad/` (BabaFlow's bco/handoff tree) is NOT a root. The plan template `<root>/.agents/skills/bmad-build/plan-template.md` is the contract between you and the builder.
