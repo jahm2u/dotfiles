@@ -54,3 +54,14 @@ video/audio understanding, or a second-opinion model. Helper, stdlib only:
 
 REST endpoint if calling directly: `POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent`
 with header `x-goog-api-key`. Never print or commit the key; write transcripts to a file and summarise, don't paste them whole.
+
+# OpenAI API key (machine-wide)
+
+An OpenAI API key lives at `~/.config/openai/api-key` (mode 600, one line; copied from mini-mp on
+2026-10-18, and mini-mp has it at the same path). Use it for image generation and editing
+(`gpt-image-1`), a second-opinion model, or anything else OpenAI-shaped. Codex doesn't need it,
+because Codex logs in through ChatGPT. Read it as `$(tr -d '[:space:]' < ~/.config/openai/api-key)`,
+and send it as `Authorization: Bearer`.
+
+For mascot/widget art (consistent character poses as transparent cutouts, status-coloured previews) use
+the `mascot-art` skill, which wraps both keys. Never print or commit either key.

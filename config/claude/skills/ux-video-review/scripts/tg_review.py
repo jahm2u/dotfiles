@@ -197,16 +197,38 @@ def fetch_since(since):
     return json.loads(p.stdout or "[]")
 
 
+def fetch_since_duda(since):
+    """Jeff's replies in the ajudaduda dev group (and his Duda DM). The Duda bot saves every one
+    into prod Postgres `review_replies` (#414/#478); BabaFlow's message_cache never sees them.
+    Read-only, over ssh to CT 206 (duda-pg). The SQL travels base64 so no quoting can break it."""
+    sql = ("SELECT coalesce(json_agg(r ORDER BY r.created_at), '[]') FROM ("
+           "SELECT id, to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, "
+           "text AS message_text, tag, replied_to_message_id, media_kind FROM review_replies "
+           f"WHERE received_at > {json.dumps(since).replace(chr(34), chr(39))}::timestamptz) r")
+    b64 = base64.b64encode(sql.encode()).decode()
+    remote = (f"pct exec 206 -- su postgres -s /bin/sh -c "
+              f"'cd /tmp && echo {b64} | base64 -d | psql -v ON_ERROR_STOP=1 -d duda -At'")
+    p = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "mox", remote],
+                       capture_output=True, text=True, timeout=60)
+    if p.returncode != 0:
+        sys.exit(f"duda reply fetch failed: {(p.stderr or p.stdout).strip()[:200]}")
+    out = (p.stdout or "").strip()  # psql -At splits json_agg's array over several lines
+    return json.loads(out or "[]")
+
+
 def cmd_replies(a):
     since = a.since  # message_cache stores ISO 'YYYY-MM-DDTHH:MM:SS.mmmZ', so ISO compares in order
     deadline = time.time() + (a.wait or 0)
     while True:
-        rows = fetch_since(since)
+        rows = fetch_since_duda(since) if a.via == "duda" else fetch_since(since)
         if rows or time.time() >= deadline:
             break
         time.sleep(30)
     for r in rows:
         extra = f" (screenshot: {r['screenshot_url']})" if r.get("screenshot_url") else ""
+        if a.via == "duda":
+            extra += f" [tag {r.get('tag') or '-'}, reply to #{r.get('replied_to_message_id') or '-'}]"
+            if r.get("media_kind"): extra += f" ({r['media_kind']} attached)"
         print(f"{r['created_at']} #{r['id']} {r['message_text']}{extra}")
     if not rows:
         print("NO-REPLY-YET")
@@ -224,6 +246,9 @@ def main():
         p.add_argument("--to", choices=["group", "dm"], default="group",
                        help="duda only: group = the ajudaduda dev Telegram group (default, Jeff 2026-10-18); dm = Jeff's bot DM")
     r = sub.add_parser("replies"); r.add_argument("--since", required=True); r.add_argument("--wait", type=int, default=0)
+    r.add_argument("--via", choices=["duda", "baba"], default=None,
+                   help="duda = Jeff's replies in the ajudaduda dev group (prod PG review_replies); baba = BabaFlow's "
+                        "message_cache. Default: picked from the current repo, like send.")
     a = ap.parse_args()
     if getattr(a, "via", "") is None:
         top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
