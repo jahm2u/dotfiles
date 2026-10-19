@@ -17,7 +17,18 @@ The full method is `~/.claude/skills/ux-video-review/SKILL.md` §1-§2 (Read it 
    directory; `mv` it to the output directory the moment you stop, so it is never committed), walk the flow with real `click`/`fill`,
    ~1 s on each screen, including the error states, then `screencast_stop`. Take a `take_snapshot`
    only when you need fresh element uids; never pass `includeSnapshot: true`.
-3. Write `steps.txt` (title + 3-8 timed steps) and compose with
+   **Show every tap:** right before each `click`, run `evaluate_script` with the function in
+   `~/.claude/skills/ux-video-review/scripts/tap_ring.js` (Read it once) and `args: [<uid>]` of
+   the element you are about to click. It draws the tap ring, which holds until your click
+   lands, and returns `Date.now()`; then click. Right after `screencast_start`, run
+   `evaluate_script` with `() => Date.now()` once: each ring's value minus that one, in
+   seconds, is the step's time in the raw recording. Build `steps.txt` from those times
+   (a non-tap step, like a screen settling, from a `() => Date.now()` call at that moment),
+   never from scene-change guesses.
+   **Shrink the raw** once the final is composed: device/Simulator captures run 10-120 MB.
+   `ffmpeg -i raw.mp4 -c:v libx264 -crf 30 -preset slow -pix_fmt yuv420p -an raw.small.mp4`,
+   then replace raw.mp4 with it (same size and length; still good enough to recompose).
+3. Write `steps.txt` (title + one timed step per screen or action; past 5 the list slides) and compose with
    `compose_phone_video.py` or `compose_desktop_video.py`. ffprobe the final: 1920x1080, SAR 1:1.
 4. Make the review sheets:
    `python3 ~/.claude/skills/ux-video-review/scripts/review_frames.py <final.mp4> --out <dir>/sheets-vN --layout <phone|desktop>`.

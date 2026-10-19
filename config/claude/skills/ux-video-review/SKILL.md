@@ -61,7 +61,9 @@ the video, and check with him there.
    local or staging API), or use staging once the branch is deployed.
 2. `emulate` the page at `390x844x3,mobile,touch` (iPhone-sized), light mode, pt-BR.
 3. `screencast_start` with an `.mp4` path, then walk the flow with real `click`/`fill`
-   calls from its first screen to its last, pausing ~1 s on each screen so motion
+   calls from its first screen to its last (each click preceded by `scripts/tap_ring.js` via
+   `evaluate_script` on the same element, so the tap shows: the screencast draws no pointer),
+   pausing ~1 s on each screen so motion
    finishes. Show the edge a reviewer would try: a back tap, the "Outro" path. **Show
    the error states too** (Jeff, 2026-10-17): a failed request and its retry, invalid
    input, a server refusal (e.g. e-mail in use), offline, whichever the flow has.
@@ -73,6 +75,8 @@ the video, and check with him there.
    must give a phone ratio (~390x844) with SAR 1:1. A stretched or squashed recording (Jeff,
    2026-10-17: "weirdly stretched") means the capture size and the emulated viewport disagree;
    re-record. Save everything outside `/tmp` (`~/Movies/<name>-review/`): `/tmp` is wiped on restart.
+   Once the final is composed, shrink the raw (`-c:v libx264 -crf 30 -preset slow`): device
+   captures run 10-120 MB and ~/Movies had 4.5 GB of raws by 2026-10-19; finals are ~1-2 MB.
 4a. **Pick the frame by what the user sees** (Jeff, 2026-10-18: "maybe it should not be phone on
    the right? its hard to see... phone when simulating what users will see like email and landers
    but desktop for the babaflow ux"):
@@ -88,12 +92,20 @@ the video, and check with him there.
    the walkthrough's steps on the left (current one highlighted, done ones checked), the raw
    recording in an iPhone frame on the right. Write a steps file with the time each step
    starts in the raw recording (`steps.txt`: `title: ...`, then `0:00 -> Abre o app`, `0:07 -> ...`;
-   or JSON `{"title": ..., "steps": [{"start": 0, "text": ...}]}`), 3-8 short steps, then:
+   or JSON `{"title": ..., "steps": [{"start": 0, "text": ...}]}`), one short step per screen or
+   action. Up to 5 show as one list; past 5 the list is a sliding 5-row window (the step just
+   done stays above the current one, 0.45 s eased slide, edge fades, "Passo 3 de 12" /
+   "Step 3 of 12" under the title, `--lang auto|pt|en`), never pages. Still stretches longer
+   than 1.5 s (the agent thinking between taps; a 10-step flow came out at 121 s) are cut to
+   their first 0.6 s and last 0.9 s and the step times moved to match (`--max-still`, 0 keeps
+   all), so the final is shorter than the raw. The screencast's sparse frames (3-30 fps) are
+   blended rather than repeated, so taps and screen changes dissolve instead of jumping
+   (`--no-blend` to repeat). Then:
    `python3 ~/.claude/skills/ux-video-review/scripts/compose_phone_video.py --video raw.mp4 --steps steps.txt --out final.mp4 [--title "..."]`
    (`--self-test` checks the script). A device or Simulator capture (1206x2622) already has its
    own clock and Dynamic Island, so the frame's "9:41" bar is skipped automatically (it showed the
-   top twice, Jeff 2026-10-19); `--status-bar draw|none` overrides, and never crop the bar off by hand. ffprobe the **final**: 1920x1080, SAR 1:1, same length
-   as the raw. The final is what gets reviewed, committed and sent.
+   top twice, Jeff 2026-10-19); `--status-bar draw|none` overrides, and never crop the bar off by hand. ffprobe the **final**: 1920x1080, SAR 1:1, no longer than
+   the raw. The final is what gets reviewed, committed and sent.
 4b. **The frames are reviewed before Jeff sees them** (Jeff, 2026-10-17: "have codex review
    and fix any bad shit"; 2026-10-19: Haiku 5.5, and only the frames where something happens).
    `scripts/review_frames.py final.mp4 --out sheets-vN --layout phone|desktop` keeps each

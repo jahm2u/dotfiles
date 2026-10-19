@@ -20,7 +20,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compose_phone_video as cpv
 
 CROPS = {"phone": (840, 0, 1920, 1080), "desktop": (600, 0, 1920, 1080), "full": (0, 0, 1920, 1080)}
-SW, SH = 96, 96  # motion is measured on a tiny grey copy of the crop
 
 
 def fit_crop(video, crop):
@@ -42,13 +41,7 @@ def fit_crop(video, crop):
 
 def motion(video, fps, crop):
     x0, y0, x1, y1 = crop
-    raw = subprocess.run([cpv.FFMPEG, "-v", "error", "-i", str(video), "-vf",
-                          f"fps={fps},crop={x1 - x0}:{y1 - y0}:{x0}:{y0},scale={SW}:{SH},format=gray",
-                          "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
-    n = len(raw) // (SW * SH)
-    frames = [raw[i * SW * SH:(i + 1) * SW * SH] for i in range(n)]
-    diffs = [0.0] + [sum(abs(a - b) for a, b in zip(frames[i - 1], frames[i])) / (SW * SH) for i in range(1, n)]
-    return diffs
+    return cpv.frame_changes(video, fps, f"crop={x1 - x0}:{y1 - y0}:{x0}:{y0},")
 
 
 def pick(diffs, fps, threshold, per_burst):
@@ -117,7 +110,8 @@ def main():
     ap.add_argument("--layout", choices=list(CROPS), default="phone",
                     help="which part of the composed 1920x1080 to keep (default phone)")
     ap.add_argument("--fps", type=float, default=8, help="how finely motion is sampled")
-    ap.add_argument("--threshold", type=float, default=0.6, help="mean grey change (0-255) that counts as motion")
+    ap.add_argument("--threshold", type=int, default=cpv.CHANGED_PIXELS,
+                    help="changed pixels (of a 96x96 grey copy) above which a frame counts as moving")
     ap.add_argument("--per-burst", type=int, default=2, help="frames kept inside each motion burst")
     ap.add_argument("--per-sheet", type=int, default=4)
     ap.add_argument("--tile-width", type=int, help="px per frame (default: 390 phone, 760 desktop/full)")

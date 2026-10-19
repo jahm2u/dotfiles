@@ -65,7 +65,7 @@ def clip_info(path):
     return info
 
 
-def compose(videos, steps_path, out, title=None, status_bar="auto"):
+def compose(videos, steps_path, out, title=None, status_bar="auto", lang="auto", max_still=cpv.MAX_STILL, blend=True):
     if not videos:
         raise InputError("give at least one --video")
     clips = [clip_info(v) for v in videos]
@@ -76,6 +76,15 @@ def compose(videos, steps_path, out, title=None, status_bar="auto"):
     if over:
         i, t = over[0]
         raise InputError(f"step {i} starts at {t:g}s, at or beyond the clips' {total:.2f}s")
+    # cut each clip's still stretches, then move the steps (times on the joined timeline) to match
+    offset, new_offset, joined = 0.0, 0.0, []
+    for c in clips:
+        c["keep"] = cpv.still_segments(c["path"], c["duration"], max_still)
+        c["new"] = sum(b - a for a, b in c["keep"])
+        joined += [(offset + a, offset + b) for a, b in c["keep"]]
+        offset += c["duration"]
+    steps = cpv.remap_steps(steps, joined)
+    total = sum(c["new"] for c in clips)
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="compose_desktop_") as td:
@@ -94,12 +103,13 @@ def compose(videos, steps_path, out, title=None, status_bar="auto"):
                 bg, frame = td / f"bg{n}.png", None
                 render_desktop_background(g, bg)
                 vx, vy, vw, vh = g["video"]
-            cmd += ["-loop", "1", "-framerate", str(FPS), "-t", f"{c['duration']:.3f}", "-i", str(bg),
+            cmd += ["-loop", "1", "-framerate", str(FPS), "-t", f"{c['new']:.3f}", "-i", str(bg),
                     "-i", str(c["path"])]
             b, v = idx, idx + 1
             idx += 2
-            chain.append(f"[{v}:v]setpts=PTS-STARTPTS,fps={FPS},scale={vw}:{vh}:flags=lanczos,setsar=1[r{n}]")
-            chain.append(f"[{b}:v][r{n}]overlay={vx}:{vy}:shortest=1,trim=duration={c['duration']:.3f},"
+            chain.append(f"[{v}:v]setpts=PTS-STARTPTS,{cpv.retime(blend)}{cpv.keep_filter(c['keep'], c['duration'])},"
+                         f"scale={vw}:{vh}:flags=lanczos,setsar=1[r{n}]")
+            chain.append(f"[{b}:v][r{n}]overlay={vx}:{vy}:shortest=1,trim=duration={c['new']:.3f},"
                          f"setpts=PTS-STARTPTS[s{n}a]")
             last = f"s{n}a"
             if frame:
@@ -110,16 +120,9 @@ def compose(videos, steps_path, out, title=None, status_bar="auto"):
             chain.append(f"[{last}]format=yuv420p,setsar=1[s{n}]")
             seg.append(f"[s{n}]")
         chain.append(f"{''.join(seg)}concat=n={len(seg)}:v=1:a=0[cat]")
-        panels = cpv.render_panels(title, steps, td)
-        last = "cat"
-        for i, p in enumerate(panels):
-            cmd += ["-i", str(p)]
-            start = 0 if i == 0 else steps[i][0]
-            end = steps[i + 1][0] if i + 1 < len(steps) else total + 10
-            chain.append(f"[{last}][{idx}:v]overlay={cpv.PANEL_X}:{cpv.PANEL_TOP}:"
-                         f"enable='between(t,{start:.3f},{end - 0.001:.3f})'[p{i}]")
-            last = f"p{i}"
-            idx += 1
+        inputs, more, last = cpv.panel_overlays(title, steps, total, td, idx, "cat", lang)
+        cmd += inputs
+        chain += more
         chain.append(f"[{last}]format=yuv420p,setsar=1[out]")
         cmd += ["-filter_complex", ";".join(chain), "-map", "[out]", "-an", "-r", str(FPS),
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
@@ -184,6 +187,11 @@ def main():
     ap.add_argument("--title", help="title above the steps (overrides the steps file)")
     ap.add_argument("--status-bar", choices=["auto", "draw", "none"], default="auto",
                     help="phone clips: draw our status bar; auto skips it when the recording has its own")
+    ap.add_argument("--lang", choices=["auto", "pt", "en"], default="auto",
+                    help="language of the step counter shown past 5 steps")
+    ap.add_argument("--no-blend", action="store_true", help="repeat frames instead of blending between them")
+    ap.add_argument("--max-still", type=float, default=cpv.MAX_STILL,
+                    help="cut still stretches longer than this many seconds down to it (0 keeps all)")
     ap.add_argument("--self-test", action="store_true", help="compose synthetic clips and check the result")
     ap.add_argument("--self-test-dir", help="keep self-test files here")
     a = ap.parse_args()
@@ -193,7 +201,7 @@ def main():
             return 0
         if not (a.video and a.steps and a.out):
             ap.error("--video, --steps and --out are required")
-        out = compose(a.video, a.steps, a.out, a.title, a.status_bar)
+        out = compose(a.video, a.steps, a.out, a.title, a.status_bar, a.lang, a.max_still, not a.no_blend)
         info = cpv.probe(out)
         print(f"OK {out} {info['width']}x{info['height']} SAR {info['sar']} {info['duration']:.2f}s")
         return 0
