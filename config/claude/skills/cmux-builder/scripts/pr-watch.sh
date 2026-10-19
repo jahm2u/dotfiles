@@ -27,7 +27,7 @@ esac; done
 
 check_once() {
   local pr checks
-  pr=$(gh pr view "$N" --json headRefOid,author,mergeable,state,reviews)
+  pr=$(gh pr view "$N" --json headRefOid,author,mergeable,state,reviews,statusCheckRollup)
   checks=$(gh pr checks "$N" --json name,bucket 2>/dev/null || echo '[]')
   PR_JSON=$pr CHECKS_JSON=$checks REVIEWER=$REVIEWER python3 - <<'PY'
 import json, os, re, sys
@@ -39,6 +39,13 @@ if pr.get("state") != "OPEN":
     print(f"NOT-CONVERGED pr is {pr.get('state')}"); sys.exit(1)
 
 pending = [c["name"] for c in checks if c.get("bucket") == "pending"]
+# gh pr checks can omit runs still QUEUED behind the runner backlog (#535 merged with its gate
+# unrun, 2026-10-19). The rollup lists them, so anything there without a conclusion is pending too.
+for r in pr.get("statusCheckRollup") or []:
+    name = r.get("name") or r.get("context") or "?"
+    unfinished = (r.get("__typename") == "StatusContext" and r.get("state") in ("PENDING", "EXPECTED")) or \
+                 (r.get("__typename") != "StatusContext" and r.get("status") != "COMPLETED")
+    if unfinished and name not in pending: pending.append(name)
 failing = [c["name"] for c in checks if c.get("bucket") in ("fail", "cancel")]
 print(f"  checks: {len(checks)} total, {len(pending)} pending, {len(failing)} failing")
 for n in failing: print(f"    failing: {n}")
