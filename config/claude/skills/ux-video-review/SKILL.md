@@ -14,10 +14,15 @@ Script: `S=~/.claude/skills/ux-video-review/scripts/tg_review.py`
 ```bash
 $S send /path/flow.mp4 --caption "..." --tag o6b   # -> SENT <message_id> <utc-iso>
 $S text "..." --tag o6b                             # a follow-up line in the same DM
-$S replies --since <utc-iso from SENT> [--wait 1800] # Jeff's DMs after that, or NO-REPLY-YET
+$S replies --since <utc-iso from SENT> [--wait 1800] # Jeff's replies after that, or NO-REPLY-YET
+#   --via duda (auto under ajuda-brain): the ajudaduda dev group, read from prod PG review_replies.
+#   --via baba (auto elsewhere): BabaFlow's message_cache. Never read AjudaDuda feedback via baba.
 ```
 
-It sends through **the Duda production bot** by default (Jeff, 2026-10-17: "you have your
+**The channel follows the repo** (Jeff, 2026-10-18): in an AjudaDuda checkout it sends through
+the Duda production bot; anywhere else (BabaFlow, the brain) through **Baba's bot**, Jeff's
+technical DM where Baba talks to him. A BabaFlow video in the Duda chat is the wrong channel.
+`--via` overrides; the script prints which one it picked. The Duda path (Jeff, 2026-10-17: "you have your
 own telegram"): the mp4 and caption are piped to CT 205 and `curl` runs there with
 `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ADMIN_ID` from `/opt/duda/.env`, so the token never leaves
 the box; temp files go to CT 205's `/tmp`, never `/opt/duda`. `--via baba` uses Baba's bot
@@ -63,7 +68,18 @@ the video, and check with him there.
    must give a phone ratio (~390x844) with SAR 1:1. A stretched or squashed recording (Jeff,
    2026-10-17: "weirdly stretched") means the capture size and the emulated viewport disagree;
    re-record. Save everything outside `/tmp` (`~/Movies/<name>-review/`): `/tmp` is wiped on restart.
-4a. **Every video Jeff gets is the composed layout** (Jeff, 2026-10-18): landscape 1920x1080,
+4a. **Pick the frame by what the user sees** (Jeff, 2026-10-18: "maybe it should not be phone on
+   the right? its hard to see... phone when simulating what users will see like email and landers
+   but desktop for the babaflow ux"):
+   - **Phone layout** only for what an end user sees on a phone: the AjudaDuda app/PWA, e-mails,
+     landers. Composed as below.
+   - **Desktop UX (BabaFlow admin, any operator/admin screen):** record at desktop size
+     (`1440x900x1` or `1920x1080x1`, no `mobile`/`touch`), no phone frame, and compose it
+     with a column of short explanatory points down the LEFT (current one highlighted, done ones
+     checked), the desktop recording on the right (Jeff, 2026-10-19: "for babaflow admin we show
+     on desktop with some points on the left explaining things"). Same steps file as below;
+     keep the recording large enough to read.
+   The phone composed layout: landscape 1920x1080,
    the walkthrough's steps on the left (current one highlighted, done ones checked), the raw
    recording in an iPhone frame on the right. Write a steps file with the time each step
    starts in the raw recording (`steps.txt`: `title: ...`, then `0:00 -> Abre o app`, `0:07 -> ...`;
