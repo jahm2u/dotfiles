@@ -14,7 +14,9 @@ Script: `S=~/.claude/skills/ux-video-review/scripts/tg_review.py`
 ```bash
 $S send /path/flow.mp4 --caption "..." --tag o6b   # -> SENT <message_id> <utc-iso>
 $S text "..." --tag o6b                             # a follow-up line in the same DM
-$S replies --since <utc-iso from SENT> [--wait 1800] # Jeff's DMs after that, or NO-REPLY-YET
+$S replies --since <utc-iso from SENT> [--wait 1800] # Jeff's replies after that, or NO-REPLY-YET
+#   --via duda (auto under ajuda-brain): the ajudaduda dev group, read from prod PG review_replies.
+#   --via baba (auto elsewhere): BabaFlow's message_cache. Never read AjudaDuda feedback via baba.
 ```
 
 **The channel follows the repo** (Jeff, 2026-10-18): in an AjudaDuda checkout it sends through
@@ -41,9 +43,14 @@ the video, and check with him there.
 
 ## Who does what
 
-- **Builder** (the session that made the change) records the video and gives the
+- **`ux-evidence` agent** (`agents/ux-evidence.md`, Sonnet) does §1 for the builder: its own
+  headless Chrome with a throwaway profile (`chrome-devtools-mcp --isolated --headless`, never
+  `--autoConnect` to Jeff's Chrome, which asks him to allow it every time), records, composes,
+  runs the `frame-reviewer` loop and returns `video:`. spawn.sh passes both agents to every
+  builder with `--agents "$(python3 scripts/agents_json.py)"`, the one route whose MCP servers
+  survive `--strict-mcp-config`; outside a builder, run the same flag yourself.
+- **Builder** (the session that made the change) gets the video from `ux-evidence` and gives the
   orchestrator its local path in the `pr-open` report, and again after any UI fix.
-  A builder needs the browser: spawn it with `--mcp full`.
 - **Orchestrator** sends it, waits for Jeff, and relays his notes to the builder as
   one numbered list. It does not merge a UI PR until Jeff has answered or the
   standing wait (below) has passed.
@@ -66,25 +73,36 @@ the video, and check with him there.
    must give a phone ratio (~390x844) with SAR 1:1. A stretched or squashed recording (Jeff,
    2026-10-17: "weirdly stretched") means the capture size and the emulated viewport disagree;
    re-record. Save everything outside `/tmp` (`~/Movies/<name>-review/`): `/tmp` is wiped on restart.
-4a. **Every video Jeff gets is the composed layout** (Jeff, 2026-10-18): landscape 1920x1080,
+4a. **Pick the frame by what the user sees** (Jeff, 2026-10-18: "maybe it should not be phone on
+   the right? its hard to see... phone when simulating what users will see like email and landers
+   but desktop for the babaflow ux"):
+   - **Phone layout** only for what an end user sees on a phone: the AjudaDuda app/PWA, e-mails,
+     landers. Composed as below.
+   - **Desktop UX (BabaFlow admin, any operator/admin screen):** record at desktop size
+     (`1440x900x1` or `1920x1080x1`, no `mobile`/`touch`), no phone frame, and compose it
+     with a column of short explanatory points down the LEFT (current one highlighted, done ones
+     checked), the desktop recording on the right (Jeff, 2026-10-19: "for babaflow admin we show
+     on desktop with some points on the left explaining things"). Same steps file as below;
+     keep the recording large enough to read.
+   The phone composed layout: landscape 1920x1080,
    the walkthrough's steps on the left (current one highlighted, done ones checked), the raw
    recording in an iPhone frame on the right. Write a steps file with the time each step
    starts in the raw recording (`steps.txt`: `title: ...`, then `0:00 -> Abre o app`, `0:07 -> ...`;
    or JSON `{"title": ..., "steps": [{"start": 0, "text": ...}]}`), 3-8 short steps, then:
    `python3 ~/.claude/skills/ux-video-review/scripts/compose_phone_video.py --video raw.mp4 --steps steps.txt --out final.mp4 [--title "..."]`
-   (`--self-test` checks the script). ffprobe the **final**: 1920x1080, SAR 1:1, same length
+   (`--self-test` checks the script). A device or Simulator capture (1206x2622) already has its
+   own clock and Dynamic Island, so the frame's "9:41" bar is skipped automatically (it showed the
+   top twice, Jeff 2026-10-19); `--status-bar draw|none` overrides, and never crop the bar off by hand. ffprobe the **final**: 1920x1080, SAR 1:1, same length
    as the raw. The final is what gets reviewed, committed and sent.
-4b. **Codex reviews the video before Jeff does** (Jeff, 2026-10-17: "have codex review
-   and fix any bad shit"). Extract frames of the final (`ffmpeg -i final.mp4 -vf fps=1 f%03d.png`), have
-   Codex review them for anything broken, ugly, confusing or off-copy, fix what it finds,
-   re-record, repeat until clean. Only then report `video:`.
-   **Do not hand-roll `codex exec` for this** (2026-10-18): a builder's own script hits
-   Codex's "Update available" menu (no `check_for_update_on_startup=false`) and, from a
-   builder's Bash, a 401 (no gateway key there), and the tab hangs. Until a shared frame
-   script exists on `codex-review.sh`'s route, the frame review is a fresh **Claude
-   subagent** given the contact sheet and the same checklist (broken, ugly, confusing,
-   off-copy, error states shown, step highlighted matches what the phone shows). Never move
-   the gateway key into a file to make Codex work.
+4b. **The frames are reviewed before Jeff sees them** (Jeff, 2026-10-17: "have codex review
+   and fix any bad shit"; 2026-10-19: Haiku 5.5, and only the frames where something happens).
+   `scripts/review_frames.py final.mp4 --out sheets-vN --layout phone|desktop` keeps each
+   animation's start, middle and settled frames and one frame of each still stretch, crops to
+   the phone or the desktop card and tiles 4 to an image: a 40 s video is ~8.5k tokens, not the
+   ~66k of `fps=1`. The **`frame-reviewer`** agent (`claude-haiku-5-5`, `agents/frame-reviewer.md`)
+   reads the sheets against the steps file and its checklist; fix, re-record, repeat until it
+   says `clean`. Only then report `video:`. Never open the sheets in the builder's own context,
+   and never hand-roll `codex exec` for this (2026-10-18: update menu + 401, the tab hangs).
 5. Commit the final to a `pr-media/<slug>` branch (never the PR branch), link it in the PR
    body, and report the local path.
 

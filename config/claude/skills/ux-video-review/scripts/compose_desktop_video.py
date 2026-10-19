@@ -65,7 +65,7 @@ def clip_info(path):
     return info
 
 
-def compose(videos, steps_path, out, title=None):
+def compose(videos, steps_path, out, title=None, status_bar="auto"):
     if not videos:
         raise InputError("give at least one --video")
     clips = [clip_info(v) for v in videos]
@@ -84,7 +84,7 @@ def compose(videos, steps_path, out, title=None):
         chain, idx, seg = [], 0, []
         for n, c in enumerate(clips):
             if c["phone"]:
-                g = cpv.phone_geometry(c["dw"], c["height"])
+                g = cpv.phone_geometry(c["dw"], c["height"], cpv.status_height(c["path"], c["duration"], status_bar))
                 bg, frame = td / f"bg{n}.png", td / f"frame{n}.png"
                 cpv.render_background(g, bg)
                 cpv.render_frame(g, frame)
@@ -182,6 +182,8 @@ def main():
     ap.add_argument("--steps", help="steps file (same format as compose_phone_video.py), times on the joined timeline")
     ap.add_argument("--out", help="output mp4")
     ap.add_argument("--title", help="title above the steps (overrides the steps file)")
+    ap.add_argument("--status-bar", choices=["auto", "draw", "none"], default="auto",
+                    help="phone clips: draw our status bar; auto skips it when the recording has its own")
     ap.add_argument("--self-test", action="store_true", help="compose synthetic clips and check the result")
     ap.add_argument("--self-test-dir", help="keep self-test files here")
     a = ap.parse_args()
@@ -191,7 +193,7 @@ def main():
             return 0
         if not (a.video and a.steps and a.out):
             ap.error("--video, --steps and --out are required")
-        out = compose(a.video, a.steps, a.out, a.title)
+        out = compose(a.video, a.steps, a.out, a.title, a.status_bar)
         info = cpv.probe(out)
         print(f"OK {out} {info['width']}x{info['height']} SAR {info['sar']} {info['duration']:.2f}s")
         return 0

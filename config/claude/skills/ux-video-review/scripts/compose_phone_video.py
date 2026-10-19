@@ -233,11 +233,37 @@ def render_panels(title, steps, outdir):
     return paths
 
 
-def phone_geometry(vw, vh):
+def own_status_bar(video, duration):
+    """True when the recording already carries the phone's status bar: a device or Simulator
+    capture (1206x2622) has its own clock and Dynamic Island, a DevTools screencast (390x844)
+    has neither. Drawing ours on top of a device capture showed the top twice (Jeff, 2026-10-19).
+    Looks for the island: a pure-black pill centred in the top band, with non-black either side."""
+    sw = 300
+    for t in (min(0.5, duration / 2), duration / 2):
+        raw = subprocess.run([FFMPEG, "-v", "error", "-ss", f"{t:.2f}", "-i", str(video), "-frames:v", "1",
+                              "-vf", f"scale={sw}:-2,format=gray", "-f", "rawvideo", "-"], capture_output=True).stdout
+        sh = len(raw) // sw
+        if not sh:
+            continue
+        for y in range(int(sh * 0.01), int(sh * 0.05) + 1):
+            row = raw[y * sw:(y + 1) * sw]
+            if row[sw // 2] > 12:
+                continue
+            l = r = sw // 2
+            while l > 0 and row[l - 1] <= 12:
+                l -= 1
+            while r < sw - 1 and row[r + 1] <= 12:
+                r += 1
+            if 0.2 * sw <= r - l <= 0.45 * sw and abs((l + r) / 2 - sw / 2) <= sw * 0.03 and l > 0 and r < sw - 1:
+                return True
+    return False
+
+
+def phone_geometry(vw, vh, status_h=STATUS_H):
     screen_h = PHONE_OUTER_H - 2 * BEZEL
-    video_h = even(screen_h - STATUS_H)
+    video_h = even(screen_h - status_h)
     video_w = even(video_h * vw / vh)
-    screen_h = video_h + STATUS_H
+    screen_h = video_h + status_h
     screen_w = video_w
     outer_w = screen_w + 2 * BEZEL
     outer_h = screen_h + 2 * BEZEL
@@ -245,13 +271,14 @@ def phone_geometry(vw, vh):
     oy = (H - outer_h) // 2
     sx, sy = ox + BEZEL, oy + BEZEL
     return {"outer": (ox, oy, ox + outer_w, oy + outer_h), "screen": (sx, sy, sx + screen_w, sy + screen_h),
-            "video": (sx, sy + STATUS_H, video_w, video_h)}
+            "video": (sx, sy + status_h, video_w, video_h), "status_h": status_h}
 
 
 def render_background(g, path):
     img = Image.new("RGB", (W, H), BG)
     sx, sy, sx2, sy2 = g["screen"]
-    ImageDraw.Draw(img).rectangle((sx, sy, sx2, sy + STATUS_H + 2), fill=(255, 255, 255))
+    if g["status_h"]:
+        ImageDraw.Draw(img).rectangle((sx, sy, sx2, sy + g["status_h"] + 2), fill=(255, 255, 255))
     img.save(path)
 
 
@@ -274,6 +301,9 @@ def render_frame(g, path):
     alpha = img.getchannel("A")
     alpha.paste(0, (0, 0), mask)
     img.putalpha(alpha)
+    if not g["status_h"]:
+        img.save(path)
+        return
     d = ImageDraw.Draw(img)
     cx = (sx + sx2) // 2
     iw, ih = 118, 34
@@ -290,7 +320,13 @@ def render_frame(g, path):
     img.save(path)
 
 
-def compose(video, steps_path, out, title=None):
+def status_height(video, duration, status_bar="auto"):
+    if status_bar == "auto":
+        status_bar = "none" if own_status_bar(video, duration) else "draw"
+    return STATUS_H if status_bar == "draw" else 0
+
+
+def compose(video, steps_path, out, title=None, status_bar="auto"):
     video = Path(video)
     if not video.is_file():
         raise InputError(f"video not found: {video}")
@@ -306,7 +342,7 @@ def compose(video, steps_path, out, title=None):
         i, t = over[0]
         raise InputError(f"step {i} starts at {t:g}s, at or beyond the video's {info['duration']:.2f}s")
     num, den = (int(x) for x in (info["sar"] if re.fullmatch(r"\d+:\d+", info["sar"]) and info["sar"] != "0:1" else "1:1").split(":"))
-    g = phone_geometry(info["width"] * num / den, info["height"])
+    g = phone_geometry(info["width"] * num / den, info["height"], status_height(video, info["duration"], status_bar))
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="compose_phone_") as td:
@@ -389,6 +425,8 @@ def main():
     ap.add_argument("--steps", help="steps file: JSON {title, steps:[{start, text}]} or text lines '<s|mm:ss> -> caption'")
     ap.add_argument("--out", help="output mp4")
     ap.add_argument("--title", help="title above the steps (overrides the steps file)")
+    ap.add_argument("--status-bar", choices=["auto", "draw", "none"], default="auto",
+                    help="draw our status bar above the recording; auto skips it when the recording has its own")
     ap.add_argument("--self-test", action="store_true", help="compose a synthetic clip and check the result")
     ap.add_argument("--self-test-dir", help="keep self-test files here")
     a = ap.parse_args()
@@ -398,7 +436,7 @@ def main():
             return 0
         if not (a.video and a.steps and a.out):
             ap.error("--video, --steps and --out are required")
-        out = compose(a.video, a.steps, a.out, a.title)
+        out = compose(a.video, a.steps, a.out, a.title, a.status_bar)
         info = probe(out)
         print(f"OK {out} {info['width']}x{info['height']} SAR {info['sar']} {info['duration']:.2f}s")
         return 0
