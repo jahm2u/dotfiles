@@ -61,7 +61,13 @@ through `orca terminal send --enter --wait-submit` (`turn_started` = submitted; 
 screen check, then one `--retry-request` reissue). `ls.sh` takes `busy` from `orca worktree ps`
 agent state for the tab's paneKey (`BF_BUILDER_TAB`) and everything else from the screen. No
 sidebar pills: the phase is written into the builder's tab title (`🔨 <slug> · <phase>`), and
-interrupts also raise a macOS notification. `--place` and `--group` are ignored. By hand:
+interrupts also raise a macOS notification. Your own tab is titled `🎛 orchestrator · <repo>`:
+spawn.sh renames it on every spawn; a resumed session that has not spawned yet sets it with
+`. $S/lib.sh && bf_orca terminal rename --terminal "$ORCA_TERMINAL_HANDLE" --title "🎛 orchestrator · <repo>"`.
+Claude Code sets the tab title itself (spinner + session name) and wins over Orca's rename,
+so `~/.claude/settings.json` sets `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`; it applies to
+sessions started after it. In a session started before, the title reverts: have the human type
+`/rename 🎛 orchestrator · <repo>` so Claude Code's own title says it. A rename loop does not help. `--place` and `--group` are ignored. By hand:
 `bf_orca terminal read --terminal <handle> --screen`, `bf_orca terminal send --terminal <handle> --text 1 --enter`.
 - `gh auth status` works and `git fetch origin` works from the primary checkout.
 - A BMAD root is reachable from the primary checkout: the nearest ancestor (itself included) with `_bmad/scripts/render_skill.py` and `.agents/skills/bmad-build/`, normally the company brain (`tp/baba-brain`, set up once with the `bmad` skill), and `uv` is installed. `spawn.sh` resolves it (or takes `--bmad-root`), hands it to the builder as `BF_BMAD_ROOT` and as `--add-dir` when it is another repo (skills load only up to the cwd's repo root), and the builder renders `bmad-build` against it. A nested checkout's own legacy `_bmad/` (BabaFlow's bco/handoff tree) is NOT a root. The plan template `<root>/.agents/skills/bmad-build/plan-template.md` is the contract between you and the builder.
@@ -92,6 +98,15 @@ frontmatter key the template has; step-02 fills `route`, `risk`, `baseline_revis
   - *Ask First*: everything the builder must stop and ask you about. ALWAYS include: merging the PR, any DB migration, any change outside the files/subsystem named in Intent, touching prod (`prod.sh`, SSH, `.release-message`), and widening scope after a review finding.
   - *Never*: the non-goals, and the approaches you have already rejected (name them, so the builder does not rediscover them).
 - **I/O & Edge-Case Matrix** when the change has observable inputs/outputs; delete it otherwise.
+- **The human's confirmations go INTO the spec, before you spawn.** If the work needs the human's own
+  yes (driving their browser, a real click or send, a prod write, a key), ask them in YOUR session
+  first (AskUserQuestion) and write their answer, quoted, with the time, into *Always*. Never make the
+  builder's first step "ask the human in your own tab and wait": the human watches your session,
+  not builder tabs, so the builder sits idle while everyone thinks it is working (2026-10-19,
+  landers-launch-videos: 20+ min idle on its own-tab question). If a confirmation only turns up
+  mid-build, the builder reports `question`, you ask the human here, and you relay their answer
+  quoted. For classifier refusals, see the landmine on relayed OKs: tell the human at once WHICH tab is
+  waiting for them.
 
 Leave Code Map, Tasks, Design Notes and Verification to the builder — investigating the code is
 its job, in its own context, not yours. `status: 'draft'` makes bmad-build run its planning step
@@ -136,8 +151,9 @@ denied) so routine work never stops on a prompt in any mode, and **no MCP server
 (`--strict-mcp-config`). `--mode yolo` launches with `--dangerously-skip-permissions` for a trusted
 spec in its isolated worktree; `--mode acceptEdits` is what a Haiku builder gets. MCP tool descriptions are the builder's largest fixed cost: in
 BabaFlow a Haiku builder started at 86% context and an Opus one auto-compacted before its second
-report with them loaded. Pass `--mcp full` only when the spec needs browser checks or a project
-MCP, and say so in the spec.
+report with them loaded. Pass `--mcp full` only when the spec needs a project MCP or interactive
+browser checks, and say so in the spec. UX videos do not need it: every builder gets the
+`ux-evidence` agent through `--agents`, with its own headless, isolated Chrome.
 
 The worktree branch is created with `--no-track`, so the builder's `git status` stays quiet and
 its first `git push -u origin <branch>` sets the right upstream. The builder also inherits this
@@ -181,6 +197,11 @@ It distinguishes states that look identical in the log, and stays silent on `BUS
 resume unaided), `IDLE` (bare prompt for several polls -- often legitimate, so it waits),
 `GONE` (surface unreadable). It never types into a builder: resubmitting stale text blind is
 how an orchestrator reruns a command nobody checked.
+
+**On every `IDLE`, `peek.sh` at once and say in one line what the builder is waiting on.** An
+idle builder is either done, waiting on you, or waiting on the human. If it's the human, tell
+them now, naming the tab and the exact answer it needs. Never let an IDLE event pass with "that's
+expected" before you have read the screen.
 
 Measured 2026-09-12: builder `3561-routing-enable` sat from 06:25 holding
 `node scripts/pr-watch.js 3567 --wait` unsubmitted, while its PR was CONFLICTING with 4
@@ -291,6 +312,12 @@ Rules of the channel:
 
 ### 5. Merge decision and hand-off
 
+**UI PRs wait for Jeff's eyes.** If the spec changes anything a user sees, the builder records
+the video through its `ux-evidence` agent (no `--mcp full` needed), and when its `pr-open` carries `video: <path>`, run `/ux-video-review`: send the
+video to Jeff on Telegram, wait for his reply, relay his notes as one numbered list, and send a new
+video after the fixes. Do not merge a UI PR before he answers (or the skill's wait rule says so),
+and never promote one to production on silence.
+
 The builder never merges on its own. When it reports `converged`, check `node scripts/pr-watch.js
 <N>` yourself if you want a second look (the caveats in CLAUDE.md Rule 5 apply: `CONVERGED` is
 not "no open thread"), then `tell.sh <slug> merge`. The builder merges with `--squash --admin`,
@@ -299,6 +326,7 @@ confirms the issue closed, and reports `merged` then `done`. Then run `/cmux-tra
 
 ### 6. When it goes wrong
 
-- Builder process died (workspace shows a shell prompt): the worktree and branch are intact. Either `cmux send --workspace <ws> "claude --model opus --permission-mode auto --continue"` (herdr: `herdr pane run <BF_BUILDER_SURFACE> "claude --model opus --permission-mode auto --continue"`) to resume the same session in place, or collect with `--force` and respawn.
+- Builder process died (workspace shows a shell prompt): the worktree and branch are intact. Either `cmux send --workspace <ws> "claude --model opus --permission-mode auto --continue"` (herdr: `herdr pane run <BF_BUILDER_SURFACE> "claude --model opus --permission-mode auto --continue"`) to resume the same session in place, or collect and respawn.
+- Builder's worktree is gone (machine restart wiped it, or it was collected by mistake) but its branch is on origin and its transcript exists: `ORCH_PEER=<your ListAgents name> scripts/resume.sh <slug> [<session-id>]` recreates the worktree at the same path, restores the ledger from the archive pointed at you, and opens a 🔨 tab running `claude --resume` in the builder's own conversation (Orca; prints the command for cmux/herdr). Then SendMessage it what happened and its next step. `collect.sh --force` no longer deletes the remote branch of an unmerged PR, so this path stays open.
 - You want to stop it: `tell.sh <slug> stop` (it reports `failed` and idles), then collect.
 - Two builders needed the same file: that is a split that should have happened at step 1; let the first merge, then `tell.sh <second> "rebase onto origin/main"`.

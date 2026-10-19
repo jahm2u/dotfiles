@@ -227,7 +227,12 @@ case "$MODE" in
 esac
 ADDDIRSTR=""; for d in ${ADD_DIR_FLAGS[@]+"${ADD_DIR_FLAGS[@]}"}; do case "$d" in --add-dir) ADDDIRSTR="$ADDDIRSTR --add-dir";; *) ADDDIRSTR="$ADDDIRSTR '$d'";; esac; done
 EFFORTFLAG=""; [ -n "$EFFORT" ] && EFFORTFLAG=" --effort $EFFORT"
-CLAUDE_CMD="claude --model '$MODEL'$EFFORTFLAG $MODEFLAG --settings $SETTINGS $MCPFLAG$ADDDIRSTR -- '/cmux-builder'"
+# Helper agents (ux-evidence, frame-reviewer) go in through --agents, the one route that keeps an
+# agent's own MCP server under --strict-mcp-config: the builder stays MCP-free and only
+# ux-evidence gets a browser (its own headless, isolated Chrome, never the user's).
+AGENTS_PY="$HOME/.claude/skills/ux-video-review/scripts/agents_json.py"
+AGENTSFLAG=""; [ -f "$AGENTS_PY" ] && AGENTSFLAG=" --agents \"\$(python3 '$AGENTS_PY')\""
+CLAUDE_CMD="claude --model '$MODEL'$EFFORTFLAG $MODEFLAG --settings $SETTINGS $MCPFLAG$AGENTSFLAG$ADDDIRSTR -- '/cmux-builder'"
 
 # Gateway routing, PER PANE. A builder routes the way the pane that spawned it routes:
 # the MP hives export their own ANTHROPIC_* (their gateway, their key, their model
@@ -299,6 +304,10 @@ t=json.load(sys.stdin)["result"]["terminal"]; print(t["handle"], t.get("paneKey"
   bf_set "$SLUG" BF_BUILDER_WS "$BUILDER_WS"
   bf_set "$SLUG" BF_BUILDER_SURFACE "$BUILDER_SURFACE"
   bf_set "$SLUG" BF_BUILDER_TAB "$PANE_KEY"
+  # Name the orchestrator's own tab too, so it reads apart from the 🔨 builders beside it
+  # (Jeff, 2026-10-18). Re-applied on every spawn; harmless when it already matches.
+  [ -n "$ORCH_SURFACE" ] && bf_orca terminal rename --terminal "$ORCH_SURFACE" \
+    --title "🎛 orchestrator · $(basename "$ROOT")" --json >/dev/null 2>&1 || true
   # The env file is removed by the command itself; if the shell never ran it, do not leave
   # a key on disk past a minute.
   ( sleep 60; rm -f "$ENVF" ) >/dev/null 2>&1 &
@@ -311,6 +320,7 @@ elif [ "$MUX" = herdr ]; then
   if [ "$MODE" = yolo ]; then CLAUDE_ARGS+=(--dangerously-skip-permissions); else CLAUDE_ARGS+=(--permission-mode "$MODE"); fi
   CLAUDE_ARGS+=(--settings "$SETTINGS")
   [ -n "$MCPFLAG" ] && CLAUDE_ARGS+=("$MCPFLAG")
+  [ -f "$AGENTS_PY" ] && CLAUDE_ARGS+=(--agents "$(python3 "$AGENTS_PY")")
   CLAUDE_ARGS+=(${ADD_DIR_FLAGS[@]+"${ADD_DIR_FLAGS[@]}"})
   ENVS=(--env "BF_SLUG=$SLUG" --env "BF_LEDGER=$LEDGER" --env "BF_ORCH_WS=$ORCH_WS" --env "BF_ORCH_SURFACE=$ORCH_SURFACE"
         --env "BF_WORKTREE=$WT" --env "BF_SPEC=$SPEC_IN_WT" --env "BF_BRANCH=$BRANCH" --env "BF_ISSUE=$ISSUE"
