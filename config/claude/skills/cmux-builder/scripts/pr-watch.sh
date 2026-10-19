@@ -14,6 +14,8 @@
 # Reviewer: newest review whose author matches --reviewer, else $PR_WATCH_REVIEWER, else any
 # author ending in "-reviewer" or "[bot]" that is not the PR author.
 # Output: one status block; last line is CONVERGED, NOT-CONVERGED <why> or WAITING <why>.
+# --no-review (or PR_WATCH_NO_REVIEW=1): skip gate 2; CI green + no conflict converges. Jeff,
+# 2026-10-19: Codex reviews locally are the review; don't wait on the GitHub review bot.
 # Exit: 0 converged, 1 not converged, 2 still waiting (only without --wait, or on timeout).
 set -euo pipefail
 N=${1:?usage: pr-watch.sh <N> [--wait] [--timeout-min M] [--reviewer LOGIN]}; shift
@@ -22,6 +24,7 @@ while [ $# -gt 0 ]; do case "$1" in
   --wait) WAIT=1; shift;;
   --timeout-min) TIMEOUT_MIN=$2; shift 2;;
   --reviewer) REVIEWER=$2; shift 2;;
+  --no-review) NO_REVIEW=1; shift;;
   *) echo "unknown arg $1" >&2; exit 64;;
 esac; done
 
@@ -29,7 +32,7 @@ check_once() {
   local pr checks
   pr=$(gh pr view "$N" --json headRefOid,author,mergeable,state,reviews,statusCheckRollup)
   checks=$(gh pr checks "$N" --json name,bucket 2>/dev/null || echo '[]')
-  PR_JSON=$pr CHECKS_JSON=$checks REVIEWER=$REVIEWER python3 - <<'PY'
+  PR_JSON=$pr CHECKS_JSON=$checks REVIEWER=$REVIEWER NO_REVIEW=${NO_REVIEW:-${PR_WATCH_NO_REVIEW:-}} python3 - <<'PY'
 import json, os, re, sys
 pr = json.loads(os.environ["PR_JSON"]); checks = json.loads(os.environ["CHECKS_JSON"] or "[]")
 head = pr["headRefOid"]; author = (pr.get("author") or {}).get("login", "")
@@ -69,6 +72,7 @@ else:
 if failing: print("NOT-CONVERGED failing checks: " + ", ".join(failing)); sys.exit(1)
 if pr.get("mergeable") == "CONFLICTING": print("NOT-CONVERGED merge conflict with the base: merge origin/main"); sys.exit(1)
 if pending: print("WAITING checks pending: " + ", ".join(pending)); sys.exit(2)
+if os.environ.get("NO_REVIEW"): print("CONVERGED (review bot skipped: --no-review)"); sys.exit(0)
 if not latest or on != head: print("WAITING no review on the current head yet"); sys.exit(2)
 if counts is None: print("NOT-CONVERGED review on head has no severity line: read it and decide"); sys.exit(1)
 if counts["critical"] or counts["high"]:

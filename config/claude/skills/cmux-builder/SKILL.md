@@ -163,9 +163,15 @@ Then push and open the PR. The project's CLAUDE.md is in your worktree and appli
 ```bash
 # BabaFlow (it has its own reviewer-aware watcher):
 cd <literal worktree path> && node scripts/pr-watch.js <N> --wait
-# every other repo (ajudaduda included) — ships with this skill:
+# ajudaduda: no GitHub review bot; local Codex + /code-review are the review (Jeff, 2026-10-19):
+cd <literal worktree path> && ~/.claude/skills/cmux-builder/scripts/pr-watch.sh <N> --wait --no-review
+# every other repo — ships with this skill:
 cd <literal worktree path> && ~/.claude/skills/cmux-builder/scripts/pr-watch.sh <N> --wait
 ```
+
+In ajudaduda, `--no-review` makes CI green + no conflict converge without waiting for the reviewer
+bot. Codex must still be clean of [P0]-[P2] on the head: re-run `codex-review.sh` after every
+pushed fix. If the bot does post findings anyway, critical/high still get fixed; the rest you may leave.
 
 `pr-watch.sh` prints `CONVERGED` when every check on the head is green, the reviewer bot's newest
 review is on the head with `critical=0 high=0`, and the PR is not conflicting. Medium/low findings
