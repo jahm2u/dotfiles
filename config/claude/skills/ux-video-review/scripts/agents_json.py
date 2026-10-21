@@ -22,8 +22,7 @@ SERVERS = {
 def load(path):
     text = path.read_text(encoding="utf-8")
     _, head, body = text.split("---", 2)
-    meta = dict(line.split(":", 1) for line in head.strip().splitlines())
-    meta = {k.strip(): v.strip() for k, v in meta.items()}
+    meta = {k.strip(): v.strip() for k, sep, v in (line.partition(":") for line in head.splitlines()) if sep}
     agent = {"description": meta["description"], "prompt": body.strip(), "model": meta.get("model", "inherit")}
     if "tools" in meta:
         agent["tools"] = [t.strip() for t in meta["tools"].split(",")]

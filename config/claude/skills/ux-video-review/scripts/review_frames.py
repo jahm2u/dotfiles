@@ -19,7 +19,9 @@ from PIL import Image, ImageChops, ImageDraw
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compose_phone_video as cpv
 
-CROPS = {"phone": (840, 0, 1920, 1080), "desktop": (600, 0, 1920, 1080), "full": (0, 0, 1920, 1080)}
+# Each crop starts right of the step panel, whose highlighted row reaches x=860 (phone) and
+# x=624 (desktop); a sliver of it made fit_crop keep the gap and counted panel changes as motion.
+CROPS = {"phone": (880, 0, 1920, 1080), "desktop": (632, 0, 1920, 1080), "full": (0, 0, 1920, 1080)}
 
 
 def fit_crop(video, crop):

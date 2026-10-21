@@ -32,14 +32,11 @@ steal its updates).
 **AjudaDuda videos and questions go to the ajudaduda dev Telegram group** (Jeff, 2026-10-18:
 his channel now), never his bot DM: a DM to the Duda bot is answered by the Coach. `--via duda`
 sends to the group by default (`OPS_ALERT_CHAT_ID`, read on CT 205 like the token); `--to dm`
-exists only for an explicit ask. His group messages are stored since ajudaduda #485: read them
-on CT 205 with `docker exec -w /app casa-tarefas npx tsx src/cli.ts review-replies --since <iso>`.
+exists only for an explicit ask.
 
-**Replies.** A DM to the Duda bot is answered by the Coach and not stored where this skill
-can read it, so `replies` (which reads Baba's DM store) only sees answers sent to Baba's
-bot. Until the Duda bot keeps review replies (ajudaduda issue: admin reply to a review video
-is stored, not sent to the Coach), ask Jeff to answer in the Claude session or by replying to
-the video, and check with him there.
+**Replies.** `replies` reads the store that matches the channel: `--via duda` reads prod
+Postgres `review_replies` on CT 206 (every group message and Duda DM reply, since ajudaduda
+#414/#478/#485), `--via baba` reads Baba's `message_cache` on CT 212.
 
 ## Who does what
 
@@ -110,13 +107,21 @@ the video, and check with him there.
    and fix any bad shit"; 2026-10-19: Haiku 5.5, and only the frames where something happens).
    `scripts/review_frames.py final.mp4 --out sheets-vN --layout phone|desktop` keeps each
    animation's start, middle and settled frames and one frame of each still stretch, crops to
-   the phone or the desktop card and tiles 4 to an image: a 40 s video is ~8.5k tokens, not the
+   the phone or the desktop card and tiles them (4 phone or 2 desktop frames to an image): a 40 s video is ~8.5k tokens, not the
    ~66k of `fps=1`. The **`frame-reviewer`** agent (`claude-haiku-5-5`, `agents/frame-reviewer.md`)
    reads the sheets against the steps file and its checklist; fix, re-record, repeat until it
    says `clean`. Only then report `video:`. Never open the sheets in the builder's own context,
    and never hand-roll `codex exec` for this (2026-10-18: update menu + 401, the tab hangs).
 5. Commit the final to a `pr-media/<slug>` branch (never the PR branch), link it in the PR
    body, and report the local path.
+6. **Clean up what you started**, every time, including when the run fails (2026-10-21:
+   Simulator.app was left open for a day). Simulator: run `scripts/sim_session.sh begin` before
+   booting one, and `scripts/sim_session.sh end` after the last recording. That stops any
+   `simctl io recordVideo`, shuts down only the devices this session booted (other builders may
+   be recording too), and quits Simulator.app if it wasn't open before. Also stop any dev server
+   you started (kill its PID; don't `pkill node`), close extra browser pages, delete
+   `./.ux-evidence-raw.mp4` if it's still in the checkout, and remove old `sheets-v*` folders
+   once the reviewer has said `clean`. Keep only the final, the steps file and the shrunk raw.
 
 ## 2. Send (orchestrator)
 
@@ -135,23 +140,8 @@ Record the `SENT` id and timestamp in the builder's ledger log
 ## 3. Read replies and act
 
 `$S replies --since <iso> --wait 1800` in the background (Bash `run_in_background`),
-so the wait wakes you instead of polling. **That reads Baba's message cache only: it
-never sees a reply to a `--via duda` video.** Until ajudaduda #420 (review replies
-saved) is in production, a Duda DM reply goes to the Coach; read it from the Coach's
-transcript on CT 205 (2026-10-17: Jeff's "tiro também" was found this way):
-
-```bash
-ssh mox "pct exec 205 -- bash -lc 'ls -t /opt/.claude/projects/-app/*.jsonl | head -1 | xargs tail -c 60000'" \
-  | python3 -I -c 'import sys,json
-for l in sys.stdin:
-  try: d=json.loads(l)
-  except Exception: continue
-  c=d.get("message",{}).get("content")
-  if d.get("type")=="user" and isinstance(c,str) and "[revis" in c: print(d["timestamp"][:19], c[-300:])'
-```
-
-`docker logs casa-tarefas` shows `Coach message triggered isDirectMessage: true` with
-the time but not the text. Do not put the tag in `--caption` too: `--tag` already
+so the wait wakes you instead of polling. Use the same `--via` as the send (the default
+picks it from the repo the same way). Do not put the tag in `--caption` too: `--tag` already
 prefixes it (v2 of O6b went out as `[revisão] [revisão]`). Then:
 
 - **"ok" / approval:** merge under the normal gates; one line back: `$S text "Valeu, mergeado."`.

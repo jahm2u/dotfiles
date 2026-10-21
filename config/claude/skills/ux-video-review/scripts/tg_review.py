@@ -80,16 +80,17 @@ val() { sed -nE "s/^$1=['\"]?([^'\"]*)['\"]?\$/\1/p" /opt/duda/.env | tail -1; }
 TELEGRAM_BOT_TOKEN=$(val TELEGRAM_BOT_TOKEN)
 # group = the ajudaduda dev Telegram group (Jeff 2026-10-18: his channel now); dm = his bot DM
 if [ "${4:-group}" = dm ]; then CHAT=$(val TELEGRAM_ADMIN_ID); else CHAT=$(val OPS_ALERT_CHAT_ID); fi
-[ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${CHAT:-}" ] || { echo "NO-DUDA-CREDS"; exit 3; }
-F=$1; CAP=$(cat /tmp/duda-review-caption.txt); rm -f /tmp/duda-review-caption.txt
+F=$1; CAPF=$5; CAP=$(cat "$CAPF"); rm -f "$CAPF"
+[ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${CHAT:-}" ] || { [ "$F" = "-" ] || rm -f "$F"; echo "NO-DUDA-CREDS"; exit 3; }
+# --form-string: with -F, a caption starting with @ or < is read as a file name
 if [ "$F" = "-" ]; then
   curl -sS --max-time 60 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
     --data-urlencode "chat_id=$CHAT" --data-urlencode "text=$CAP" -d disable_web_page_preview=true
 else
+  trap 'rm -f "$F"' EXIT
   curl -sS --max-time 300 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendVideo" \
-    -F "chat_id=$CHAT" -F "caption=$CAP" -F supports_streaming=true \
+    --form-string "chat_id=$CHAT" --form-string "caption=$CAP" -F supports_streaming=true \
     -F "width=$2" -F "height=$3" -F "video=@$F"
-  rm -f "$F"
 fi
 '''
 
@@ -124,21 +125,33 @@ def normalize(video):
     return out, int(dims[0]), int(dims[1])
 
 
+def normalized_bytes(video):
+    """normalize() and read it back, refusing anything over the Bot API's 50 MB."""
+    norm, w, h = normalize(video)
+    data = open(norm, "rb").read()
+    os.remove(norm)
+    if len(data) > MAX_BYTES:
+        sys.exit(f"{video} is {len(data)//1048576} MB; Telegram bots take 50 MB. Re-encode smaller "
+                 "(ffmpeg -i in.mp4 -vf scale=390:-2 -crf 30 out.mp4).")
+    return data, w, h
+
+
 def duda(video, text, to="group"):
-    """Send through the Duda production bot on CT 205: the token never leaves the box."""
+    """Send through the Duda production bot on CT 205: the token never leaves the box.
+    Every temp file carries this send's id, so two builders sending at once don't collide."""
     def push(local_bytes, remote):
         subprocess.run(["ssh", "-o", "BatchMode=yes", "mox", f"pct exec 205 -- sh -c 'cat > {remote}'"],
                        input=local_bytes, check=True, timeout=600)
-    push(text.encode(), "/tmp/duda-review-caption.txt")
+    base = f"/tmp/duda-review-{uuid.uuid4().hex[:8]}"
     target, w, h = "-", 0, 0
     if video:
-        norm, w, h = normalize(video)
-        target = f"/tmp/duda-review-{uuid.uuid4().hex[:8]}.mp4"
-        push(open(norm, "rb").read(), target)
-        os.remove(norm)
-    push(DUDA_SEND.encode(), "/tmp/duda-review-send.sh")
+        data, w, h = normalized_bytes(video)
+        target = f"{base}.mp4"
+        push(data, target)
+    push(text.encode(), f"{base}.txt")
+    push(DUDA_SEND.encode(), f"{base}.sh")
     p = subprocess.run(["ssh", "-o", "BatchMode=yes", "mox",
-                        f"pct exec 205 -- sh /tmp/duda-review-send.sh {target} {w} {h} {to}; pct exec 205 -- rm -f /tmp/duda-review-send.sh"],
+                        f"pct exec 205 -- sh {base}.sh {target} {w} {h} {to} {base}.txt; pct exec 205 -- rm -f {base}.sh"],
                        capture_output=True, text=True, timeout=600)
     try:
         res = json.loads(p.stdout.strip().splitlines()[0])
@@ -152,13 +165,10 @@ def duda(video, text, to="group"):
 def cmd_send(a):
     if a.via == "duda":
         stamp = now_iso(); cap = tagged(a.caption, a.tag)[:1000]
-        print(f"SENT {duda(a.video, cap, a.to)} {stamp} via duda to {a.to}"); return
-    norm, w, h = normalize(a.video)
-    data = open(norm, "rb").read()
-    os.remove(norm)
-    if len(data) > MAX_BYTES:
-        sys.exit(f"{a.video} is {len(data)//1048576} MB; Telegram bots take 50 MB. Re-encode smaller "
-                 "(ffmpeg -i in.mp4 -vf scale=390:-2 -crf 30 out.mp4).")
+        mid = duda(a.video, cap, a.to)
+        log("->", f"#{mid} [duda {a.to}] [video {os.path.basename(a.video)}] {cap}")
+        print(f"SENT {mid} {stamp} via duda to {a.to}"); return
+    data, w, h = normalized_bytes(a.video)
     _, chat = env()
     cap = tagged(a.caption, a.tag)[:1000]
     stamp = now_iso()
@@ -171,8 +181,10 @@ def cmd_send(a):
 
 def cmd_text(a):
     if a.via == "duda":
-        stamp = now_iso()
-        print(f"SENT {duda(None, tagged(a.message, a.tag)[:4000], a.to)} {stamp} via duda to {a.to}"); return
+        stamp = now_iso(); text = tagged(a.message, a.tag)[:4000]
+        mid = duda(None, text, a.to)
+        log("->", f"#{mid} [duda {a.to}] {text}")
+        print(f"SENT {mid} {stamp} via duda to {a.to}"); return
     _, chat = env()
     text = tagged(a.message, a.tag)[:4000]
     stamp = now_iso()
