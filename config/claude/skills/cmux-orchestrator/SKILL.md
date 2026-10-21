@@ -98,6 +98,15 @@ frontmatter key the template has; step-02 fills `route`, `risk`, `baseline_revis
   - *Ask First*: everything the builder must stop and ask you about. ALWAYS include: merging the PR, any DB migration, any change outside the files/subsystem named in Intent, touching prod (`prod.sh`, SSH, `.release-message`), and widening scope after a review finding.
   - *Never*: the non-goals, and the approaches you have already rejected (name them, so the builder does not rediscover them).
 - **I/O & Edge-Case Matrix** when the change has observable inputs/outputs; delete it otherwise.
+- **The human's confirmations go INTO the spec, before you spawn.** If the work needs the human's own
+  yes (driving their browser, a real click or send, a prod write, a key), ask them in YOUR session
+  first (AskUserQuestion) and write their answer, quoted, with the time, into *Always*. Never make the
+  builder's first step "ask the human in your own tab and wait": the human watches your session,
+  not builder tabs, so the builder sits idle while everyone thinks it is working (2026-10-19,
+  landers-launch-videos: 20+ min idle on its own-tab question). If a confirmation only turns up
+  mid-build, the builder reports `question`, you ask the human here, and you relay their answer
+  quoted. For classifier refusals, see the landmine on relayed OKs: tell the human at once WHICH tab is
+  waiting for them.
 
 Leave Code Map, Tasks, Design Notes and Verification to the builder — investigating the code is
 its job, in its own context, not yours. `status: 'draft'` makes bmad-build run its planning step
@@ -142,8 +151,9 @@ denied) so routine work never stops on a prompt in any mode, and **no MCP server
 (`--strict-mcp-config`). `--mode yolo` launches with `--dangerously-skip-permissions` for a trusted
 spec in its isolated worktree; `--mode acceptEdits` is what a Haiku builder gets. MCP tool descriptions are the builder's largest fixed cost: in
 BabaFlow a Haiku builder started at 86% context and an Opus one auto-compacted before its second
-report with them loaded. Pass `--mcp full` only when the spec needs browser checks or a project
-MCP, and say so in the spec.
+report with them loaded. Pass `--mcp full` only when the spec needs a project MCP or interactive
+browser checks, and say so in the spec. UX videos do not need it: every builder gets the
+`ux-evidence` agent through `--agents`, with its own headless, isolated Chrome.
 
 The worktree branch is created with `--no-track`, so the builder's `git status` stays quiet and
 its first `git push -u origin <branch>` sets the right upstream. The builder also inherits this
@@ -187,6 +197,11 @@ It distinguishes states that look identical in the log, and stays silent on `BUS
 resume unaided), `IDLE` (bare prompt for several polls -- often legitimate, so it waits),
 `GONE` (surface unreadable). It never types into a builder: resubmitting stale text blind is
 how an orchestrator reruns a command nobody checked.
+
+**On every `IDLE`, `peek.sh` at once and say in one line what the builder is waiting on.** An
+idle builder is either done, waiting on you, or waiting on the human. If it's the human, tell
+them now, naming the tab and the exact answer it needs. Never let an IDLE event pass with "that's
+expected" before you have read the screen.
 
 Measured 2026-09-12: builder `3561-routing-enable` sat from 06:25 holding
 `node scripts/pr-watch.js 3567 --wait` unsubmitted, while its PR was CONFLICTING with 4
@@ -297,8 +312,8 @@ Rules of the channel:
 
 ### 5. Merge decision and hand-off
 
-**UI PRs wait for Jeff's eyes.** If the spec changes anything a user sees, spawn the builder
-with `--mcp full`, and when its `pr-open` carries `video: <path>`, run `/ux-video-review`: send the
+**UI PRs wait for Jeff's eyes.** If the spec changes anything a user sees, the builder records
+the video through its `ux-evidence` agent (no `--mcp full` needed), and when its `pr-open` carries `video: <path>`, run `/ux-video-review`: send the
 video to Jeff on Telegram, wait for his reply, relay his notes as one numbered list, and send a new
 video after the fixes. Do not merge a UI PR before he answers (or the skill's wait rule says so),
 and never promote one to production on silence.

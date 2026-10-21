@@ -89,6 +89,7 @@ components → cache/API → event trigger → widget update
 | **Calendar** | 15 min | `sync-calendars.sh` | Sync iCal → khal → meeting widget | `meeting.sh`, LaunchAgent: `calendar-sync` |
 | **Todoist** | 30 sec | `todoist-precache.sh` | Precache tasks → instant popup | `todoist_popup.sh`, `todoist.sh`, LaunchAgent: `todoist-precache` |
 | **Meeting Prep** | On-click | `meeting-prep.sh` | AI-powered meeting note generation | `classify-meeting.py`, `analyze-meeting-history.py`, `generate-meeting-note.py` |
+| **TM Snapshot Cleanup** | 1 hour | `cleanup-tm-snapshots.sh` | Thin Time Machine local snapshots; "Disk low" notification under 40 GB | LaunchAgent: `tm-snapshot-cleanup`, log `tm-cleanup.log` |
 
 ### Component Details
 
@@ -115,7 +116,19 @@ components → cache/API → event trigger → widget update
 
 ### LaunchAgent Operations
 
-**Service Names:** `calendar-sync` | `todoist-precache`
+**Service Names:** `calendar-sync` | `todoist-precache` | `tm-snapshot-cleanup`
+
+**Disk filling up:** run `/disk-cleanup` (skill in `config/claude/skills/disk-cleanup/`). Its
+`scan.sh` triages every git worktree under `~/repos` and `~/work` as SAFE / ASK / KEEP (merged
+PR at HEAD, uncommitted work, unpushed commits, live processes) and lists regenerable caches;
+`remove.sh` removes only what you approve. Time Machine local snapshots pin every deleted file
+for up to a day (87 GB on 2026-10-17). They can't be disabled while Time Machine is on, so the
+hourly agent thins them whenever the external backup is under 24 h old. Its old trigger watched
+`/var/db/.TimeMachine.Results.plist`, which macOS 26 no longer writes, so it never ran.
+
+**Loading agents from Claude Code:** Claude's shell can run in launchd's *Background* session
+(`launchctl managername`), where `launchctl load` lands outside your login session and
+`bootstrap gui/$UID` fails with error 125. Load agents from Terminal.app instead, or log in again.
 
 ```bash
 # Check status (replace {SERVICE} with service name)
@@ -445,6 +458,118 @@ Single debounced screen watcher (3-second delay) handles monitor plug/unplug:
 ### Device Filtering
 The following devices are excluded from the picker: Microsoft Teams Audio, Jump Desktop Audio, krisp speaker, and any Multi-Output/Aggregate/LG Dual system devices (the manual "LG Dual" entry is constructed separately).
 
+## Machines, Tailscale & herdr
+
+### Machines (one tailnet: `jeff.hamersly@gmail.com`, `*.taild9b9f0.ts.net`)
+
+| Tailscale name | What it is |
+|----------------|------------|
+| `mini-2024` | This Mac mini (desk machine, wired Ethernet). Runs the herdr *client* |
+| `ts-macbook-pro` | MacBook Pro (`ssh mbp`). Hosts the herdr sessions below |
+| `mini-mp`, `mox` | Other Mac mini / Linux box (`mox` = staging) |
+| `claude-gateway` | Linux box on the LAN (192.168.0.224), `tag:claude-gw` |
+| `db-gateway` | Linux DB gateway |
+
+Everything is in one tailnet. There are no separate org tailnets: "mbp orgs", "dev hive"
+and "mkt crew" are **herdr sessions**, not Tailscale devices. On the mini, Tailscale is
+the Homebrew `tailscaled` running as root (state in `/Library/Tailscale`, log
+`/opt/homebrew/var/log/tailscaled.log`), not the App Store app.
+
+### herdr remote sessions
+
+herdr (0.9.3, must match on both Macs) on the mini lists three saved SSH machines in its
+**machines** sidebar. All three go through ssh host `mbp` (`~/.ssh/config`: HostName
+`ts-macbook-pro`, user `v`, port 22, i.e. over Tailscale):
+
+| Sidebar label | herdr session on the MBP | Repo on the MBP (live checkout) | Brought up by |
+|---------------|--------------------------|----------------------------------|---------------|
+| mbp orgs | `orgs` | `~/repos/01_business/tp/baba-brain` (+ `repos/baba-fleet`) | `org-seat/scripts/up.sh`, LaunchAgent `com.babafleet.orgs-keeper` (every 60 s) |
+| dev hive | `dev-crew` | `~/repos/01_business/mp/hive-dev-crew` (`github.com/jeffheartmp/hive-dev-crew`) | `bin/crew up --window`, LaunchAgent `com.jeffheartmp.dev-crew.login` (at login) |
+| mkt crew | `mkt-crew` | `~/repos/01_business/mp/hive-paid-traffic` (`github.com/jeffheartmp/hive-paid-traffic`) | `bin/hive up --janela`, LaunchAgent `com.ipmedia.hive-paid-traffic.login` (at login) |
+
+What each crew is:
+
+- **orgs** (TP business, workspace "Baba"): `seat` is Jeff's single point of contact, `baba` the
+  chief of staff, `tp` `pd` `ex` `mt` `oh` each babysit one partner's Telegram channel from a
+  BabaFlow liaison checkout, `gardener` tends the brain, and workspace "builders" holds
+  `b-<slug>` cmux-style builders.
+- **dev-crew** (MeuPatrocínio): Jeff's dev-leadership crew. It watches how the dev team works,
+  keeps the record, and prepares 1:1s, reviews, incidents, RFCs and hiring. Fixed seats
+  `observer`, `chief-of-staff`, `tech-lead`, `shepherd`, plus bench seats (`qa-lead`,
+  `crew-dev`...) leased by order (`crew.toml [layout]`, `[bench]`). Holds 1:1 notes and DMs,
+  so the repo is private. About 35 `com.jeffheartmp.dev-crew.*` launchd jobs (memory
+  reviews, reports, watchdog, nightly housekeeping), generated from `crew.toml` by
+  `bin/crew install-schedule`.
+- **mkt-crew** (MeuPatrocínio paid traffic, Meta ads): seven *seats* (pm, strategist,
+  operator, web-dev, web-design, finance, martech), each filled by an agent persona (Rivo,
+  Hopkins, Ogilvy, Angela, Wanamaker, Nightingale...) or a person; also front-desk,
+  gardener and ops-manager. The `operator` seats run Codex, the rest Claude. Seat table in
+  `docs/seats.md`, desk manuals in `seats/<seat>/DESK.md`. Launchd jobs
+  `com.ipmedia.hive-paid-traffic.*` (operator slots 05:00/12:30/16:30/21:00, Slack, queues,
+  nightly `faxina`).
+
+Rules shared by both MeuPatrocínio crews (see each repo's `CLAUDE.md`): the MBP checkout is
+the live one, so an edit takes effect on the next boot or run, and there is no copy on the
+mini. Commit as **jeffheartmp** (`~/.gitconfig-mp`), not jahm2u, and push. To change them from
+the mini, commit and push there, then `git pull --ff-only` on the MBP. Their human docs live in
+the brain repo `jeffheartmp/hive` (`dev-crew/`, `paid-traffic/`). Agents talk across sessions
+and Macs with `fleet-tell` (`~/.local/bin/fleet-tell` → `baba-fleet/bin/fleet-tell`;
+`fleet-tell --list`).
+
+Known stale bits (2026-10-17): both crew `CLAUDE.md` files place the brain at
+`/Volumes/Workspace/repos/01_business/mp/hive` on the mini, a path on the failed external
+drive, and the mini has no `01_business/mp/` at all. `hive-paid-traffic/CLAUDE.md` names the
+session `hive-paid-traffic`, but `bin/hive` uses `mkt-crew`. A leftover `hive-paid-traffic`
+herdr session (one idle Claude in `~`) still runs. Also on the MBP and down: `dev-crew-drill`,
+`cw-test`, `cwq`, `dcrp-probe`.
+
+Session sockets live on the MBP at `~/.config/herdr/sessions/<session>/herdr.sock`.
+The `orgs` session is started and kept alive by
+`baba-fleet/liaisons/org-seat/scripts/up.sh` (idempotent; starts only what is missing),
+run every 60 s by the `com.babafleet.orgs-keeper` LaunchAgent. It only runs on
+`ORGS_HOST` (default `ts-MacBook-Pro`). The same agent is installed on the mini, where it
+refuses by design, so **never expect `orgs` to run on the mini**.
+
+### The MBP must not sleep
+
+All three sessions die whenever the MBP sleeps. Amphetamine (5.3.2, session at launch,
+"Allow Closed-Display Sleep" off) only blocks *idle* sleep. Closing the lid still sleeps the
+Mac (`pmset -g log`: `Entering Sleep state due to 'Clamshell Sleep'`) unless an external
+display is attached or closed-display mode is active, and that needs the separate **Amphetamine
+Enhancer** helper, which was not installed on 2026-10-17. Check: `ssh mbp 'pmset -g | grep
+-E "SleepDisabled|sleep "; pmset -g log | grep Clamshell | tail -3'`. `SleepDisabled 1` means
+lid-closed sleep is off.
+
+**Fixed 2026-10-17 with `sudo pmset -a disablesleep 1`** (verified: lid closed, still reachable
+over SSH). This disables sleep everywhere, battery included, so don't carry it closed in a
+bag; undo with `sudo pmset -a disablesleep 0`. A macOS update can reset it, so re-check
+`SleepDisabled` after one.
+
+### When the sidebar says "reconnecting"
+
+Work down the chain. Each step only makes sense once the one before it passes:
+
+```bash
+tailscale status | grep ts-macbook-pro     # 1. MBP online in the tailnet? "offline, last seen" = fix it ON the MBP (menu bar icon)
+tailscale ping -c1 ts-macbook-pro          # 2. reachable?
+nc -z -G 4 ts-macbook-pro 22               # 3. SSH port open? (times out for a minute or so while the MBP wakes)
+herdr machine status                       # 4. per-session: reachable / error
+herdr machine reconnect "mbp orgs"         #    re-auth one machine interactively if needed
+ssh mbp 'export PATH=/opt/homebrew/bin:$PATH; bash ~/repos/01_business/tp/baba-brain/repos/baba-fleet/liaisons/org-seat/scripts/up.sh --no-attach'
+                                           # 5. orgs server down: start what's missing
+```
+
+`herdr machine status` reporting `orgs` as "remote Herdr server is stopped or
+incompatible" right after `up.sh` is normal: the server restarts its panes and comes
+back by itself within a few minutes. Check the session directly instead of restarting
+again: `ssh mbp 'HERDR_SOCKET_PATH=~/.config/herdr/sessions/orgs/herdr.sock /opt/homebrew/bin/herdr agent list'`.
+
+**Incident 2026-10-17:** the mini reset unexpectedly at 09:22 (no panic report; firmware held panic telemetry). Afterwards the MBP stayed
+offline in Tailscale for about 35 minutes until it was reconnected on the MBP itself.
+Port 22 then timed out briefly, dev hive and mkt crew came back on their own, and `orgs`
+needed one `up.sh` and a few minutes. Nothing on the mini was broken: when all three
+sessions say "reconnecting" at once, look at the MBP first.
+
 ## Development & Troubleshooting
 
 ### Common Commands
@@ -506,6 +631,7 @@ curl -H "Authorization: Bearer $TODOIST_API_TOKEN" https://api.todoist.com/rest/
 | **Volume keys disabled** | No-volume icon on LG Dual | `dualVolumeTap` eventtap must be running; check Hammerspoon console for errors |
 | **Meeting prep no file** | "File not found after 10s" in log | Jonas API not writing to Docker volume; check Docker mount and Jonas logs |
 | **Meeting prep wrong vault** | Obsidian "file not found" error | Verify `VAULT_NAME="kb"` in `meeting-prep.sh` matches actual vault folder name |
+| **Disk full but `diskutil` shows far more free** | `df` free ≪ "Container Free Space" | TM local snapshots pin deleted files: `tmutil thinlocalsnapshots / 999999999999 4`, then check `tm-cleanup.log` |
 
 **Force Complete Resync (Calendar Example):**
 ```bash

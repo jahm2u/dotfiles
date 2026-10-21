@@ -32,20 +32,22 @@ steal its updates).
 **AjudaDuda videos and questions go to the ajudaduda dev Telegram group** (Jeff, 2026-10-18:
 his channel now), never his bot DM: a DM to the Duda bot is answered by the Coach. `--via duda`
 sends to the group by default (`OPS_ALERT_CHAT_ID`, read on CT 205 like the token); `--to dm`
-exists only for an explicit ask. His group messages are stored since ajudaduda #485: read them
-on CT 205 with `docker exec -w /app casa-tarefas npx tsx src/cli.ts review-replies --since <iso>`.
+exists only for an explicit ask.
 
-**Replies.** A DM to the Duda bot is answered by the Coach and not stored where this skill
-can read it, so `replies` (which reads Baba's DM store) only sees answers sent to Baba's
-bot. Until the Duda bot keeps review replies (ajudaduda issue: admin reply to a review video
-is stored, not sent to the Coach), ask Jeff to answer in the Claude session or by replying to
-the video, and check with him there.
+**Replies.** `replies` reads the store that matches the channel: `--via duda` reads prod
+Postgres `review_replies` on CT 206 (every group message and Duda DM reply, since ajudaduda
+#414/#478/#485), `--via baba` reads Baba's `message_cache` on CT 212.
 
 ## Who does what
 
-- **Builder** (the session that made the change) records the video and gives the
+- **`ux-evidence` agent** (`agents/ux-evidence.md`, Sonnet) does §1 for the builder: its own
+  headless Chrome with a throwaway profile (`chrome-devtools-mcp --isolated --headless`, never
+  `--autoConnect` to Jeff's Chrome, which asks him to allow it every time), records, composes,
+  runs the `frame-reviewer` loop and returns `video:`. spawn.sh passes both agents to every
+  builder with `--agents "$(python3 scripts/agents_json.py)"`, the one route whose MCP servers
+  survive `--strict-mcp-config`; outside a builder, run the same flag yourself.
+- **Builder** (the session that made the change) gets the video from `ux-evidence` and gives the
   orchestrator its local path in the `pr-open` report, and again after any UI fix.
-  A builder needs the browser: spawn it with `--mcp full`.
 - **Orchestrator** sends it, waits for Jeff, and relays his notes to the builder as
   one numbered list. It does not merge a UI PR until Jeff has answered or the
   standing wait (below) has passed.
@@ -56,7 +58,9 @@ the video, and check with him there.
    local or staging API), or use staging once the branch is deployed.
 2. `emulate` the page at `390x844x3,mobile,touch` (iPhone-sized), light mode, pt-BR.
 3. `screencast_start` with an `.mp4` path, then walk the flow with real `click`/`fill`
-   calls from its first screen to its last, pausing ~1 s on each screen so motion
+   calls from its first screen to its last (each click preceded by `scripts/tap_ring.js` via
+   `evaluate_script` on the same element, so the tap shows: the screencast draws no pointer),
+   pausing ~1 s on each screen so motion
    finishes. Show the edge a reviewer would try: a back tap, the "Outro" path. **Show
    the error states too** (Jeff, 2026-10-17): a failed request and its retry, invalid
    input, a server refusal (e.g. e-mail in use), offline, whichever the flow has.
@@ -68,6 +72,8 @@ the video, and check with him there.
    must give a phone ratio (~390x844) with SAR 1:1. A stretched or squashed recording (Jeff,
    2026-10-17: "weirdly stretched") means the capture size and the emulated viewport disagree;
    re-record. Save everything outside `/tmp` (`~/Movies/<name>-review/`): `/tmp` is wiped on restart.
+   Once the final is composed, shrink the raw (`-c:v libx264 -crf 30 -preset slow`): device
+   captures run 10-120 MB and ~/Movies had 4.5 GB of raws by 2026-10-19; finals are ~1-2 MB.
 4a. **Pick the frame by what the user sees** (Jeff, 2026-10-18: "maybe it should not be phone on
    the right? its hard to see... phone when simulating what users will see like email and landers
    but desktop for the babaflow ux"):
@@ -83,23 +89,49 @@ the video, and check with him there.
    the walkthrough's steps on the left (current one highlighted, done ones checked), the raw
    recording in an iPhone frame on the right. Write a steps file with the time each step
    starts in the raw recording (`steps.txt`: `title: ...`, then `0:00 -> Abre o app`, `0:07 -> ...`;
-   or JSON `{"title": ..., "steps": [{"start": 0, "text": ...}]}`), 3-8 short steps, then:
+   or JSON `{"title": ..., "steps": [{"start": 0, "text": ...}]}`), one short step per screen or
+   action. Up to 5 show as one list; past 5 the list is a sliding 5-row window (the step just
+   done stays above the current one, 0.45 s eased slide, edge fades, "Passo 3 de 12" /
+   "Step 3 of 12" under the title, `--lang auto|pt|en`), never pages. Still stretches longer
+   than 1.5 s (the agent thinking between taps; a 10-step flow came out at 121 s) are cut to
+   their first 0.6 s and last 0.9 s and the step times moved to match (`--max-still`, 0 keeps
+   all), so the final is shorter than the raw. The screencast's sparse frames (3-30 fps) are
+   blended rather than repeated, so taps and screen changes dissolve instead of jumping
+   (`--no-blend` to repeat). Then:
    `python3 ~/.claude/skills/ux-video-review/scripts/compose_phone_video.py --video raw.mp4 --steps steps.txt --out final.mp4 [--title "..."]`
-   (`--self-test` checks the script). ffprobe the **final**: 1920x1080, SAR 1:1, same length
-   as the raw. The final is what gets reviewed, committed and sent.
-4b. **Codex reviews the video before Jeff does** (Jeff, 2026-10-17: "have codex review
-   and fix any bad shit"). Extract frames of the final (`ffmpeg -i final.mp4 -vf fps=1 f%03d.png`), have
-   Codex review them for anything broken, ugly, confusing or off-copy, fix what it finds,
-   re-record, repeat until clean. Only then report `video:`.
-   **Do not hand-roll `codex exec` for this** (2026-10-18): a builder's own script hits
-   Codex's "Update available" menu (no `check_for_update_on_startup=false`) and, from a
-   builder's Bash, a 401 (no gateway key there), and the tab hangs. Until a shared frame
-   script exists on `codex-review.sh`'s route, the frame review is a fresh **Claude
-   subagent** given the contact sheet and the same checklist (broken, ugly, confusing,
-   off-copy, error states shown, step highlighted matches what the phone shows). Never move
-   the gateway key into a file to make Codex work.
+   (`--self-test` checks the script). A device or Simulator capture (1206x2622) already has its
+   own clock and Dynamic Island, so the frame's "9:41" bar is skipped automatically (it showed the
+   top twice, Jeff 2026-10-19); `--status-bar draw|none` overrides, and never crop the bar off by hand. ffprobe the **final**: 1920x1080, SAR 1:1, no longer than
+   the raw. The final is what gets reviewed, committed and sent.
+4b. **The frames are reviewed before Jeff sees them** (Jeff, 2026-10-17: "have codex review
+   and fix any bad shit"; 2026-10-19: Haiku 5.5, and only the frames where something happens).
+   `scripts/review_frames.py final.mp4 --out sheets-vN --layout phone|desktop` keeps each
+   animation's start, middle and settled frames and one frame of each still stretch, crops to
+   the phone or the desktop card and tiles them (4 phone or 2 desktop frames to an image): a 40 s video is ~8.5k tokens, not the
+   ~66k of `fps=1`. The **`frame-reviewer`** agent (`claude-haiku-5-5`, `agents/frame-reviewer.md`)
+   reads the sheets against the steps file and its checklist; fix, re-record, repeat until it
+   says `clean`. Only then report `video:`. Never open the sheets in the builder's own context,
+   and never hand-roll `codex exec` for this (2026-10-18: update menu + 401, the tab hangs).
 5. Commit the final to a `pr-media/<slug>` branch (never the PR branch), link it in the PR
    body, and report the local path.
+6. **Clean up what you started**, every time, including when the run fails (2026-10-21:
+   Simulator.app was left open for a day). **Simulator, in any repo:** never `xcrun simctl boot`
+   by hand; use `scripts/sim_session.sh`:
+   ```bash
+   SIM=~/.claude/skills/ux-video-review/scripts/sim_session.sh
+   $SIM boot ["iPhone 17"]       # remembers what was running, boots, waits; prints the UDID
+   $SIM record ~/Movies/<slug>-review/raw.mp4   # ... drive the app ...
+   $SIM stop                     # mp4 written whole
+   $SIM end                      # shuts down only what this session booted, quits the app if it wasn't open
+   $SIM run -- bash apps/duda-mobile/scripts/run-maestro.sh flow.yaml   # a repo's own runner, always cleaned up
+   ```
+   Repo runners (AjudaDuda's `run-maestro.sh`, `run-vrt.sh`) boot a Simulator and never shut it
+   down; keep them in the repo (CI runs them) and wrap them in `run`. `end` also catches the
+   device an already-open Simulator.app boots on its own. If a run died before `end`, use
+   `end --all` once you know no other builder is on the Simulator. Also stop any dev server
+   you started (kill its PID; don't `pkill node`), close extra browser pages, delete
+   `./.ux-evidence-raw.mp4` if it's still in the checkout, and remove old `sheets-v*` folders
+   once the reviewer has said `clean`. Keep only the final, the steps file and the shrunk raw.
 
 ## 2. Send (orchestrator)
 
@@ -118,23 +150,8 @@ Record the `SENT` id and timestamp in the builder's ledger log
 ## 3. Read replies and act
 
 `$S replies --since <iso> --wait 1800` in the background (Bash `run_in_background`),
-so the wait wakes you instead of polling. **That reads Baba's message cache only: it
-never sees a reply to a `--via duda` video.** Until ajudaduda #420 (review replies
-saved) is in production, a Duda DM reply goes to the Coach; read it from the Coach's
-transcript on CT 205 (2026-10-17: Jeff's "tiro também" was found this way):
-
-```bash
-ssh mox "pct exec 205 -- bash -lc 'ls -t /opt/.claude/projects/-app/*.jsonl | head -1 | xargs tail -c 60000'" \
-  | python3 -I -c 'import sys,json
-for l in sys.stdin:
-  try: d=json.loads(l)
-  except Exception: continue
-  c=d.get("message",{}).get("content")
-  if d.get("type")=="user" and isinstance(c,str) and "[revis" in c: print(d["timestamp"][:19], c[-300:])'
-```
-
-`docker logs casa-tarefas` shows `Coach message triggered isDirectMessage: true` with
-the time but not the text. Do not put the tag in `--caption` too: `--tag` already
+so the wait wakes you instead of polling. Use the same `--via` as the send (the default
+picks it from the repo the same way). Do not put the tag in `--caption` too: `--tag` already
 prefixes it (v2 of O6b went out as `[revisão] [revisão]`). Then:
 
 - **"ok" / approval:** merge under the normal gates; one line back: `$S text "Valeu, mergeado."`.

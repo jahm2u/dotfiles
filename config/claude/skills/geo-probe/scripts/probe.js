@@ -51,14 +51,10 @@ if (!process.env.NODEMAVEN_API_KEY) {
 }
 
 async function probe(cc) {
+  // Since #3571 buildProxyConfig returns the CONNECT tunnel itself (agents + proxy:false).
   const cfg = await proxyService.buildProxyConfig(cc);
-  const { host, port, auth } = cfg.proxy;
-  // Build the tunnel ourselves and DISABLE axios's own proxy handling (proxy:false),
-  // or axios bypasses the agent and reintroduces the plain-request-to-443 failure.
-  const agent = new HttpsProxyAgent(
-    `http://${encodeURIComponent(auth.username)}:${encodeURIComponent(auth.password)}@${host}:${port}`
-  );
-  const tunnel = { httpAgent: agent, httpsAgent: agent, proxy: false };
+  const tunnel = { httpAgent: cfg.httpAgent, httpsAgent: cfg.httpsAgent, proxy: false };
+  if (!tunnel.httpsAgent) throw new Error('buildProxyConfig returned no httpsAgent; its shape changed again');
   const hops = [];
   let current = url;
   let res;
