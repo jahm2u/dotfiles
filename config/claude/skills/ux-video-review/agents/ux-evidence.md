@@ -38,9 +38,9 @@ The full method is `~/.claude/skills/ux-video-review/SKILL.md` §1 (Read it firs
    cut off, loading screen held too long), fix and re-record. If they are the app's fault
    (broken layout, wrong copy, a bug), do not fix the app: list them. At most 3 rounds.
 6. **Clean up before you return**, also when you are giving up: anything you started goes
-   (SKILL.md §1 step 6). If you used the iOS Simulator, you ran
-   `~/.claude/skills/ux-video-review/scripts/sim_session.sh begin` before booting it; now run
-   `sim_session.sh end`. Kill any dev server you started by its PID, close the pages you
+   (SKILL.md §1 step 6). If you used the iOS Simulator, you booted it with
+   `~/.claude/skills/ux-video-review/scripts/sim_session.sh boot` (or wrapped the repo's runner in
+   `sim_session.sh run -- ...`), never `simctl boot` by hand; now run `sim_session.sh end`. Kill any dev server you started by its PID, close the pages you
    opened, make sure `./.ux-evidence-raw.mp4` is gone from the checkout, and delete the
    `sheets-v*` folders of earlier rounds.
 

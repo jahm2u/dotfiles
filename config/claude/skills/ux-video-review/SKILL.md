@@ -115,10 +115,20 @@ Postgres `review_replies` on CT 206 (every group message and Duda DM reply, sinc
 5. Commit the final to a `pr-media/<slug>` branch (never the PR branch), link it in the PR
    body, and report the local path.
 6. **Clean up what you started**, every time, including when the run fails (2026-10-21:
-   Simulator.app was left open for a day). Simulator: run `scripts/sim_session.sh begin` before
-   booting one, and `scripts/sim_session.sh end` after the last recording. That stops any
-   `simctl io recordVideo`, shuts down only the devices this session booted (other builders may
-   be recording too), and quits Simulator.app if it wasn't open before. Also stop any dev server
+   Simulator.app was left open for a day). **Simulator, in any repo:** never `xcrun simctl boot`
+   by hand; use `scripts/sim_session.sh`:
+   ```bash
+   SIM=~/.claude/skills/ux-video-review/scripts/sim_session.sh
+   $SIM boot ["iPhone 17"]       # remembers what was running, boots, waits; prints the UDID
+   $SIM record ~/Movies/<slug>-review/raw.mp4   # ... drive the app ...
+   $SIM stop                     # mp4 written whole
+   $SIM end                      # shuts down only what this session booted, quits the app if it wasn't open
+   $SIM run -- bash apps/duda-mobile/scripts/run-maestro.sh flow.yaml   # a repo's own runner, always cleaned up
+   ```
+   Repo runners (AjudaDuda's `run-maestro.sh`, `run-vrt.sh`) boot a Simulator and never shut it
+   down; keep them in the repo (CI runs them) and wrap them in `run`. `end` also catches the
+   device an already-open Simulator.app boots on its own. If a run died before `end`, use
+   `end --all` once you know no other builder is on the Simulator. Also stop any dev server
    you started (kill its PID; don't `pkill node`), close extra browser pages, delete
    `./.ux-evidence-raw.mp4` if it's still in the checkout, and remove old `sheets-v*` folders
    once the reviewer has said `clean`. Keep only the final, the steps file and the shrunk raw.
