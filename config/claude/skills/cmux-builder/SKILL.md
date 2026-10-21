@@ -232,4 +232,8 @@ When pr-watch (`.js` or `.sh`) prints `CONVERGED` for the CURRENT head: `report.
 - If context passes ~70%, run the `handoff` skill (writes only under `_bmad/handoff/`), then `report.sh blocked "context at N%, handoff written; resume with --continue"`. The orchestrator can resume you in place.
 - If something contradicts the spec (the bug is not where Intent says, the approach cannot work), that is a `question` with your evidence in one line. Do not silently do something else.
 - **Your `node_modules` is a SYMLINK into the primary checkout** (spawn.sh links it so tests run without an install). Any `npm install` through it rewrites the PRIMARY's tree: on 2026-10-05 one `npm install --no-save` re-resolved zod 3 -> 4 and dropped the MCP SDK for every session on the machine. Before adding or changing a dependency, replace the link with your own tree (`rm node_modules && npm ci`), then `npm install --save-dev <pkg>` so `package.json` and the lockfile carry it. Never `--no-save`.
+  **Metro/Expo (or any bundler that only sees the project) cannot follow the link** and fails
+  with "Unable to resolve module" for installed packages: run `scripts/real-node-modules.sh` first
+  (APFS clones of every node_modules, ~1 min), then start the bundler with `--clear`. Never link
+  an app's `node_modules` (e.g. `apps/duda-mobile/node_modules`) by hand.
 - **`.git/info/exclude` is shared by every worktree of the repo.** Do not add `_bmad-output/` or anything else to it to get a clean tree for Codex; it hid tracked work in other worktrees twice in one night. Commit what belongs, delete what does not, and leave the rest untracked.
