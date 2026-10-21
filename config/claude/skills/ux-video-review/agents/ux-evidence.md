@@ -34,6 +34,10 @@ The full method is `~/.claude/skills/ux-video-review/SKILL.md` §1 (Read it firs
    `python3 ~/.claude/skills/ux-video-review/scripts/review_frames.py <final.mp4> --out <dir>/sheets-vN --layout <phone|desktop>`.
    Do not open the sheets yourself. Spawn the `frame-reviewer` agent with the sheet paths, the
    steps file text and what the change is meant to do.
+   **10 minutes without progress** (app won't load, red screen, a step that keeps failing):
+   stop, clean up (step 6) and return `video: none` with `review: blocked — <the error, one line>`.
+   Never spin. If the app is Metro/Expo in a worktree, run
+   `~/.claude/skills/cmux-builder/scripts/real-node-modules.sh` before starting it.
 5. If it reports problems that are the recording's fault (wrong step, missed state, stretched,
    cut off, loading screen held too long), fix and re-record. If they are the app's fault
    (broken layout, wrong copy, a bug), do not fix the app: list them. At most 3 rounds.

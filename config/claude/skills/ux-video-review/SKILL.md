@@ -54,6 +54,19 @@ Postgres `review_replies` on CT 206 (every group message and Duda DM reply, sinc
 
 ## 1. Record (builder)
 
+**Time box: 10 minutes stuck = report, don't spin** (2026-10-21: builder 660 sat 30 min on a
+Metro red screen, the Simulator open, and nobody could tell whether it was done or broken). If
+the app won't come up or the flow can't move for 10 minutes (red screen, blank page, a step
+that keeps failing), stop: run `scripts/sim_session.sh end`, kill the dev server you started,
+and `report.sh blocked "video: <the error, one line>; tried <what>"` with a screenshot path.
+A recording that is still in progress after 20 minutes gets a `report.sh checkpoint` saying where it is.
+
+**In a worktree, before Metro/Expo:** run `~/.claude/skills/cmux-builder/scripts/real-node-modules.sh`.
+spawn.sh symlinks `node_modules` into the primary checkout, and Metro cannot see files outside
+the project, so every import fails with "Unable to resolve module" even though the package is
+installed. The script swaps the links for APFS clones (~1 min, almost no disk); then start
+Metro with `--clear`. Never symlink an app's `node_modules` by hand to save an install.
+
 1. Run the app the way its tests do (PWA: `npm run dev -w apps/duda-pwa` against a
    local or staging API), or use staging once the branch is deployed.
 2. `emulate` the page at `390x844x3,mobile,touch` (iPhone-sized), light mode, pt-BR.
