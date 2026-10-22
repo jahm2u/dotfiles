@@ -55,6 +55,22 @@ else
     log "Latest backup ${AGE_HOURS:-unknown}h old: gentle thin only"
 fi
 
+# CocoaPods keeps a fresh ~780 MB copy of React Native's prebuilt frameworks
+# (React-Core-prebuilt, hermes-engine, ReactNativeDependencies) under a new hash on every
+# `pod install`, and each mobile builder worktree runs one: 45 GB in four days by 2026-10-22.
+# Keep the newest few copies per pod, which covers any install in flight; pruned ones
+# re-download on demand. Runs before the thin so the freed blocks are released this hour.
+PODS_EXTERNAL="$HOME/Library/Caches/CocoaPods/Pods/External"
+PODS_KEEP=3
+if [[ -d "$PODS_EXTERNAL" ]]; then
+    for pod in "$PODS_EXTERNAL"/*/; do
+        old=$(ls -1td "$pod"*/ 2>/dev/null | tail -n +$((PODS_KEEP + 1)))
+        [[ -z "$old" ]] && continue
+        log "CocoaPods: pruning $(wc -l <<<"$old" | tr -d ' ') old copies of $(basename "$pod")"
+        while IFS= read -r dir; do /bin/rm -rf "$dir"; done <<<"$old"
+    done
+fi
+
 tmutil thinlocalsnapshots / "$PURGE_BYTES" 4 2>&1 | while read -r line; do
     log "$line"
 done
