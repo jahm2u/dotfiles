@@ -9,7 +9,7 @@ This skill turns one character reference image into a whole set of poses that st
 
 ## Keys and models
 
-- **OpenAI** `gpt-image-1`, key at `~/.config/openai/api-key`. This is the default for cutouts: it returns a real transparent background (`background=transparent`, RGBA PNG).
+- **OpenAI** `gpt-image-1.5` (override with `OPENAI_IMAGE_MODEL`; `gpt-image-1` was retired), key at `~/.config/openai/api-key`. This is the default for cutouts: it returns a real transparent background (`background=transparent`, RGBA PNG).
 - **Gemini** `gemini-2.5-flash-image`, key at `~/.config/gemini/api_key`. Gemini is good at keeping the character consistent from the reference, but it can't make transparent backgrounds. Use it for full scenes and for a second opinion on a pose.
 - Never print either key. The scripts read them from disk.
 

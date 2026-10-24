@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Edit/generate an image with OpenAI gpt-image-1 from a reference image, transparent background.
+"""Edit/generate an image with OpenAI gpt-image-1.5 from a reference image, transparent background.
 Usage: openai-img.py <ref.png> <out.png> "<prompt>" [quality: low|medium|high]
 Key: ~/.config/openai/api-key (never printed)."""
 import base64, json, pathlib, sys, urllib.request, uuid
@@ -7,7 +7,7 @@ import base64, json, pathlib, sys, urllib.request, uuid
 ref, out, prompt = sys.argv[1], sys.argv[2], sys.argv[3]
 quality = sys.argv[4] if len(sys.argv) > 4 else "medium"
 key = pathlib.Path.home().joinpath(".config/openai/api-key").read_text().strip()
-fields = {"model": "gpt-image-1", "prompt": prompt, "background": "transparent",
+fields = {"model": __import__("os").environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1.5"), "prompt": prompt, "background": "transparent",
           "output_format": "png", "size": "1024x1024", "quality": quality}
 b = uuid.uuid4().hex
 body = b""
