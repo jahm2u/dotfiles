@@ -248,6 +248,7 @@ GW_VARS=(ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_CUSTOM_HEADERS ANTHROPIC
          ANTHROPIC_DEFAULT_FABLE_MODEL CLAUDE_CODE_SUBAGENT_MODEL CG_ACTIVE CG_KEY_FILE CG_URL)
 GW_SRC=""
 if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then GW_SRC="this pane's exports"
+  if [ -z "${CG_URL:-}" ] && [[ "$ANTHROPIC_BASE_URL" =~ ^https?://[^/]+/?$ ]]; then CG_URL=${ANTHROPIC_BASE_URL%/}; fi
 elif GW_CG=$(command -v tpcg || command -v cg) && GW_OUT=$($GW_CG env); then eval "$GW_OUT"; GW_SRC="$GW_CG env"
   # Pin CG_URL to the URL cg just chose, so every cg the builder runs later (cg codex, and
   # codex-review.sh's review tab) routes to the SAME place. Without it, a builder moved to

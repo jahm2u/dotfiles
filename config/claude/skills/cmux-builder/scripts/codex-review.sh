@@ -110,11 +110,19 @@ REVIEW="$P.md" TRANSCRIPT="$P.log" DONE="$P.exit" RUNNER="$P.sh"
 # off): `cg codex` in the tab only routes when it sees that pair with ANTHROPIC_BASE_URL equal
 # to its CG_URL, so the runner gets the URLs below and ANTHROPIC_API_KEY through this file.
 KEYVAR=""
-CG_URL_EFF="${CG_URL:-$(tr -d '\r\n' < "$HOME/.config/claude-gateway/base" 2>/dev/null)}"
+CG_URL_EFF="${CG_URL:-}"
+if [ -z "$CG_URL_EFF" ] && [ -n "${ANTHROPIC_API_KEY:-}" ] && [[ "${ANTHROPIC_BASE_URL:-}" =~ ^https?://[^/]+/?$ ]]; then
+  CG_URL_EFF="${ANTHROPIC_BASE_URL%/}"
+fi
+CG_URL_EFF="${CG_URL_EFF:-$(tr -d '\r\n' < "$HOME/.config/claude-gateway/base" 2>/dev/null)}"
 if [ $CG_SHIM = 1 ]; then KEYVAR=CG_KEY
 elif [ -n "$CG_BIN" ] && [ "${CODEX[0]}" = "$CG_BIN" ] && [ -n "${ANTHROPIC_API_KEY:-}" ] \
      && [ -n "$CG_URL_EFF" ] && [ "${ANTHROPIC_BASE_URL:-}" = "$CG_URL_EFF" ]; then
   KEYVAR=ANTHROPIC_API_KEY; CG_URL=$CG_URL_EFF
+fi
+if [ -z "$KEYVAR" ] && [ -n "$CG_BIN" ] && [ -n "${ANTHROPIC_BASE_URL:-}" ] \
+   && ! jq -e '.env.ANTHROPIC_BASE_URL // empty' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
+  die "this shell is on a gateway ($ANTHROPIC_BASE_URL) but codex cannot follow it (CG_URL=${CG_URL_EFF:-unset}); plain codex would 401 against api.openai.com. Export CG_URL to the pool this shell uses (and CG_KEY_FILE to its key), then re-run. Never 'codex login'."
 fi
 if [ -n "$KEYVAR" ]; then
   KEYFILE="$P.key"
