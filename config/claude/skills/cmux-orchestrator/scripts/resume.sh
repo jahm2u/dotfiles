@@ -68,6 +68,8 @@ if [ "$MODE" = yolo ]; then FLAGS+=" --dangerously-skip-permissions"; else FLAGS
 FLAGS+=" --settings $SETTINGS"
 [ "${MCP:-none}" = none ] && FLAGS+=" --strict-mcp-config"
 for d in $ADD_DIRS; do FLAGS+=" --add-dir '$d'"; done
+AGENTS_PY="$HOME/.claude/skills/ux-video-review/scripts/agents_json.py"
+[ -f "$AGENTS_PY" ] && FLAGS+=" --agents \"\$(python3 '$AGENTS_PY')\""
 CLAUDE_CMD="claude --resume $SID $FLAGS"
 ENVF=$(mktemp "${TMPDIR:-/tmp}/bf-env-$SLUG.XXXXXX"); chmod 600 "$ENVF"
 {
