@@ -105,7 +105,7 @@ end
 
 -- Model used for translation. Recorded in the translation log so outputs stay
 -- attributable after a model change.
-local TRANSLATE_MODEL = "gpt-4.1-nano"
+local TRANSLATE_MODEL = "gpt-5.4-nano"
 
 -- Append every translation (both sides) as one JSON object per line, so the
 -- prompt rules can be tuned from real failures instead of guesses.

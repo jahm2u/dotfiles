@@ -269,7 +269,7 @@ TODOIST_API_TOKEN="your-todoist-api-token-here"
 - **Raw HTTP** (Lua `hs.http.asyncPost` / shell `curl`): add `"safety_identifier": "..."` to the JSON body.
 
 **Current call sites** (all set the identifier):
-- Translation: `config/hammerspoon/init.lua` (`translateText`, `gpt-4.1-nano`) → `dotfiles-translate`
+- Translation: `config/hammerspoon/init.lua` (`translateText`, `gpt-5.4-nano`) → `dotfiles-translate`
 - `config/sketchybar/helpers/analyze-meeting-history.py` → `dotfiles-meeting-prep`
 - `config/sketchybar/helpers/generate-meeting-note.py` → `dotfiles-meeting-prep`
 - `config/sketchybar/helpers/identify-participant-from-transcript.py` → `dotfiles-meeting-prep`
@@ -350,7 +350,7 @@ running with the current config. A replay of 10 cases costs well under a cent.
 Run a flaky case three times: nano is nondeterministic even at temperature 0.2,
 and a single green run proved nothing for the PT→EN passthrough bug.
 
-**Model:** `TRANSLATE_MODEL` in `init.lua` (currently `gpt-4.1-nano`). In the Sep 2026
+**Model:** `TRANSLATE_MODEL` in `init.lua` (currently `gpt-5.4-nano`). In the Sep 2026
 replay `gpt-4.1-mini` wrote slightly more natural Portuguese but kept translating
 mixed-language input in both directions, so nano stayed. Recorded in each
 log line so outputs stay attributable after a model change. If quality is still poor

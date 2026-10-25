@@ -26,9 +26,9 @@
                         "description": "End key to mouse button 5",
                         "manipulators": [
                             {
-                                "type": "basic",
                                 "from": { "key_code": "end" },
-                                "to": [{ "pointing_button": "button5" }]
+                                "to": [{ "pointing_button": "button5" }],
+                                "type": "basic"
                             }
                         ]
                     },
@@ -36,41 +36,52 @@
                         "description": "Kensington Expert Mouse - Left-hand button remap",
                         "manipulators": [
                             {
-                                "type": "basic",
+                                "conditions": [
+                                    {
+                                        "identifiers": [
+                                            {
+                                                "is_pointing_device": true,
+                                                "product_id": 32793,
+                                                "vendor_id": 1149
+                                            }
+                                        ],
+                                        "type": "device_if"
+                                    }
+                                ],
                                 "from": { "pointing_button": "button3" },
                                 "to": [{ "pointing_button": "button2" }],
-                                "conditions": [
-                                    {
-                                        "type": "device_if",
-                                        "identifiers": [
-                                            {
-                                                "vendor_id": 1149,
-                                                "product_id": 32793,
-                                                "is_pointing_device": true
-                                            }
-                                        ]
-                                    }
-                                ]
+                                "type": "basic"
                             },
                             {
-                                "type": "basic",
+                                "conditions": [
+                                    {
+                                        "identifiers": [
+                                            {
+                                                "is_pointing_device": true,
+                                                "product_id": 32793,
+                                                "vendor_id": 1149
+                                            }
+                                        ],
+                                        "type": "device_if"
+                                    }
+                                ],
                                 "from": { "pointing_button": "button4" },
                                 "to": [{ "pointing_button": "button1" }],
-                                "conditions": [
-                                    {
-                                        "type": "device_if",
-                                        "identifiers": [
-                                            {
-                                                "vendor_id": 1149,
-                                                "product_id": 32793,
-                                                "is_pointing_device": true
-                                            }
-                                        ]
-                                    }
-                                ]
+                                "type": "basic"
                             },
                             {
-                                "type": "basic",
+                                "conditions": [
+                                    {
+                                        "identifiers": [
+                                            {
+                                                "is_pointing_device": true,
+                                                "product_id": 32793,
+                                                "vendor_id": 1149
+                                            }
+                                        ],
+                                        "type": "device_if"
+                                    }
+                                ],
                                 "from": { "pointing_button": "button1" },
                                 "to": [
                                     {
@@ -78,35 +89,24 @@
                                         "modifiers": ["left_control", "left_option"]
                                     }
                                 ],
-                                "conditions": [
-                                    {
-                                        "type": "device_if",
-                                        "identifiers": [
-                                            {
-                                                "vendor_id": 1149,
-                                                "product_id": 32793,
-                                                "is_pointing_device": true
-                                            }
-                                        ]
-                                    }
-                                ]
+                                "type": "basic"
                             },
                             {
-                                "type": "basic",
-                                "from": { "pointing_button": "button2" },
-                                "to": [{ "key_code": "return_or_enter" }],
                                 "conditions": [
                                     {
-                                        "type": "device_if",
                                         "identifiers": [
                                             {
-                                                "vendor_id": 1149,
+                                                "is_pointing_device": true,
                                                 "product_id": 32793,
-                                                "is_pointing_device": true
+                                                "vendor_id": 1149
                                             }
-                                        ]
+                                        ],
+                                        "type": "device_if"
                                     }
-                                ]
+                                ],
+                                "from": { "pointing_button": "button2" },
+                                "to": [{ "key_code": "return_or_enter" }],
+                                "type": "basic"
                             }
                         ]
                     }
@@ -141,6 +141,22 @@
                             "to": [{ "key_code": "right_command" }]
                         }
                     ]
+                },
+                {
+                    "identifiers": {
+                        "is_keyboard": true,
+                        "product_id": 50475,
+                        "vendor_id": 1133
+                    },
+                    "ignore_vendor_events": true
+                },
+                {
+                    "identifiers": {
+                        "is_keyboard": true,
+                        "product_id": 50504,
+                        "vendor_id": 1133
+                    },
+                    "ignore_vendor_events": true
                 }
             ],
             "name": "Default profile",

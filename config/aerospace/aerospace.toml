@@ -186,3 +186,12 @@ automatically-unhide-macos-hidden-apps = false
 [[on-window-detected]]
 if.app-id = 'com.apple.finder'
 run = 'layout floating'
+
+# Chrome (chrome-devtools-mcp launches plain Google Chrome) starts floating; ctrl-alt-f tiles one in
+[[on-window-detected]]
+if.app-id = 'com.google.Chrome'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'com.google.chrome.for.testing'
+run = 'layout floating'

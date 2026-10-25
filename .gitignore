@@ -58,6 +58,8 @@ config/claude/.credentials.json
 config/claude/.mcp.json
 config/claude/cache/
 config/claude/paste-cache/
+config/claude/backups/
+config/claude/tasks/
 config/claude/plans/
 config/claude/plugins/
 config/claude/stats-cache.json
@@ -135,3 +137,19 @@ config/claude/settings.json.new.*
 
 # Installed by `npx skills` into ~/.agents, linked in locally; not part of this repo
 config/claude/skills/find-skills
+
+# More Claude runtime state (2026-10-25)
+config/claude/daemon.lock
+config/claude/daemon.log
+config/claude/daemon.status.json
+config/claude/daemon/
+config/claude/hook-state/
+config/claude/jobs/
+config/claude/state/
+config/claude/bin/
+config/claude/context-mode/
+config/claude/gh-pr-status-cache.json
+config/claude/settings.json.bak*
+config/claude/hooks/.rtk-hook.sha256
+config/claude/skills-removed-*/
+config/karabiner/automatic_backups/
