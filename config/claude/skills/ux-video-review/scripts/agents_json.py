@@ -14,8 +14,10 @@ AGENTS = Path(__file__).resolve().parent.parent / "agents"
 SERVERS = {
     # --isolated: a temp profile, deleted on exit; --headless: no window. Never --autoConnect,
     # which attaches to the user's own Chrome and asks them to allow it every time.
-    "evidence-chrome": {"type": "stdio", "command": "npx",
-                        "args": ["-y", "chrome-devtools-mcp@latest", "--isolated", "--headless"]},
+    "evidence-chrome": {"type": "stdio", "command": "sh",
+                        "args": ["-c", 'B="$HOME/.cache/evidence-chrome/node_modules/.bin/chrome-devtools-mcp"; '
+                                 '[ -x "$B" ] || npm i --silent --prefix "$HOME/.cache/evidence-chrome" '
+                                 'chrome-devtools-mcp@1.12.0 >/dev/null 2>&1; exec "$B" --isolated --headless']},
 }
 
 
