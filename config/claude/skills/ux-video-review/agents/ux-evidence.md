@@ -9,9 +9,24 @@ profile, deleted when you finish. Never attach to the user's own Chrome.
 
 The full method is `~/.claude/skills/ux-video-review/SKILL.md` §1 (Read it first). In short:
 
-1. Start from what the caller gave you: app URL, the flow, its error states, layout
-   (`phone` for anything an end user sees on a phone, `desktop` for admin/operator screens),
+1. Start from what the caller gave you: app URL, the flow, its error states, layout and
    output directory (default `~/Movies/<slug>-review/`).
+   **Hard rules** (Jeff, 2026-10-25: "show desktop for baba ui ... pan and zoom to highlight
+   things changing or draw focus ... too focused and jumpy today with no real context"):
+   - **Layout is decided by what is on screen, not by the caller.** BabaFlow admin/operator
+     pages, the draft preview page included, are desktop (`1440x900x1`). The phone frame only
+     shows what an end user receives on a phone: e-mails and landers. A flow that mixes both is
+     separate clips: a desktop clip for the admin part, phone clips for the e-mail/lander, all
+     composed by `compose_desktop_video.py` with one `--video` per clip, in order.
+   - **Open with context.** The first step is the full page with a label naming the page and
+     what is about to be shown, held at least 2.5 s, no focus.
+   - **Every change the PR makes gets a focus step.** Right before showing it, read the changed
+     element's box (`evaluate_script` with `el => { const r = el.getBoundingClientRect(); return
+     [r.x, r.y, r.width, r.height] }` and its uid from `take_snapshot`) and put it on the step:
+     `0:12 -> caption @ x,y,w,h`. The composer eases in to it, holds, and eases back out. At
+     `1440x900x1` CSS pixels are recording pixels; at another DPR multiply by it.
+   - **Pace:** about 2-3 s per step. Labels say what is happening and why it matters ("Suggested
+     panel now lists the offer's three best campaigns"), not just the click ("Click Suggested").
 2. `emulate` the viewport (`390x844x3,mobile,touch` for phone, `1440x900x1` for desktop),
    `screencast_start` to `./.ux-evidence-raw.mp4` (the tool only writes inside the current
    directory; `mv` it to the output directory the moment you stop, so it is never committed), walk the flow with real `click`/`fill`,
@@ -28,8 +43,10 @@ The full method is `~/.claude/skills/ux-video-review/SKILL.md` §1 (Read it firs
    **Shrink the raw** once the final is composed: device/Simulator captures run 10-120 MB.
    `ffmpeg -i raw.mp4 -c:v libx264 -crf 30 -preset slow -pix_fmt yuv420p -an raw.small.mp4`,
    then replace raw.mp4 with it (same size and length; still good enough to recompose).
-3. Write `steps.txt` (title + one timed step per screen or action; past 5 the list slides) and compose with
-   `compose_phone_video.py` or `compose_desktop_video.py`. ffprobe the final: 1920x1080, SAR 1:1.
+3. Write `steps.txt` (title + one timed step per screen or action, focus rectangles on the
+   change steps; past 5 the list slides) and compose with `compose_phone_video.py` (phone only)
+   or `compose_desktop_video.py` (desktop, or desktop and phone clips mixed). ffprobe the final:
+   1920x1080, SAR 1:1.
 4. Make the review sheets:
    `python3 ~/.claude/skills/ux-video-review/scripts/review_frames.py <final.mp4> --out <dir>/sheets-vN --layout <phone|desktop>`.
    Do not open the sheets yourself. Spawn the `frame-reviewer` agent with the sheet paths, the
