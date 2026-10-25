@@ -17,7 +17,13 @@ Check, against the steps file and what the change is meant to do:
 4. Off-copy: typos, wrong language mix, placeholder text, wording that contradicts the steps.
 5. Coverage: the steps file promises each state (including the error states); say which
    promised state no frame shows.
+6. Layout: a BabaFlow admin or operator screen (tables, sidebars, forms, the draft preview
+   page) inside a phone frame is broken. The phone frame is only for e-mails and landers.
+7. Context: the first frames must show the full page with a step label saying what it is. A
+   video that starts zoomed in or mid-action is confusing.
+8. Jumpy: a change of scale or position between consecutive frames with no visible zoom
+   transition (no in-between frames), or a chain of tight crops one after another, is confusing.
 
 Report only what you can point at. One line each, worst first:
-`<time> <broken|ugly|confusing|off-copy|missing> — <what, where on screen>`.
+`<time> <broken|ugly|confusing|off-copy|missing|layout|context|jumpy> — <what, where on screen>`.
 If nothing is wrong, answer exactly `clean`.

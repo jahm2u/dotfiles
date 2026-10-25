@@ -79,7 +79,15 @@ Metro with `--clear`. Never symlink an app's `node_modules` by hand to save an i
    input, a server refusal (e.g. e-mail in use), offline, whichever the flow has.
    **Show the whole viewport the whole time** (Jeff, 2026-10-18): no crops or cuts to one
    panel. To show a detail, zoom in smoothly from the full view, hold, and zoom back out to
-   the full view (animated, e.g. ffmpeg `zoompan`), never a hard cut to a zoomed crop.
+   the full view, never a hard cut to a zoomed crop. **Context first, then focus** (Jeff,
+   2026-10-25: "pan and zoom to highlight things changing ... too focused and jumpy today with
+   no real context"): the first step is the full page, labelled with what it is and what comes,
+   held 2.5 s or more; each change the PR makes then gets a focus step, its rectangle read from
+   the element's `getBoundingClientRect()` (`0:12 -> Painel de sugestões @ 820,140,560,380`, or
+   JSON `"focus": [x,y,w,h]`, raw-recording pixels). `compose_desktop_video.py` eases in over
+   0.8 s, holds, eases out over the step's last 0.8 s, pads the box to at least 40% of the frame,
+   keeps those spans through the still-cut, and adds 2.5 s of full view if step 1 is a focus.
+   About 2-3 s a step; labels say what happens and why it matters, not the click.
 4. `screencast_stop`. Keep it under ~90 s and 50 MB (re-encode with ffmpeg if not).
    Check the raw shape: `ffprobe -show_entries stream=width,height,sample_aspect_ratio`
    must give a phone ratio (~390x844) with SAR 1:1. A stretched or squashed recording (Jeff,
@@ -92,12 +100,16 @@ Metro with `--clear`. Never symlink an app's `node_modules` by hand to save an i
    but desktop for the babaflow ux"):
    - **Phone layout** only for what an end user sees on a phone: the AjudaDuda app/PWA, e-mails,
      landers. Composed as below.
-   - **Desktop UX (BabaFlow admin, any operator/admin screen):** record at desktop size
-     (`1440x900x1` or `1920x1080x1`, no `mobile`/`touch`), no phone frame, and compose it
+   - **Desktop UX (BabaFlow admin, any operator/admin screen, the draft preview page too):**
+     record at desktop size (`1440x900x1` or `1920x1080x1`, no `mobile`/`touch`), no phone frame, and compose it
      with a column of short explanatory points down the LEFT (current one highlighted, done ones
      checked), the desktop recording on the right (Jeff, 2026-10-19: "for babaflow admin we show
-     on desktop with some points on the left explaining things"). Same steps file as below;
-     keep the recording large enough to read.
+     on desktop with some points on the left explaining things"). Same steps file as below, plus
+     focus rectangles; keep the recording large enough to read. A BabaFlow screen in a phone
+     frame is wrong (Jeff, 2026-10-25: "should show desktop for baba ui").
+   - **Mixed flow** (admin, then the e-mail or lander it sends): separate clips, the admin one at
+     desktop size and the e-mail/lander ones at phone size, composed in order by
+     `compose_desktop_video.py --video admin.mp4 --video email.mp4 ...`.
    The phone composed layout: landscape 1920x1080,
    the walkthrough's steps on the left (current one highlighted, done ones checked), the raw
    recording in an iPhone frame on the right. Write a steps file with the time each step
