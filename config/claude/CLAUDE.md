@@ -7,7 +7,7 @@ single-goal change to a fresh Claude in its own git worktree and cmux workspace,
 control over cmux:
 
 - `/cmux-orchestrator` -- write a bmad-build plan (Intent + Boundaries only, from `plan-template.md`), `scripts/spawn.sh`
-  it (`--model 'opus[1m]'`, Opus 5 with the 1M window; `--permission-mode auto`; branch off `origin/main`, worktree at
+  it (`--model 'opus[1m]'`, Opus 5 with the 1M window; `--dangerously-skip-permissions` by default (Jeff 2026-10-25: "all builders should be launched with the yolo dangerous permissions thing"; `--mode auto` opts back); branch off `origin/main`, worktree at
   `.claude/worktrees/wt-<slug>`), then supervise: builder messages arrive in YOUR prompt as
   `[builder <slug>] <phase>: ...`; answer with `scripts/tell.sh <slug> "..."`, look with
   `scripts/peek.sh`, list with `scripts/ls.sh`. You decide when it merges.

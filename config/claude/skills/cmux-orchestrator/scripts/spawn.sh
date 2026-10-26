@@ -3,7 +3,7 @@
 #
 # Usage:
 #   spawn.sh --slug <kebab-slug> --spec <path-to-drafted-spec.md> [--issue <N>] \
-#            [--base origin/main] [--model opus[1m]] [--effort low|medium|high|xhigh|max] [--mode auto|acceptEdits|yolo] [--focus] [--spec-dir _bmad-output/implementation-artifacts] [--mcp none|full] [--place tab|workspace] [--group repo|mine|none]
+#            [--base origin/main] [--model opus[1m]] [--effort low|medium|high|xhigh|max] [--mode yolo|auto|acceptEdits] [--focus] [--spec-dir _bmad-output/implementation-artifacts] [--mcp none|full] [--place tab|workspace] [--group repo|mine|none]
 #            [--bmad-root <dir>] [--add-dir <dir>]...
 #
 # BMAD root: the nearest ancestor of the primary checkout (itself included) that carries the new
@@ -38,7 +38,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 . "$HERE/lib.sh"
 
-SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" EFFORT="" MODE="auto" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT="" ORCH_PEER="${BF_ORCH_PEER:-}"
+SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" EFFORT="" MODE="yolo" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT="" ORCH_PEER="${BF_ORCH_PEER:-}"
 ADD_DIRS=()
 while [ $# -gt 0 ]; do
   case "$1" in
