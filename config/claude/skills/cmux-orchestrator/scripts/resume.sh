@@ -27,7 +27,7 @@ get() { sed -n "s/^$1=//p" "$SRC_LEDGER" | head -1 | sed "s/^'//; s/'$//"; }
 BRANCH=$(get BF_BRANCH); WT=$(get BF_WORKTREE); SPEC=$(get BF_SPEC); ISSUE=$(get BF_ISSUE)
 MCP=$(get BF_MCP); MODEL=$(get BF_MODEL); MODE=$(get BF_MODE); BMAD_ROOT=$(get BF_BMAD_ROOT)
 ADD_DIRS=$(get BF_ADD_DIRS)
-: "${MODEL:=opus[1m]}" "${MODE:=auto}"
+: "${MODEL:=opus[1m]}" "${MODE:=yolo}"
 PEER=${ORCH_PEER:?set ORCH_PEER to the ListAgents name of this session}
 
 # 1. worktree at the same path

@@ -7,7 +7,7 @@ description: Delegate one scoped piece of work to a fresh Claude builder running
 
 You are the **orchestrator**: the long-lived session the human talks to. You never implement
 in a builder's worktree yourself. You write a small bmad-build spec, spawn a **builder**
-(a separate `claude` process in its own cmux workspace + git worktree, Opus, auto mode),
+(a separate `claude` process in its own cmux workspace + git worktree, Opus, `--dangerously-skip-permissions`),
 answer its questions, decide when it merges, and then run the **trash collector**.
 
 Three skills, one loop:
@@ -144,12 +144,12 @@ A slug that already leads with the issue number gives branch `fix/<slug>`; other
 is prefixed.
 
 Defaults: base `origin/main`, model `opus[1m]` (Opus 5 with the 1M window; bare `opus` is the
-standard window), permission mode `auto` (auto mode is only available on
-Opus-class models), a pre-approved allow-list (`~/.claude/skills/cmux-builder/builder-settings.json`:
+standard window), permission mode `yolo`, i.e. `--dangerously-skip-permissions` (Jeff, 2026-10-25:
+"all builders should be launched with the yolo dangerous permissions thing"; the auto-mode classifier
+had refused a builder's own ux-evidence launch as "[Auto-Mode Bypass]"; `--mode auto` opts back), a pre-approved allow-list (`~/.claude/skills/cmux-builder/builder-settings.json`:
 report.sh, git, gh, node/npm/npx, cmux, read-only shell; force-push, hard reset, ssh and `rm -rf`
 denied) so routine work never stops on a prompt in any mode, and **no MCP servers**
-(`--strict-mcp-config`). `--mode yolo` launches with `--dangerously-skip-permissions` for a trusted
-spec in its isolated worktree; `--mode acceptEdits` is what a Haiku builder gets. MCP tool descriptions are the builder's largest fixed cost: in
+(`--strict-mcp-config`). `--mode acceptEdits` is what a Haiku builder gets. MCP tool descriptions are the builder's largest fixed cost: in
 BabaFlow a Haiku builder started at 86% context and an Opus one auto-compacted before its second
 report with them loaded. Pass `--mcp full` only when the spec needs a project MCP or interactive
 browser checks, and say so in the spec. UX videos do not need it: every builder gets the
@@ -326,7 +326,7 @@ confirms the issue closed, and reports `merged` then `done`. Then run `/cmux-tra
 
 ### 6. When it goes wrong
 
-- Builder process died (workspace shows a shell prompt): the worktree and branch are intact. Either `cmux send --workspace <ws> "claude --model opus --permission-mode auto --continue"` (herdr: `herdr pane run <BF_BUILDER_SURFACE> "claude --model opus --permission-mode auto --continue"`) to resume the same session in place, or collect and respawn.
+- Builder process died (workspace shows a shell prompt): the worktree and branch are intact. Either `cmux send --workspace <ws> "claude --model opus --dangerously-skip-permissions --continue"` (herdr: `herdr pane run <BF_BUILDER_SURFACE> "claude --model opus --dangerously-skip-permissions --continue"`) to resume the same session in place, or collect and respawn.
 - Builder's worktree is gone (machine restart wiped it, or it was collected by mistake) but its branch is on origin and its transcript exists: `ORCH_PEER=<your ListAgents name> scripts/resume.sh <slug> [<session-id>]` recreates the worktree at the same path, restores the ledger from the archive pointed at you, and opens a 🔨 tab running `claude --resume` in the builder's own conversation (Orca; prints the command for cmux/herdr). Then SendMessage it what happened and its next step. `collect.sh --force` no longer deletes the remote branch of an unmerged PR, so this path stays open.
 - You want to stop it: `tell.sh <slug> stop` (it reports `failed` and idles), then collect.
 - Two builders needed the same file: that is a split that should have happened at step 1; let the first merge, then `tell.sh <second> "rebase onto origin/main"`.
