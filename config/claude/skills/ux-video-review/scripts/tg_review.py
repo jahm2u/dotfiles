@@ -4,6 +4,7 @@
     tg_review.py send VIDEO.mp4 --caption "text" [--tag o6b]   prints: SENT <message_id> <utc-iso>
     tg_review.py text "message" [--tag o6b]                    prints: SENT <message_id> <utc-iso>
     tg_review.py replies --since <utc-iso> [--wait SECS]       prints Jeff's DMs after that time, one per line
+    tg_review.py media <row id> [--out PATH]                   duda only: copies a reply's photo/video/file here
 
 Sends through Baba's bot to Jeff's DM (the same line `seatctl tg` uses), with
 sendVideo / sendMessage only, never getUpdates (that would steal the platform bot's
@@ -115,10 +116,16 @@ def normalize(video):
     non-square sample aspect ratio (Jeff, 2026-10-17: the #437 video was "weirdly stretched";
     the O7 v6 file had SAR 42200:29523)."""
     out = os.path.join(tempfile.gettempdir(), f"tgnorm-{uuid.uuid4().hex[:8]}.mp4")
+    # Screen recordings carry no sound, but voiceover previews do (2026-10-25: the
+    # unconditional -an sent Thais's VO preview to the group silent). Keep audio when present.
+    has_audio = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+                                "stream=index", "-of", "csv=p=0", video],
+                               capture_output=True, text=True).stdout.strip() != ""
+    audio = ["-c:a", "aac", "-b:a", "160k", "-ac", "2"] if has_audio else ["-an"]
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-ss", f"{blank_lead(video):.2f}", "-i", video,
                     "-vf", "scale=trunc(iw*sar/2)*2:trunc(ih/2)*2,setsar=1",
                     "-c:v", "libx264", "-crf", "26", "-pix_fmt", "yuv420p",
-                    "-movflags", "+faststart", "-an", out], check=True, timeout=600)
+                    *audio, "-movflags", "+faststart", out], check=True, timeout=600)
     dims = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
                            "-show_entries", "stream=width,height", "-of", "csv=p=0", out],
                           capture_output=True, text=True, check=True).stdout.strip().split(",")
@@ -215,7 +222,7 @@ def fetch_since_duda(since):
     Read-only, over ssh to CT 206 (duda-pg). The SQL travels base64 so no quoting can break it."""
     sql = ("SELECT coalesce(json_agg(r ORDER BY r.created_at), '[]') FROM ("
            "SELECT id, to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, "
-           "text AS message_text, tag, replied_to_message_id, media_kind FROM review_replies "
+           "text AS message_text, tag, replied_to_message_id, media_kind, sender_first_name FROM review_replies "
            f"WHERE received_at > {json.dumps(since).replace(chr(34), chr(39))}::timestamptz) r")
     b64 = base64.b64encode(sql.encode()).decode()
     remote = (f"pct exec 206 -- su postgres -s /bin/sh -c "
@@ -238,12 +245,41 @@ def cmd_replies(a):
         time.sleep(30)
     for r in rows:
         extra = f" (screenshot: {r['screenshot_url']})" if r.get("screenshot_url") else ""
+        who = ""
         if a.via == "duda":
-            extra += f" [tag {r.get('tag') or '-'}, reply to #{r.get('replied_to_message_id') or '-'}]"
-            if r.get("media_kind"): extra += f" ({r['media_kind']} attached)"
-        print(f"{r['created_at']} #{r['id']} {r['message_text']}{extra}")
+            who = f"{r.get('sender_first_name') or '?'}: "
+            extra += f" [row {r['id']}, tag {r.get('tag') or '-'}, reply to #{r.get('replied_to_message_id') or '-'}]"
+            if r.get("media_kind"): extra += f" ({r['media_kind']} attached: tg_review.py media {r['id']})"
+        print(f"{r['created_at']} #{r['id']} {who}{r['message_text']}{extra}")
     if not rows:
         print("NO-REPLY-YET")
+
+
+def cmd_media(a):
+    """A review reply's attachment, by `review_replies` row id. The Duda CLI on CT 205 downloads it
+    with the bot token there (`cli review-replies media`); only the file's bytes leave the box."""
+    rid = str(int(a.id))
+    tmp = f"/tmp/duda-media-{uuid.uuid4().hex[:8]}"
+    # Sourcing .env in sh executes unquoted values (and echoes them on failure); pct exec's PATH
+    # also lacks /usr/local/bin, where node lives. node --env-file parses .env without a shell.
+    run = (f"pct exec 205 -- sh -c 'cd /opt/duda && PATH=/usr/local/bin:$PATH "
+           f"node --env-file=.env --import tsx src/cli.ts review-replies media {rid} --out {tmp}'")
+    p = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "mox", run],
+                       capture_output=True, text=True, timeout=180)
+    try:
+        info = json.loads([l for l in p.stdout.splitlines() if l.startswith("{")][-1])
+    except Exception:
+        subprocess.run(["ssh", "-o", "BatchMode=yes", "mox", f"pct exec 205 -- rm -f {tmp}"], timeout=60)
+        sys.exit(f"duda media failed: {(p.stdout + p.stderr).strip()[-300:]}")
+    try:
+        got = subprocess.run(["ssh", "-o", "BatchMode=yes", "mox", f"pct exec 205 -- cat {tmp}"],
+                             capture_output=True, check=True, timeout=600).stdout
+    finally:
+        subprocess.run(["ssh", "-o", "BatchMode=yes", "mox", f"pct exec 205 -- rm -f {tmp}"], timeout=60)
+    out = a.out or f"/tmp/duda-reply-{rid}.{info.get('ext') or 'bin'}"
+    with open(out, "wb") as f:
+        f.write(got)
+    print(f"MEDIA {rid} {info.get('mediaKind') or '-'} {len(got)} bytes -> {out}")
 
 
 def main():
@@ -261,12 +297,14 @@ def main():
     r.add_argument("--via", choices=["duda", "baba"], default=None,
                    help="duda = Jeff's replies in the ajudaduda dev group (prod PG review_replies); baba = BabaFlow's "
                         "message_cache. Default: picked from the current repo, like send.")
+    m = sub.add_parser("media", help="duda only: copy a reply's attachment (row id from `replies`) to a local file")
+    m.add_argument("id", type=int); m.add_argument("--out", help="local path (default /tmp/duda-reply-<id>.<ext>)")
     a = ap.parse_args()
     if getattr(a, "via", "") is None:
         top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
         a.via = "duda" if re.search(r"ajuda|duda", os.path.basename(top), re.I) else "baba"
         print(f"via {a.via} (repo {os.path.basename(top) or '?'})", file=sys.stderr)
-    {"send": cmd_send, "text": cmd_text, "replies": cmd_replies}[a.cmd](a)
+    {"send": cmd_send, "text": cmd_text, "replies": cmd_replies, "media": cmd_media}[a.cmd](a)
 
 
 if __name__ == "__main__":
