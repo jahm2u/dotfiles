@@ -76,6 +76,16 @@ the `mascot-art` skill, which wraps both keys. For other images use the `openai-
 file is missing, ask Jeff to copy the key and run
 `! pbpaste > ~/.config/openai/api-key && chmod 600 ~/.config/openai/api-key`.
 
+# Video and motion skills (third-party, in `~/.claude/skills`)
+
+To make a promo, ad, reel, explainer or any video from code, start with `motion-graphics` (HTML
+scenes rendered in headless Chrome, with an original score) or the `remotion-*` family
+(`remotion-best-practices` routes to the rest: create, captions, render, studio, maps...). For
+animation inside a web app use `animation-design` (LottieFiles / Rive search and embed) and
+`motion-design` (timing, easing, choreography). They were copied from upstream GitHub repos; the
+source commit of each is in `~/.claude/skills/.third-party-motion-skills.txt`. To update one,
+re-copy it from upstream rather than editing it in place.
+
 # Commit messages in meupatrocinio code repos
 
 In any `meupatrocinio` org code repo (services-monorepo etc.): commit messages are a single line, max 100 characters, no body, no trailers (no Co-Authored-By). PRs are squash-merged, so the squash message must also be one line. Inline code comments only when the why is truly non-obvious — the team strips explanatory comments in review.
