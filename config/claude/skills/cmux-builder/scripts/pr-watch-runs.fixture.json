@@ -86,6 +86,13 @@
         { "id": 40602278265, "status": "completed", "conclusion": "failure", "run_attempt": 1 }
       ],
       "expect": "CI_FAILED"
+    },
+    {
+      "name": "the CI run ended startup_failure with no jobs and no other check on the head",
+      "withoutBase": true,
+      "jobs": null,
+      "ciRuns": [{ "id": 40602278265, "status": "completed", "conclusion": "startup_failure", "run_attempt": 1 }],
+      "expect": "CI_FAILED"
     }
   ],
   "ciRun": { "workflow_id": 105, "event": "pull_request", "name": "CI/CD Pipeline" }

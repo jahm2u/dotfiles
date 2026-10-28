@@ -6,7 +6,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 FIXTURE="$HERE/pr-watch-runs.fixture.json"
 WATCH="${PR_WATCH_SH:-$HERE/pr-watch.sh}"
-FIXTURE_SHA256=38d1cf4a8890c2a289653d564e3cb788b076e608e80f04b249f49d71d1ab96da
+FIXTURE_SHA256=872e116c3e9436f7472a752ac3f1f4d05baee7451871f09583abc842544bad32
 
 got_sha=$(shasum -a 256 "$FIXTURE" | cut -d' ' -f1)
 if [ "$got_sha" != "$FIXTURE_SHA256" ]; then
@@ -38,8 +38,9 @@ def bucket(c):
     return "fail"
 for i, c in enumerate(fx["cases"]):
     d = os.path.join(out, f"case{i}"); os.makedirs(d)
-    rollup = fx["base"]["rollup"] + (fx["ciJobs"][c["jobs"]] if c["jobs"] else [])
-    runs = fx["base"]["runs"] + [{**fx["ciRun"], **r} for r in c["ciRuns"]]
+    base = {"rollup": [], "runs": []} if c.get("withoutBase") else fx["base"]
+    rollup = base["rollup"] + (fx["ciJobs"][c["jobs"]] if c["jobs"] else [])
+    runs = base["runs"] + [{**fx["ciRun"], **r} for r in c["ciRuns"]]
     json.dump({"headRefOid": fx["head"], "author": {"login": "jeff"}, "mergeable": "MERGEABLE",
                "state": "OPEN", "reviews": [], "statusCheckRollup": rollup}, open(f"{d}/pr.json", "w"))
     json.dump([{"name": r["name"], "bucket": bucket(r)} for r in rollup], open(f"{d}/checks.json", "w"))
