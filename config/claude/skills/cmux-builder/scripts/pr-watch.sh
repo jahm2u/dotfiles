@@ -5,7 +5,11 @@
 # scripts/pr-watch.js, which imports BabaFlow's reviewer service; use that one there).
 #
 # A PR is CONVERGED for its CURRENT head when all three hold:
-#   1. every check on the head is green (pass or skipping; none pending, none failing)
+#   1. every check on the head is green (pass or skipping; none pending, none failing), and
+#      the latest run of each workflow (per workflow and event) for the head sha has finished:
+#      a run queued with no jobs yet is pending, a finished one with no jobs that did not
+#      succeed is failing, a finished one with jobs is decided by its jobs (jahm2u/BabaFlow#4746).
+#      "Performance budget" is advisory, as in BabaFlow's pr-watch.js; both share one fixture.
 #   2. the newest review from the reviewer bot is ON the head commit and reports
 #      critical=0 and high=0 (the fleet panel's "critical=N high=N medium=N low=N" line)
 #   3. GitHub does not report the PR as CONFLICTING
@@ -29,10 +33,13 @@ while [ $# -gt 0 ]; do case "$1" in
 esac; done
 
 check_once() {
-  local pr checks
+  local pr checks head runs
   pr=$(gh pr view "$N" --json headRefOid,author,mergeable,state,reviews,statusCheckRollup)
   checks=$(gh pr checks "$N" --json name,bucket 2>/dev/null || echo '[]')
-  PR_JSON=$pr CHECKS_JSON=$checks REVIEWER=$REVIEWER NO_REVIEW=${NO_REVIEW:-${PR_WATCH_NO_REVIEW:-}} python3 - <<'PY'
+  head=$(PR_JSON=$pr python3 -c 'import json, os; print(json.loads(os.environ["PR_JSON"])["headRefOid"])')
+  runs=$(gh api "repos/{owner}/{repo}/actions/runs?head_sha=$head&per_page=100") \
+    || { echo "WAITING could not read the workflow runs for $head"; return 2; }
+  PR_JSON=$pr CHECKS_JSON=$checks RUNS_JSON=$runs REVIEWER=$REVIEWER NO_REVIEW=${NO_REVIEW:-${PR_WATCH_NO_REVIEW:-}} python3 - <<'PY'
 import json, os, re, sys
 pr = json.loads(os.environ["PR_JSON"]); checks = json.loads(os.environ["CHECKS_JSON"] or "[]")
 head = pr["headRefOid"]; author = (pr.get("author") or {}).get("login", "")
@@ -49,9 +56,34 @@ for r in pr.get("statusCheckRollup") or []:
     unfinished = (r.get("__typename") == "StatusContext" and r.get("state") in ("PENDING", "EXPECTED")) or \
                  (r.get("__typename") != "StatusContext" and r.get("status") != "COMPLETED")
     if unfinished and name not in pending: pending.append(name)
-failing = [c["name"] for c in checks if c.get("bucket") in ("fail", "cancel")]
-print(f"  checks: {len(checks)} total, {len(pending)} pending, {len(failing)} failing")
+ADVISORY = {"Performance budget"}
+advisory = [c["name"] for c in checks if c.get("bucket") in ("fail", "cancel") and c["name"] in ADVISORY]
+failing = [c["name"] for c in checks if c.get("bucket") in ("fail", "cancel") and c["name"] not in ADVISORY]
+
+runs_doc = json.loads(os.environ["RUNS_JSON"] or "{}")
+all_runs = runs_doc.get("workflow_runs")
+if not isinstance(all_runs, list):
+    print("WAITING workflow_runs missing from the actions/runs response"); sys.exit(2)
+if int(runs_doc.get("total_count") or 0) > len(all_runs):
+    print(f"WAITING {runs_doc.get('total_count')} workflow runs on the head, only {len(all_runs)} read: refusing a partial list"); sys.exit(2)
+latest = {}
+for r in all_runs:
+    k = (r.get("workflow_id"), r.get("event"))
+    if k not in latest or int(r.get("id") or 0) > int(latest[k].get("id") or 0): latest[k] = r
+with_jobs = set()
+for r in pr.get("statusCheckRollup") or []:
+    m = re.search(r"/actions/runs/(\d+)(?:/|$)", r.get("detailsUrl") or "")
+    if m: with_jobs.add(m.group(1))
+for r in latest.values():
+    name = f"{r.get('name')} (run)"
+    if (r.get("status") or "").lower() != "completed":
+        if name not in pending: pending.append(name)
+    elif str(r.get("id")) not in with_jobs and (r.get("conclusion") or "").lower() not in ("success", "neutral", "skipped"):
+        failing.append(name)
+
+print(f"  checks: {len(checks)} total, {len(pending)} pending, {len(failing)} failing; runs: {len(latest)} latest")
 for n in failing: print(f"    failing: {n}")
+for n in advisory: print(f"    advisory failing (does not block): {n}")
 
 def is_reviewer(login):
     l = (login or "").lower()

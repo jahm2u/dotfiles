@@ -1,0 +1,92 @@
+{
+  "source": "jahm2u/BabaFlow#4746: head 6452ec19f of https://github.com/jahm2u/BabaFlow/pull/4743, runs and rollup read with gh api on 2026-10-28. Identical copies live in jahm2u/BabaFlow scripts/ and jahm2u/dotfiles config/claude/skills/cmux-builder/scripts/; both tests pin its sha256.",
+  "head": "6452ec19f784111acc63b7ece2064bff2e1b6be1",
+  "base": {
+    "rollup": [
+      { "__typename": "CheckRun", "name": "guard-files", "workflowName": "Guard files", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602276178/job/1" },
+      { "__typename": "CheckRun", "name": "guard-baselines", "workflowName": "Guard files", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602276178/job/2" },
+      { "__typename": "CheckRun", "name": "invariants-guard", "workflowName": "Invariants guard", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602275958/job/3" },
+      { "__typename": "CheckRun", "name": "demo-required", "workflowName": "Demo required", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602279292/job/4" },
+      { "__typename": "CheckRun", "name": "release-notes-length", "workflowName": "Release notes length", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602279293/job/5" }
+    ],
+    "runs": [
+      { "id": 40602276178, "workflow_id": 101, "event": "pull_request_target", "name": "Guard files", "status": "completed", "conclusion": "success", "run_attempt": 1 },
+      { "id": 40602275958, "workflow_id": 102, "event": "pull_request_target", "name": "Invariants guard", "status": "completed", "conclusion": "success", "run_attempt": 1 },
+      { "id": 40602275960, "workflow_id": 103, "event": "pull_request_target", "name": "Demo required", "status": "completed", "conclusion": "cancelled", "run_attempt": 1 },
+      { "id": 40602279292, "workflow_id": 103, "event": "pull_request_target", "name": "Demo required", "status": "completed", "conclusion": "success", "run_attempt": 1 },
+      { "id": 40602278415, "workflow_id": 104, "event": "pull_request", "name": "Release notes length", "status": "completed", "conclusion": "cancelled", "run_attempt": 1 },
+      { "id": 40602279293, "workflow_id": 104, "event": "pull_request", "name": "Release notes length", "status": "completed", "conclusion": "success", "run_attempt": 1 }
+    ]
+  },
+  "ciJobs": {
+    "green": [
+      { "__typename": "CheckRun", "name": "Test, Release & Build", "workflowName": "CI/CD Pipeline", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602278265/job/11" },
+      { "__typename": "CheckRun", "name": "Performance budget", "workflowName": "CI/CD Pipeline", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602278265/job/12" },
+      { "__typename": "CheckRun", "name": "Deploy", "workflowName": "CI/CD Pipeline", "status": "COMPLETED", "conclusion": "SKIPPED", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602278265/job/13" }
+    ],
+    "perfRed": [
+      { "__typename": "CheckRun", "name": "Test, Release & Build", "workflowName": "CI/CD Pipeline", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602278265/job/11" },
+      { "__typename": "CheckRun", "name": "Performance budget", "workflowName": "CI/CD Pipeline", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602278265/job/12" }
+    ],
+    "testRed": [
+      { "__typename": "CheckRun", "name": "Test, Release & Build", "workflowName": "CI/CD Pipeline", "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602278265/job/11" }
+    ],
+    "olderRunGreen": [
+      { "__typename": "CheckRun", "name": "Test, Release & Build", "workflowName": "CI/CD Pipeline", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/jahm2u/BabaFlow/actions/runs/40602200000/job/21" }
+    ]
+  },
+  "cases": [
+    {
+      "name": "the #4746 state: 5 green guard checks, CI/CD Pipeline queued with no jobs yet",
+      "jobs": null,
+      "ciRuns": [{ "id": 40602278265, "status": "queued", "conclusion": null, "run_attempt": 1 }],
+      "expect": "WAITING"
+    },
+    {
+      "name": "every run completed green, superseded cancelled duplicates present",
+      "jobs": "green",
+      "ciRuns": [{ "id": 40602278265, "status": "completed", "conclusion": "success", "run_attempt": 1 }],
+      "expect": "CONVERGED"
+    },
+    {
+      "name": "a rerun attempt of the CI run in progress over attempt 1's green jobs",
+      "jobs": "green",
+      "ciRuns": [{ "id": 40602278265, "status": "in_progress", "conclusion": null, "run_attempt": 2 }],
+      "expect": "WAITING"
+    },
+    {
+      "name": "the CI run ended startup_failure with no jobs",
+      "jobs": null,
+      "ciRuns": [{ "id": 40602278265, "status": "completed", "conclusion": "startup_failure", "run_attempt": 1 }],
+      "expect": "CI_FAILED"
+    },
+    {
+      "name": "the CI run was cancelled before any job registered",
+      "jobs": null,
+      "ciRuns": [{ "id": 40602278265, "status": "completed", "conclusion": "cancelled", "run_attempt": 1 }],
+      "expect": "CI_FAILED"
+    },
+    {
+      "name": "the CI run failed only on the advisory Performance budget job",
+      "jobs": "perfRed",
+      "ciRuns": [{ "id": 40602278265, "status": "completed", "conclusion": "failure", "run_attempt": 1 }],
+      "expect": "CONVERGED"
+    },
+    {
+      "name": "the CI run failed on Test, Release & Build",
+      "jobs": "testRed",
+      "ciRuns": [{ "id": 40602278265, "status": "completed", "conclusion": "failure", "run_attempt": 1 }],
+      "expect": "CI_FAILED"
+    },
+    {
+      "name": "the latest CI run failed with no jobs; an older run of the same workflow and event has green jobs",
+      "jobs": "olderRunGreen",
+      "ciRuns": [
+        { "id": 40602200000, "status": "completed", "conclusion": "success", "run_attempt": 1 },
+        { "id": 40602278265, "status": "completed", "conclusion": "failure", "run_attempt": 1 }
+      ],
+      "expect": "CI_FAILED"
+    }
+  ],
+  "ciRun": { "workflow_id": 105, "event": "pull_request", "name": "CI/CD Pipeline" }
+}
