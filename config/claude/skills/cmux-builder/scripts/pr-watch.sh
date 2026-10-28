@@ -105,6 +105,8 @@ else:
 if failing: print("NOT-CONVERGED failing checks: " + ", ".join(failing)); sys.exit(1)
 if pr.get("mergeable") == "CONFLICTING": print("NOT-CONVERGED merge conflict with the base: merge origin/main"); sys.exit(1)
 if pending: print("WAITING checks pending: " + ", ".join(pending)); sys.exit(2)
+# Zero checks right after a push means none has registered yet, not that all passed (#877, 2026-10-27).
+if not checks and not (pr.get("statusCheckRollup") or []): print("WAITING no checks registered on the head yet"); sys.exit(2)
 if os.environ.get("NO_REVIEW"): print("CONVERGED (review bot skipped: --no-review)"); sys.exit(0)
 if not latest or on != head: print("WAITING no review on the current head yet"); sys.exit(2)
 if counts is None: print("NOT-CONVERGED review on head has no severity line: read it and decide"); sys.exit(1)

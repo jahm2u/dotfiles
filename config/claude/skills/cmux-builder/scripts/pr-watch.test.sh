@@ -67,5 +67,16 @@ for ((i = 0; i < count; i++)); do
     fail=$((fail + 1)); echo "FAIL $(cat "$d/name") -> want $expect, got rc=$rc: $last"
   fi
 done
+d="$TMP/no-checks"; mkdir -p "$d"
+printf '%s' '{"headRefOid":"abc","author":{"login":"jeff"},"mergeable":"MERGEABLE","state":"OPEN","reviews":[],"statusCheckRollup":[]}' > "$d/pr.json"
+printf '[]' > "$d/checks.json"; printf '{"total_count":0,"workflow_runs":[]}' > "$d/runs.json"
+set +e; out=$(CASE_DIR=$d PATH="$TMP/bin:$PATH" bash "$WATCH" 4743 --no-review 2>&1); rc=$?; set -e
+last=$(printf '%s\n' "$out" | tail -1); count=$((count + 1))
+if [ "$rc" -eq 2 ] && [ "$last" = "WAITING no checks registered on the head yet" ]; then
+  pass=$((pass + 1)); echo "ok   no check and no run registered on the head (#877) -> WAITING"
+else
+  fail=$((fail + 1)); echo "FAIL no check and no run registered on the head (#877) -> want WAITING, got rc=$rc: $last"
+fi
+
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]
