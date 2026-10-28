@@ -20,7 +20,7 @@ cat > "$TMP/bin/gh" <<'GH'
 case "$1 $2" in
   "pr view") cat "$CASE_DIR/pr.json";;
   "pr checks") cat "$CASE_DIR/checks.json";;
-  api*) case "$2" in "repos/{owner}/{repo}/actions/runs?head_sha="*) cat "$CASE_DIR/runs.json";; *) echo "stub gh: unexpected $*" >&2; exit 9;; esac;;
+  api*) case "$2 $3" in "repos/{owner}/{repo}/actions/runs?head_sha="*" --jq") cat "$CASE_DIR/runs.json";; *) echo "stub gh: unexpected $*" >&2; exit 9;; esac;;
   *) echo "stub gh: unexpected $*" >&2; exit 9;;
 esac
 GH

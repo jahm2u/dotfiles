@@ -37,7 +37,8 @@ check_once() {
   pr=$(gh pr view "$N" --json headRefOid,author,mergeable,state,reviews,statusCheckRollup)
   checks=$(gh pr checks "$N" --json name,bucket 2>/dev/null || echo '[]')
   head=$(PR_JSON=$pr python3 -c 'import json, os; print(json.loads(os.environ["PR_JSON"])["headRefOid"])')
-  runs=$(gh api "repos/{owner}/{repo}/actions/runs?head_sha=$head&per_page=100") \
+  runs=$(gh api "repos/{owner}/{repo}/actions/runs?head_sha=$head&per_page=100" \
+    --jq '{total_count, workflow_runs: [.workflow_runs[] | {id, workflow_id, event, name, status, conclusion, run_attempt}]}') \
     || { echo "WAITING could not read the workflow runs for $head"; return 2; }
   PR_JSON=$pr CHECKS_JSON=$checks RUNS_JSON=$runs REVIEWER=$REVIEWER NO_REVIEW=${NO_REVIEW:-${PR_WATCH_NO_REVIEW:-}} python3 - <<'PY'
 import json, os, re, sys
