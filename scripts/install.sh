@@ -2173,6 +2173,17 @@ install_tm_cleanup_launchagent() {
         warn "Failed to load LaunchAgent (non-blocking)"
         return 0
     fi
+
+    # Daily cleanup of regenerable caches and finished work; deletes what the thinning above unpins.
+    local ac_label="com.user.mac-autoclean"
+    local ac_target="$HOME/Library/LaunchAgents/$ac_label.plist"
+    launchctl bootout "gui/$(id -u)/$ac_label" 2>/dev/null || true
+    sed "s|HOME_DIR|$HOME|g" "$DOTFILES_DIR/config/sketchybar/launchagents/$ac_label.plist" > "$ac_target"
+    if plutil -lint "$ac_target" &>/dev/null && launchctl bootstrap "gui/$(id -u)" "$ac_target" 2>/dev/null; then
+        log "✓ $ac_label loaded (daily 04:15)"
+    else
+        warn "Failed to load $ac_label (non-blocking)"
+    fi
 }
 
 setup_core_env_variables() {
