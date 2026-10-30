@@ -127,6 +127,11 @@ git -C "$ROOT" worktree add -q "$WT" -b "$BRANCH" --no-track "$BASE"
 echo "==> node_modules symlinks"
 [ -d "$ROOT/node_modules" ] && ln -s "$ROOT/node_modules" "$WT/node_modules"
 [ -d "$ROOT/admin-app/node_modules" ] && ln -s "$ROOT/admin-app/node_modules" "$WT/admin-app/node_modules"
+# ajudaduda's caio-web API keeps its own node_modules (@nestjs/testing lives only there);
+# without the link, three builders on 2026-10-29/30 saw its suites cancel or fail locally.
+# Not apps/duda-mobile: Metro and EAS break on a symlinked node_modules, so builders clone it.
+[ -d "$ROOT/apps/caio-web/api/node_modules" ] && [ -d "$WT/apps/caio-web/api" ] \
+  && ln -s "$ROOT/apps/caio-web/api/node_modules" "$WT/apps/caio-web/api/node_modules"
 
 # Claude Code's file-based memory lives at ~/.claude/projects/<cwd-slug>/memory/, keyed by the
 # CWD, with no git awareness and no fallback to the parent repo. A worktree is a different cwd,
