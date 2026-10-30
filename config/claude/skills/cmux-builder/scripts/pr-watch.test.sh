@@ -51,6 +51,8 @@ PY
 )
 if [ "$count" -eq 0 ]; then echo "FAIL fixture has no cases"; exit 1; fi
 
+# The fixture cases judge CI state only: switch the local-head comparison off for them.
+export PR_WATCH_LOCAL_HEAD= PR_WATCH_LOCAL_BRANCH=
 pass=0 fail=0
 for ((i = 0; i < count; i++)); do
   d="$TMP/case$i"; expect=$(cat "$d/expect")
@@ -76,6 +78,36 @@ if [ "$rc" -eq 2 ] && [ "$last" = "WAITING no checks registered on the head yet"
   pass=$((pass + 1)); echo "ok   no check and no run registered on the head (#877) -> WAITING"
 else
   fail=$((fail + 1)); echo "FAIL no check and no run registered on the head (#877) -> want WAITING, got rc=$rc: $last"
+fi
+
+# A green, finished stale head while the pushed head is local (#966, 2026-10-30) -> WAITING.
+d="$TMP/stale-head"; mkdir -p "$d"
+printf '%s' '{"headRefOid":"aaaa1111","headRefName":"fix/x","author":{"login":"jeff"},"mergeable":"MERGEABLE","state":"OPEN","reviews":[],"statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"SUCCESS"}]}' > "$d/pr.json"
+printf '%s' '[{"name":"test","bucket":"pass"}]' > "$d/checks.json"; printf '{"total_count":0,"workflow_runs":[]}' > "$d/runs.json"
+set +e; out=$(CASE_DIR=$d PR_WATCH_LOCAL_HEAD=bbbb2222 PR_WATCH_LOCAL_BRANCH=fix/x PATH="$TMP/bin:$PATH" bash "$WATCH" 966 --no-review 2>&1); rc=$?; set -e
+last=$(printf '%s\n' "$out" | tail -1); count=$((count + 1))
+if [ "$rc" -eq 2 ] && printf '%s' "$last" | grep -q '^WAITING PR head aaaa1111 is not the local HEAD bbbb2222'; then
+  pass=$((pass + 1)); echo "ok   PR head lags the local pushed head (#966) -> WAITING"
+else
+  fail=$((fail + 1)); echo "FAIL PR head lags the local pushed head (#966) -> want WAITING, got rc=$rc: $last"
+fi
+# Same state from another branch's checkout: no comparison, so the finished checks converge.
+set +e; out=$(CASE_DIR=$d PR_WATCH_LOCAL_HEAD=bbbb2222 PR_WATCH_LOCAL_BRANCH=main PATH="$TMP/bin:$PATH" bash "$WATCH" 966 --no-review 2>&1); rc=$?; set -e
+last=$(printf '%s\n' "$out" | tail -1); count=$((count + 1))
+if [ "$rc" -eq 0 ] && printf '%s' "$last" | grep -q '^CONVERGED'; then
+  pass=$((pass + 1)); echo "ok   other branch's checkout does not compare heads -> CONVERGED"
+else
+  fail=$((fail + 1)); echo "FAIL other branch's checkout -> want CONVERGED, got rc=$rc: $last"
+fi
+# gh pr checks empty while the rollup has finished entries: a lagging read, never a pass.
+d="$TMP/empty-checks"; mkdir -p "$d"
+cp "$TMP/stale-head/pr.json" "$d/pr.json"; printf '[]' > "$d/checks.json"; printf '{"total_count":0,"workflow_runs":[]}' > "$d/runs.json"
+set +e; out=$(CASE_DIR=$d PATH="$TMP/bin:$PATH" bash "$WATCH" 966 --no-review 2>&1); rc=$?; set -e
+last=$(printf '%s\n' "$out" | tail -1); count=$((count + 1))
+if [ "$rc" -eq 2 ] && [ "$last" = "WAITING gh pr checks lists no checks for the head yet" ]; then
+  pass=$((pass + 1)); echo "ok   gh pr checks empty, rollup finished -> WAITING"
+else
+  fail=$((fail + 1)); echo "FAIL gh pr checks empty, rollup finished -> want WAITING, got rc=$rc: $last"
 fi
 
 echo "$pass passed, $fail failed, $count cases"
