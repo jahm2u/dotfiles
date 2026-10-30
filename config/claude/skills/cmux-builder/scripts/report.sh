@@ -40,10 +40,18 @@ case "$PHASE" in
   *) COLOR="#7fbbb3"; LEVEL=progress;;
 esac
 
-# PR number is worth keeping in the ledger for the collector.
-if [ -z "${BF_PR:-}" ] && [[ "$MSG" =~ (PR|pr|pull)[[:space:]]*#?([0-9]{1,6}) ]]; then
-  bf_set "$BF_SLUG" BF_PR "${BASH_REMATCH[2]}"
-fi
+# PR number is worth keeping in the ledger for the collector. Take it from the
+# builder's own branch, never from the message text: a checkpoint that mentions
+# another PR ("PR 961 still OPEN") used to pin the wrong number (2026-10-29,
+# builders 951 and 962), and collect.sh then judged the wrong PR.
+case "$PHASE" in
+  pr-open|converged|merged|done)
+    if [ -n "${BF_BRANCH:-}" ]; then
+      n=$(cd "${BF_WORKTREE:-.}" 2>/dev/null && gh pr list --head "$BF_BRANCH" --state all \
+            --json number --jq '.[0].number // empty' 2>/dev/null || true)
+      [ -n "$n" ] && [ "$n" != "${BF_PR:-}" ] && bf_set "$BF_SLUG" BF_PR "$n"
+    fi;;
+esac
 bf_set "$BF_SLUG" BF_STATUS "$PHASE"
 bf_logline "$BF_SLUG" "$PHASE" "$MSG"
 
