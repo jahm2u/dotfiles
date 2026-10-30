@@ -34,13 +34,16 @@ esac; done
 
 check_once() {
   local pr checks head runs
-  pr=$(gh pr view "$N" --json headRefOid,author,mergeable,state,reviews,statusCheckRollup)
+  pr=$(gh pr view "$N" --json headRefOid,headRefName,author,mergeable,state,reviews,statusCheckRollup)
   checks=$(gh pr checks "$N" --json name,bucket 2>/dev/null || echo '[]')
   head=$(PR_JSON=$pr python3 -c 'import json, os; print(json.loads(os.environ["PR_JSON"])["headRefOid"])')
   runs=$(gh api "repos/{owner}/{repo}/actions/runs?head_sha=$head&per_page=100" \
     --jq '{total_count, workflow_runs: [.workflow_runs[] | {id, workflow_id, event, name, status, conclusion, run_attempt}]}') \
     || { echo "WAITING could not read the workflow runs for $head"; return 2; }
-  PR_JSON=$pr CHECKS_JSON=$checks RUNS_JSON=$runs REVIEWER=$REVIEWER NO_REVIEW=${NO_REVIEW:-${PR_WATCH_NO_REVIEW:-}} python3 - <<'PY'
+  local lhead lbranch
+  lhead=${PR_WATCH_LOCAL_HEAD-$(git rev-parse HEAD 2>/dev/null || true)}
+  lbranch=${PR_WATCH_LOCAL_BRANCH-$(git branch --show-current 2>/dev/null || true)}
+  LOCAL_HEAD=$lhead LOCAL_BRANCH=$lbranch PR_JSON=$pr CHECKS_JSON=$checks RUNS_JSON=$runs REVIEWER=$REVIEWER NO_REVIEW=${NO_REVIEW:-${PR_WATCH_NO_REVIEW:-}} python3 - <<'PY'
 import json, os, re, sys
 pr = json.loads(os.environ["PR_JSON"]); checks = json.loads(os.environ["CHECKS_JSON"] or "[]")
 head = pr["headRefOid"]; author = (pr.get("author") or {}).get("login", "")
@@ -48,6 +51,12 @@ want = os.environ.get("REVIEWER", "").strip().lower()
 print(f"PR #{os.environ.get('N','')} head {head[:8]} state={pr.get('state')} mergeable={pr.get('mergeable')}")
 if pr.get("state") != "OPEN":
     print(f"NOT-CONVERGED pr is {pr.get('state')}"); sys.exit(1)
+# Right after a push GitHub can still report the previous head, whose checks are all finished;
+# judging it printed CONVERGED for 842d4819d's PR while its runs sat queued (#966, 2026-10-30).
+# Compare only from the PR's own branch, so a watcher run elsewhere cannot wait forever.
+lh, lb = os.environ.get("LOCAL_HEAD", ""), os.environ.get("LOCAL_BRANCH", "")
+if lh and lb and lb == pr.get("headRefName") and lh != head:
+    print(f"WAITING PR head {head[:8]} is not the local HEAD {lh[:8]}: push not seen yet, or unpushed commits"); sys.exit(2)
 
 pending = [c["name"] for c in checks if c.get("bucket") == "pending"]
 # gh pr checks can omit runs still QUEUED behind the runner backlog (#535 merged with its gate
@@ -107,6 +116,8 @@ if pr.get("mergeable") == "CONFLICTING": print("NOT-CONVERGED merge conflict wit
 if pending: print("WAITING checks pending: " + ", ".join(pending)); sys.exit(2)
 # Zero checks right after a push means none has registered yet, not that all passed (#877, 2026-10-27).
 if not checks and not (pr.get("statusCheckRollup") or []): print("WAITING no checks registered on the head yet"); sys.exit(2)
+# gh pr checks returning nothing while the rollup has entries is a lagging read, never a pass.
+if not checks: print("WAITING gh pr checks lists no checks for the head yet"); sys.exit(2)
 if os.environ.get("NO_REVIEW"): print("CONVERGED (review bot skipped: --no-review)"); sys.exit(0)
 if not latest or on != head: print("WAITING no review on the current head yet"); sys.exit(2)
 if counts is None: print("NOT-CONVERGED review on head has no severity line: read it and decide"); sys.exit(1)
