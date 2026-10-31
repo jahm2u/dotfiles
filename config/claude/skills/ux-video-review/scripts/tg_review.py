@@ -203,7 +203,9 @@ def cmd_text(a):
 def fetch_since(since):
     _, chat = env()
     prog = ("const db=require('better-sqlite3')('/opt/babaflow/data/message_cache.db',{readonly:true});"
-            "const rows=db.prepare(\"SELECT id,created_at,message_text,screenshot_url FROM message_cache "
+            "const rt=db.pragma('table_info(message_cache)').some(c=>c.name==='reply_to_message_id')"
+            "?',reply_to_message_id':'';"
+            "const rows=db.prepare(\"SELECT id,created_at,message_text,screenshot_url\"+rt+\" FROM message_cache "
             "WHERE org_id = -1 AND CAST(telegram_chat_id AS TEXT) = ? AND created_at > ? ORDER BY id\")"
             f".all({json.dumps(str(chat))},{json.dumps(since)});"
             "process.stdout.write(JSON.stringify(rows));")
@@ -235,6 +237,33 @@ def fetch_since_duda(since):
     return json.loads(out or "[]")
 
 
+SENT_RE = re.compile(r"^\S+ -> #(\d+) (?:\[video [^\]]*\] )?(?:\[([^\]]+)\])?")
+
+
+def sent_tags():
+    """message_id -> tag for every message sent through Baba's bot, from tg.log. `[duda ...]`
+    lines are the Duda bot's ids, another id space, so they are skipped."""
+    tags = {}
+    try:
+        lines = open(f"{SEAT_DIR}/tg.log").read().splitlines()
+    except OSError:
+        return tags
+    for line in lines:
+        if " -> #" not in line or re.search(r" -> #\d+ \[duda ", line):
+            continue
+        m = SENT_RE.match(line)
+        if m:
+            tags[int(m.group(1))] = m.group(2)
+    return tags
+
+
+def reply_suffix(r, tags):
+    rid = r.get("reply_to_message_id")
+    if not rid:
+        return ""
+    return f" reply to #{rid} [{tags.get(int(rid)) or '-'}]"
+
+
 def cmd_replies(a):
     since = a.since  # message_cache stores ISO 'YYYY-MM-DDTHH:MM:SS.mmmZ', so ISO compares in order
     deadline = time.time() + (a.wait or 0)
@@ -243,6 +272,7 @@ def cmd_replies(a):
         if rows or time.time() >= deadline:
             break
         time.sleep(30)
+    tags = sent_tags() if a.via != "duda" and any(r.get("reply_to_message_id") for r in rows) else {}
     for r in rows:
         extra = f" (screenshot: {r['screenshot_url']})" if r.get("screenshot_url") else ""
         who = ""
@@ -250,6 +280,8 @@ def cmd_replies(a):
             who = f"{r.get('sender_first_name') or '?'}: "
             extra += f" [row {r['id']}, tag {r.get('tag') or '-'}, reply to #{r.get('replied_to_message_id') or '-'}]"
             if r.get("media_kind"): extra += f" ({r['media_kind']} attached: tg_review.py media {r['id']})"
+        else:
+            extra += reply_suffix(r, tags)
         print(f"{r['created_at']} #{r['id']} {who}{r['message_text']}{extra}")
     if not rows:
         print("NO-REPLY-YET")
