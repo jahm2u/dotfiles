@@ -270,6 +270,12 @@ elif GW_CG=$(command -v tpcg || command -v cg) && GW_OUT=$($GW_CG env); then eva
 fi   # cg env says on stderr why it refused (tpcg on a Mac where IPMedia's cg owns the name)
 GW_ENVS=()
 for v in "${GW_VARS[@]}"; do [ -n "${!v:-}" ] && GW_ENVS+=(--env "$v=${!v}"); done
+# IPMedia's cg.sh, sourced by every interactive zsh, re-activates its cached pool when its
+# sticky file exists and CG_ACTIVE is unset -- overwriting the ANTHROPIC_* the pane was created
+# with and pinning every model to the saved Kimi default. On 2026-11-01 two builders spawned
+# with opus[1m] from a TP-pool pane ran as k3.1-pro on /kimi. cg.sh keeps a preset
+# CG_STICKY_FILE, so a builder pane that inherits routing points it at a file that never exists.
+[ -n "$GW_SRC" ] && GW_ENVS+=(--env "CG_STICKY_FILE=$HOME/.config/claude-gateway/.sticky-off-for-builders")
 GH_OWNER=$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -nE 's#.*github\.com[:/]([^/]+)/.*#\1#p')
 if [ -z "${GH_TOKEN:-}" ] && [ -n "$GH_OWNER" ] && GH_PIN=$(gh auth token --user "$GH_OWNER" 2>/dev/null); then
   GH_TOKEN=$GH_PIN
@@ -377,6 +383,30 @@ print(p["workspace_id"], p["tab_id"], p["pane_id"])') || bf_die "could not parse
     esac
   fi
   bf_set "$SLUG" BF_BUILDER_AGENT "$AGENT"
+  # Prove the builder runs where it was sent: read the started claude's own environment (the
+  # values exec saw, after every shell init) and compare it with what this pane handed over.
+  # A mismatch is a silent model swap, so it stops the spawn instead of warning.
+  if [ -n "$GW_SRC" ]; then
+    BPID=""
+    for i in $(seq 1 20); do
+      for p in $(pgrep -f -- "--settings $SETTINGS" 2>/dev/null); do
+        [ "$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" = "$WT" ] && { BPID=$p; break; }
+      done
+      [ -n "$BPID" ] && break
+      sleep 1
+    done
+    if [ -z "$BPID" ]; then
+      echo "WARNING: could not find $AGENT's claude process to verify its gateway route" >&2
+    else
+      BENV=$(ps eww -o command= -p "$BPID" | tr ' ' '\n')
+      got_url=$(printf '%s\n' "$BENV" | sed -n 's/^ANTHROPIC_BASE_URL=//p' | head -1)
+      got_model=$(printf '%s\n' "$BENV" | sed -n 's/^ANTHROPIC_MODEL=//p' | head -1)
+      if [ "$got_url" != "${ANTHROPIC_BASE_URL:-}" ] || [ "$got_model" != "${ANTHROPIC_MODEL:-}" ]; then
+        bf_die "$AGENT (pid $BPID) is NOT on the route it was spawned with: ANTHROPIC_BASE_URL=${got_url:-unset} (expected ${ANTHROPIC_BASE_URL:-unset}), ANTHROPIC_MODEL=${got_model:-unset} (expected ${ANTHROPIC_MODEL:-unset}). Its shell init rewrote the gateway; stop it (herdr agent stop $AGENT) and find what did."
+      fi
+      echo "==> $AGENT verified on ${got_url%%/teamclaude*}, model ${got_model:-from --model $MODEL}"
+    fi
+  fi
   # A startup dialog (folder trust, a settings warning) blocks the first prompt. Wait for
   # herdr to see an input-ready agent; if it never does, say exactly what to do.
   ready=0
