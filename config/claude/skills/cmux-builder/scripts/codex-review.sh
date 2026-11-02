@@ -10,7 +10,7 @@
 # Exit: 0 = no P0-P2 findings
 #       1 = at least one P0-P2 finding (address each: fix it, or record why it is wrong)
 #       2 = the review failed / timed out (codex may still be running in its tab) / came back
-#           empty or in a format with findings this script could not parse
+#           empty, not from the gateway, or in a format with findings this script could not parse
 #       3 = refused before reviewing (dirty tree, no commits, no codex, bad args) -- NOT findings
 # Codex tags findings [P0]..[P3]; P3 is a nit. P2 is NOT optional: in testing gpt-6-astra
 # rated a plain off-by-one that returned NaN for every input as P2.
@@ -132,7 +132,7 @@ fi
 
 # Codex REVIEWS; the builder fixes. --yolo lets codex run code (it smoke-tests), so snapshot
 # the tree and flag anything it wrote -- a change the builder did not make must not be committed.
-TREE_BEFORE=$(git status --porcelain --untracked-files=all)
+TREE_BEFORE=$(git status --porcelain --untracked-files=all | sed '/\.watchman-cookie-/d')
 
 q() { printf '%q' "$1"; }
 # ${arr[@]+...}: bash 3.2 (macOS /bin/bash) trips `set -u` on an empty array otherwise.
@@ -247,17 +247,22 @@ if [ "$RC" != 0 ] || [ ! -s "$REVIEW" ]; then
   logl "round $N failed exit=$RC"
   exit 2
 fi
+if ! grep -qE '^provider: (claude-gateway|teamclaude)$' "$TRANSCRIPT"; then
+  echo "codex review did not reach the gateway ($(grep -m1 '^provider:' "$TRANSCRIPT" 2>/dev/null || echo 'no provider line')). Tab left open${SURFACE:+ ($SURFACE)}. Transcript: $TRANSCRIPT"
+  logl "round $N: review did not reach the gateway"
+  exit 2
+fi
 if [ -n "$SURFACE" ] && [ $KEEP_TAB -eq 0 ]; then
   r_close || true
 fi
 
 cat "$REVIEW"
-TREE_AFTER=$(git -C "$WT" status --porcelain --untracked-files=all)
+TREE_AFTER=$(git -C "$WT" status --porcelain --untracked-files=all | sed '/\.watchman-cookie-/d')
 if [ "$TREE_AFTER" != "$TREE_BEFORE" ]; then
   echo
   echo "WARNING: codex changed the worktree during the review (it should only read). Inspect and"
   echo "revert anything you did not write before committing:"
-  diff <(printf '%s\n' "$TREE_BEFORE") <(printf '%s\n' "$TREE_AFTER") | sed -n 's/^> /  /p'
+  diff <(printf '%s\n' "$TREE_BEFORE") <(printf '%s\n' "$TREE_AFTER") | sed -n 's/^> /  /p' || true
   logl "round $N: codex modified the worktree"
 fi
 c() { grep -cE "^[[:space:]]*- \[$1\]" "$REVIEW" || true; }
