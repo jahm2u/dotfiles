@@ -46,10 +46,9 @@ esac
 # builders 951 and 962), and collect.sh then judged the wrong PR.
 case "$PHASE" in
   pr-open|converged|merged|done)
-    if [ -n "${BF_BRANCH:-}" ]; then
-      n=$(cd "${BF_WORKTREE:-.}" 2>/dev/null && gh pr list --head "$BF_BRANCH" --state all \
-            --json number --jq '.[0].number // empty' 2>/dev/null || true)
-      [ -n "$n" ] && [ "$n" != "${BF_PR:-}" ] && bf_set "$BF_SLUG" BF_PR "$n"
+    if [ -n "${BF_BRANCH:-}" ] && n=$(cd "${BF_WORKTREE:-.}" 2>/dev/null && gh pr list --head "$BF_BRANCH" --state all \
+          --json number,state --jq '[.[] | select(.state != "CLOSED")][0].number // empty' 2>/dev/null); then
+      [ "$n" != "${BF_PR:-}" ] && bf_set "$BF_SLUG" BF_PR "$n"
     fi;;
 esac
 bf_set "$BF_SLUG" BF_STATUS "$PHASE"
