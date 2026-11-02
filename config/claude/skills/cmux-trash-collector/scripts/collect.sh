@@ -46,13 +46,22 @@ echo "==> $SLUG  branch=$BRANCH  worktree=$WT  builder=$BF_BUILDER_WS  status=$B
 # 1. gates
 PR_STATE="unknown"
 if [ -n "${BF_PR:-}" ]; then
-  PR_STATE=$(gh pr view "$BF_PR" --json state --jq .state 2>/dev/null || echo unknown)
+  PR_INFO=$(cd "$ROOT" && gh pr view "$BF_PR" --json state,headRefName --jq '"\(.state) \(.headRefName)"' 2>/dev/null) \
+    || bf_die "gh lookup failed for ledger BF_PR=$BF_PR (gh/network down, or $BF_PR is not a PR in this repo, e.g. an issue number), retry. Nothing removed."
+  PR_STATE=${PR_INFO%% *}; PR_HEAD=${PR_INFO#* }
+  [ "$PR_HEAD" = "$BRANCH" ] \
+    || bf_die "ledger BF_PR=$BF_PR is the PR of branch '$PR_HEAD', not this builder's branch '$BRANCH'. Nothing removed. Clear it (bf_set $SLUG BF_PR '') and re-run to look the PR up by branch."
 else
-  PR_STATE=$(gh pr list --head "$BRANCH" --state all --json state --jq '.[0].state' 2>/dev/null || echo unknown)
-  n=$(gh pr list --head "$BRANCH" --state all --json number --jq '.[0].number' 2>/dev/null || true)
-  [ -n "$n" ] && [ "$n" != "null" ] && bf_set "$SLUG" BF_PR "$n" && BF_PR=$n
+  PR_INFO=$(cd "$ROOT" && gh pr list --head "$BRANCH" --state all --json number,state \
+      --jq '([.[] | select(.state != "CLOSED")][0] // .[0]) | select(.) | "\(.number) \(.state)"' 2>/dev/null) \
+    || bf_die "gh lookup failed for branch '$BRANCH', retry. Nothing removed."
+  if [ -n "$PR_INFO" ]; then
+    BF_PR=${PR_INFO%% *}; PR_STATE=${PR_INFO#* }
+    bf_set "$SLUG" BF_PR "$BF_PR"
+  else
+    PR_STATE="none"
+  fi
 fi
-[ -z "$PR_STATE" ] && PR_STATE="none"
 echo "==> PR ${BF_PR:-none}: $PR_STATE"
 if [ "$PR_STATE" != "MERGED" ] && [ $FORCE -eq 0 ]; then
   bf_die "PR is '$PR_STATE', not MERGED. Nothing removed. Re-run with --force only after the human has decided to abandon '$SLUG'."

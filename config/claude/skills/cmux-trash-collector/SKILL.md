@@ -22,7 +22,7 @@ $C <slug> --keep-branch         # leave the remote branch (someone else still ne
 
 1. `$S/ls.sh` — confirm the slug exists and read its last phase. If the phase is not `done` / `merged` / `failed`, the builder may still be working: `$S/peek.sh <slug>` before going further, and ask the orchestrator/human if in doubt.
 2. `$C <slug>`. It gates on two things and prints exactly why when it refuses:
-   - the PR must be `MERGED` (looked up by the ledger's PR number, or by branch);
+   - the PR must be `MERGED` (looked up by the ledger's PR number, or by branch). A ledger PR whose head is not the builder's branch is refused with both branch names, `--force` included; clear it with `bf_set <slug> BF_PR ''` and re-run. A gh lookup failure is a refusal too: retry, never `--force` past it;
    - the worktree must have no uncommitted changes and no unpushed commits.
 3. **If it refuses:** show the human the refusal verbatim (the dirty-file list or the PR state). Do not add `--force` on your own — Rule 9 is exactly this case. When the human says to abandon the work, re-run with `--force`; uncommitted changes are saved to `UNCOMMITTED-DISCARDED.patch` in the archive before the worktree goes, so nothing is lost silently.
 4. On success it prints `DONE: <slug> collected` and the archive path. Report to the user:
