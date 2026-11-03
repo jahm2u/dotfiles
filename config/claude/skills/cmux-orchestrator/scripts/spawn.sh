@@ -4,7 +4,7 @@
 # Usage:
 #   spawn.sh --slug <kebab-slug> --spec <path-to-drafted-spec.md> [--issue <N>] \
 #            [--base origin/main] [--model opus[1m]] [--effort low|medium|high|xhigh|max] [--mode yolo|auto|acceptEdits] [--focus] [--spec-dir _bmad-output/implementation-artifacts] [--mcp none|full] [--place tab|workspace] [--group repo|mine|none]
-#            [--bmad-root <dir>] [--add-dir <dir>]...
+#            [--bmad-root <dir>] [--add-dir <dir>]... [--force]
 #
 # BMAD root: the nearest ancestor of the primary checkout (itself included) that carries the new
 # BMAD runtime (_bmad/scripts/render_skill.py + .agents/skills/bmad-build). Normally the company
@@ -38,7 +38,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 . "$HERE/lib.sh"
 
-SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" EFFORT="" MODE="yolo" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT="" ORCH_PEER="${BF_ORCH_PEER:-}"
+SLUG="" SPEC="" ISSUE="" BASE="origin/main" MODEL="opus[1m]" EFFORT="" MODE="yolo" FOCUS="false" MCP="none" GROUP="repo" PLACE="tab" SPEC_DIR="_bmad-output/implementation-artifacts" BMAD_ROOT="" ORCH_PEER="${BF_ORCH_PEER:-}" FORCE=0
 ADD_DIRS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,6 +56,7 @@ while [ $# -gt 0 ]; do
     --group) GROUP=$2; shift 2;;
     --bmad-root) BMAD_ROOT=$2; shift 2;;
     --orch-peer) ORCH_PEER=$2; shift 2;; # the orchestrator's Claude Code peer name (ListAgents header): reports then travel by SendMessage
+    --force) FORCE=1; shift;;
     --add-dir) ADD_DIRS+=("$2"); shift 2;; # repo (default: "🔨 <repo> builders" folder, orchestrator as its header) | mine (the orchestrator's own group) | none
     *) bf_die "unknown arg $1";;
   esac
@@ -94,6 +95,52 @@ done
 echo "==> BMAD root $BMAD_ROOT${ADD_DIRS[@]+ (add-dir: ${ADD_DIRS[*]})}"
 LEDGER=$(bf_ledger_file "$SLUG")
 [ ! -f "$LEDGER" ] || bf_die "ledger already exists for '$SLUG' ($LEDGER). Run the trash collector first, or pick another slug."
+
+ROOTS_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/cmux-orchestrator/roots"
+host_roots() {
+  local p cwd r
+  { printf '%s\n' "$ROOT"
+    [ -f "$ROOTS_FILE" ] && cat "$ROOTS_FILE"
+    for p in $(pgrep -f -- "cmux-builder/builder-settings.json" 2>/dev/null); do
+      cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p') || continue
+      case "$cwd" in */.claude/worktrees/wt-*) printf '%s\n' "${cwd%/.claude/worktrees/*}";; esac
+    done
+  } | while IFS= read -r r; do [ -d "$r" ] || continue; (cd "$r" && pwd -P) || true; done | awk '!seen[$0]++'
+}
+live_builders() {
+  local r f
+  host_roots | while IFS= read -r r; do
+    for f in "$r"/_bmad/handoff/cmux/*.env; do
+      [ -f "$f" ] || continue
+      ( unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_TAB BF_BUILDER_AGENT BF_BUILDER_WS BF_BUILDER_SURFACE
+        set -a; # shellcheck disable=SC1090
+        . "$f"; set +a
+        bf_herdr_env
+        bf_builder_alive && echo "$(basename "$r")/$(basename "$f" .env)" ) || true
+    done
+  done
+}
+MAX_BUILDERS=${BF_MAX_BUILDERS:-3}
+[[ "$MAX_BUILDERS" =~ ^[0-9]+$ ]] || bf_die "BF_MAX_BUILDERS must be a whole number: $MAX_BUILDERS"
+CORES=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || true)
+if [ -n "${BF_MAX_LOAD:-}" ]; then MAX_LOAD=$BF_MAX_LOAD
+elif [[ "$CORES" =~ ^[0-9]+$ ]]; then MAX_LOAD=$((2 * CORES))
+else MAX_LOAD=""; fi
+LOAD1=$({ sysctl -n vm.loadavg 2>/dev/null || cat /proc/loadavg 2>/dev/null; } | tr -d '{}' | awk 'NF {print $1; exit}')
+LIVE=$(live_builders)
+NLIVE=$(printf '%s\n' "$LIVE" | grep -c . || true)
+OVER=""
+[ "$NLIVE" -ge "$MAX_BUILDERS" ] && OVER="builders"
+if ! [[ "$LOAD1" =~ ^[0-9]+([.][0-9]+)?$ && "$MAX_LOAD" =~ ^[0-9]+([.][0-9]+)?$ ]]; then OVER="$OVER${OVER:+, }load unreadable"
+elif awk -v l="$LOAD1" -v m="$MAX_LOAD" 'BEGIN { exit !(l > m) }'; then OVER="$OVER${OVER:+, }load"; fi
+CAPACITY="$NLIVE live builders on this host (max BF_MAX_BUILDERS=$MAX_BUILDERS)${LIVE:+: $(printf '%s' "$LIVE" | tr '\n' ' ' | sed 's/ $//')}; 1-min load ${LOAD1:-unknown} (max BF_MAX_LOAD=${MAX_LOAD:-unknown}, ${CORES:-?} cores)"
+if [ -z "$OVER" ]; then
+  echo "==> capacity: $NLIVE/$MAX_BUILDERS live builders, load $LOAD1/$MAX_LOAD"
+elif [ "$FORCE" = 1 ]; then
+  echo "==> --force: spawning past the cap ($OVER). $CAPACITY"
+else
+  bf_die "refusing to spawn '$SLUG' ($OVER): $CAPACITY. Wait for a builder to finish and collect it, set BF_MAX_BUILDERS / BF_MAX_LOAD higher for this spawn, or pass --force (recorded as BF_FORCED=1 in the ledger)."
+fi
 
 if bf_caller_is_herdr; then MUX=herdr; elif bf_caller_is_orca; then MUX=orca; else MUX=cmux; fi
 export BF_MUX=$MUX
@@ -219,7 +266,10 @@ BF_BUILDER_TAB=
 BF_BUILDER_AGENT=
 BF_BMAD_ROOT=$BMAD_ROOT
 BF_ADD_DIRS='${ADD_DIRS[*]+${ADD_DIRS[*]}}'
+BF_FORCED=$FORCE
 LEDGER
+{ mkdir -p "$(dirname "$ROOTS_FILE")" && { grep -qxF "$ROOT" "$ROOTS_FILE" 2>/dev/null || printf '%s\n' "$ROOT" >> "$ROOTS_FILE"; }; } \
+  || echo "WARNING: could not record $ROOT in $ROOTS_FILE; spawns from other repos will not count its builders" >&2
 bf_logline "$SLUG" spawning "worktree=$WT branch=$BRANCH base=$BASE orch=$ORCH_WS"
 
 # The builder skill reads BF_* from its environment; the ledger path lets report.sh find the rest.

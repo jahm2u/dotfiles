@@ -143,6 +143,15 @@ Pass the spec as an absolute path (a relative one is also tried against the prim
 A slug that already leads with the issue number gives branch `fix/<slug>`; otherwise the number
 is prefixed.
 
+**Host cap.** Before it creates anything, spawn.sh counts the live builders on this host. It reads
+the ledgers of every repo that has spawned here (`~/.local/state/cmux-orchestrator/roots`) and of
+every repo with a running builder process, and checks each with `bf_builder_alive`. It refuses
+when that count is at or above `BF_MAX_BUILDERS` (default 3), or when the 1-minute load average
+is above `BF_MAX_LOAD` (default 2 x cores). The refusal names both numbers and the live slugs.
+Five builders running full suites at once got one suite OOM-killed, and the load from other work
+on a shared Mini times the mux CLIs out. So wait and collect a finished builder first. `--force`
+spawns anyway and writes `BF_FORCED=1` into the ledger.
+
 Defaults: base `origin/main`, model `opus[1m]` (Opus 5 with the 1M window; bare `opus` is the
 standard window), permission mode `yolo`, i.e. `--dangerously-skip-permissions` (Jeff, 2026-10-25:
 "all builders should be launched with the yolo dangerous permissions thing"; the auto-mode classifier
