@@ -18,7 +18,7 @@ mkdir -p "$TMP/bin"
 cat > "$TMP/bin/gh" <<'GH'
 #!/usr/bin/env bash
 case "$1 $2" in
-  "pr view") cat "$CASE_DIR/pr.json";;
+  "pr view") [ -f "$CASE_DIR/pr.json" ] || { echo 'Post "https://api.github.com/graphql": unexpected EOF' >&2; exit 1; }; cat "$CASE_DIR/pr.json";;
   "pr checks") cat "$CASE_DIR/checks.json";;
   api*) case "$2 $3" in "repos/{owner}/{repo}/actions/runs?head_sha="*" --jq") cat "$CASE_DIR/runs.json";; *) echo "stub gh: unexpected $*" >&2; exit 9;; esac;;
   *) echo "stub gh: unexpected $*" >&2; exit 9;;
@@ -108,6 +108,18 @@ if [ "$rc" -eq 2 ] && [ "$last" = "WAITING gh pr checks lists no checks for the 
   pass=$((pass + 1)); echo "ok   gh pr checks empty, rollup finished -> WAITING"
 else
   fail=$((fail + 1)); echo "FAIL gh pr checks empty, rollup finished -> want WAITING, got rc=$rc: $last"
+fi
+
+# gh pr view fails with an empty body (GraphQL "unexpected EOF", 2026-11-01): a transient read,
+# so WAITING (rc 2, --wait retries), never a JSON traceback that ends the wait with no verdict.
+d="$TMP/gh-eof"; mkdir -p "$d"
+printf '[]' > "$d/checks.json"; printf '{"total_count":0,"workflow_runs":[]}' > "$d/runs.json"
+set +e; out=$(CASE_DIR=$d PATH="$TMP/bin:$PATH" bash "$WATCH" 1022 --no-review 2>&1); rc=$?; set -e
+last=$(printf '%s\n' "$out" | tail -1); count=$((count + 1))
+if [ "$rc" -eq 2 ] && printf '%s' "$last" | grep -q '^WAITING could not read PR #1022'; then
+  pass=$((pass + 1)); echo "ok   gh pr view fails with an empty body -> WAITING"
+else
+  fail=$((fail + 1)); echo "FAIL gh pr view fails with an empty body -> want WAITING, got rc=$rc: $last"
 fi
 
 echo "$pass passed, $fail failed, $count cases"
