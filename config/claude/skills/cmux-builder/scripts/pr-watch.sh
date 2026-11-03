@@ -34,9 +34,11 @@ esac; done
 
 check_once() {
   local pr checks head runs
-  pr=$(gh pr view "$N" --json headRefOid,headRefName,author,mergeable,state,reviews,statusCheckRollup)
+  pr=$(gh pr view "$N" --json headRefOid,headRefName,author,mergeable,state,reviews,statusCheckRollup) && [ -n "$pr" ] \
+    || { echo "WAITING could not read PR #$N (gh pr view failed or returned nothing)"; return 2; }
   checks=$(gh pr checks "$N" --json name,bucket 2>/dev/null || echo '[]')
-  head=$(PR_JSON=$pr python3 -c 'import json, os; print(json.loads(os.environ["PR_JSON"])["headRefOid"])')
+  head=$(PR_JSON=$pr python3 -c 'import json, os; print(json.loads(os.environ["PR_JSON"])["headRefOid"])' 2>/dev/null) && [ -n "$head" ] \
+    || { echo "WAITING could not read PR #$N (gh pr view returned no head sha)"; return 2; }
   runs=$(gh api "repos/{owner}/{repo}/actions/runs?head_sha=$head&per_page=100" \
     --jq '{total_count, workflow_runs: [.workflow_runs[] | {id, workflow_id, event, name, status, conclusion, run_attempt}]}') \
     || { echo "WAITING could not read the workflow runs for $head"; return 2; }
