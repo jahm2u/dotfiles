@@ -113,10 +113,71 @@ rm -f "$DIR/$SLUG".codex-review-*.sh "$DIR/$SLUG".codex-review-*.exit
 echo "==> harvested to $ARCH: $(ls "$ARCH" | tr '\n' ' ')"
 
 # 3. builder workspace
+EXIT_WAIT=${BF_EXIT_WAIT:-20}
+exit_screen() {
+  local t scr
+  t=$(bf_target)
+  if bf_is_herdr; then
+    case "$(herdr agent get "$t" 2>&1)" in *agent_not_found*) echo shell; return 0;; esac
+  fi
+  scr=$(bf_read "$t" 30)
+  case "$(printf '%s' "$scr" | tr -d '[:space:]')" in
+    *Backgroundworkisrunning*Exitandstop*)
+      if grep -qE '^[[:space:]│]*❯[[:space:]]*1[[:space:]]*\.' <<< "$scr"; then echo tasks; else echo tasks-other; fi
+      return 0;;
+    *unsentfeedbackdraft*) echo drafts; return 0;;
+  esac
+  awk '
+    NF { n++; l[n] = $0 }
+    END {
+      for (i = n; i > 0 && i > n - 6; i--)
+        if (index(l[i], "──") || index(l[i], "shift+tab") || index(l[i], "esc to interrupt") || index(l[i], "? for shortcuts")) chrome = 1
+      if (n && !chrome && l[n] !~ /❯|│/ && l[n] ~ /[%$#][ \t]*$/) { print "shell"; exit }
+      for (i = n; i > 0; i--) if (l[i] ~ /^[ \t]*❯/) break
+      if (i > 0 && i < n) {
+        p = l[i]; sub(/^[ \t]*❯[ \t]*/, "", p); sub(/[ \t]+$/, "", p)
+        if (p == "/exit" && index(l[i + 1], "──")) { print "typed"; exit }
+      }
+      print "claude"
+    }' <<< "$scr"
+}
+exit_builder() {
+  local t st i drafts=0 other=0
+  local -a tf
+  t=$(bf_target)
+  st=$(exit_screen)
+  case "$st" in
+    shell) echo "==> builder already exited to its shell; skipping /exit"; return 0;;
+    claude)
+      if bf_is_herdr || bf_is_orca; then bf_say_to_builder "/exit" || true
+      else
+        read -ra tf <<< "$t"
+        cmux send "${tf[@]}" -- "/exit" >/dev/null 2>&1 || true
+        sleep 0.7
+        bf_send_key "$t" enter || true
+      fi;;
+  esac
+  for ((i = 0; i < EXIT_WAIT; i++)); do
+    case "$st" in
+      tasks) echo "==> builder at 'Background work is running': chose 1. Exit and stop tasks"; bf_send_key "$t" enter || true;;
+      tasks-other)
+        [ $other = 1 ] || echo "WARNING: builder at 'Background work is running' with another option than 1. Exit and stop tasks selected; not answering it" >&2
+        other=1;;
+      drafts)
+        if [ $drafts = 0 ]; then echo "==> builder at 'You have unsent feedback drafts': Esc, discard and exit"; bf_send_key "$t" esc || true; fi
+        drafts=1;;
+      typed) bf_send_key "$t" enter || true;;
+    esac
+    sleep 1
+    bf_builder_alive || { echo "==> builder exited"; return 0; }
+    st=$(exit_screen)
+    [ "$st" = shell ] && { echo "==> builder exited"; return 0; }
+  done
+  echo "WARNING: builder still up ${EXIT_WAIT}s after /exit (screen: $st); closing its tab anyway" >&2
+}
 if [ -n "${BF_BUILDER_WS:-}" ] && bf_builder_alive; then
   echo "==> closing builder $(bf_builder_where)"
-  bf_say_to_builder "/exit"
-  sleep 3
+  exit_builder
   # Close the TAB only (bf_close_builder). Closing BF_BUILDER_WS here would close the
   # orchestrator's own workspace, since in tab mode that field is the HOST workspace.
   bf_close_builder
