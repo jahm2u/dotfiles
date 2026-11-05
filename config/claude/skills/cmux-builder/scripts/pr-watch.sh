@@ -6,7 +6,7 @@
 #
 # A PR is CONVERGED for its CURRENT head when all three hold:
 #   1. every check on the head is green (pass or skipping; none pending, none failing), and
-#      the latest run of each workflow (per workflow and event) for the head sha has finished:
+#      the latest run of each workflow (per workflow and event) for the head sha has finished (a cancelled run never outranks a non-cancelled one; BabaFlow#4764):
 #      a run queued with no jobs yet is pending, a finished one with no jobs that did not
 #      succeed is failing, a finished one with jobs is decided by its jobs (jahm2u/BabaFlow#4746).
 #      "Performance budget" is advisory, as in BabaFlow's pr-watch.js; both share one fixture.
@@ -81,7 +81,9 @@ if int(runs_doc.get("total_count") or 0) > len(all_runs):
 latest = {}
 for r in all_runs:
     k = (r.get("workflow_id"), r.get("event"))
-    if k not in latest or int(r.get("id") or 0) > int(latest[k].get("id") or 0): latest[k] = r
+    if k not in latest: latest[k] = r; continue
+    cancelled, prev_cancelled = ((x.get("conclusion") or "").lower() == "cancelled" for x in (r, latest[k]))
+    if (prev_cancelled and not cancelled) or (cancelled == prev_cancelled and int(r.get("id") or 0) > int(latest[k].get("id") or 0)): latest[k] = r
 with_jobs = set()
 for r in pr.get("statusCheckRollup") or []:
     m = re.search(r"/actions/runs/(\d+)(?:/|$)", r.get("detailsUrl") or "")

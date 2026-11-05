@@ -93,6 +93,24 @@
       "jobs": null,
       "ciRuns": [{ "id": 40602278265, "status": "completed", "conclusion": "startup_failure", "run_attempt": 1 }],
       "expect": "CI_FAILED"
+    },
+    {
+      "name": "a cancelled duplicate with a higher id sits above the CI run that passed",
+      "jobs": "green",
+      "ciRuns": [
+        { "id": 40602278265, "status": "completed", "conclusion": "success", "run_attempt": 1 },
+        { "id": 40602278999, "status": "completed", "conclusion": "cancelled", "run_attempt": 1 }
+      ],
+      "expect": "CONVERGED"
+    },
+    {
+      "name": "a cancelled duplicate with a higher id sits above the CI run still in progress",
+      "jobs": null,
+      "ciRuns": [
+        { "id": 40602278265, "status": "in_progress", "conclusion": null, "run_attempt": 1 },
+        { "id": 40602278999, "status": "completed", "conclusion": "cancelled", "run_attempt": 1 }
+      ],
+      "expect": "WAITING"
     }
   ],
   "ciRun": { "workflow_id": 105, "event": "pull_request", "name": "CI/CD Pipeline" }
