@@ -9,7 +9,7 @@ comparison; `--model` adds extra models.
     scripts/replay-translations.py --old "is your account a paid account?"
     scripts/replay-translations.py --model gpt-4.1-nano < cases.txt   # one case per line
 """
-import argparse, json, os, re, subprocess, sys, urllib.request
+import argparse, json, os, re, subprocess, sys, tempfile, urllib.request
 import concurrent.futures as cf
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,13 +25,19 @@ def api_key():
 
 def detect_target(text):
     """Run the REAL detector from init.lua through Hammerspoon, never a Python copy."""
-    tmp = os.path.join(os.environ.get("TMPDIR", "/tmp"), "replay-translations-input.txt")
-    with open(tmp, "w", encoding="utf-8") as f:
+    # One file per call: cases run in parallel threads, and a shared file let them read each other's text
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as f:
         f.write(text)
-    out = subprocess.run(["/opt/homebrew/bin/hs", "-c",
-                          'print("TARGET=" .. tostring(detectTranslationTarget(io.open("%s"):read("a"))))' % tmp],
-                         capture_output=True, text=True, timeout=30).stdout
-    m = re.search(r"TARGET=(\S+)", out)
+    try:
+        for _ in range(3):
+            out = subprocess.run(["/opt/homebrew/bin/hs", "-c",
+                                  'print("TARGET=" .. tostring(detectTranslationTarget(io.open("%s"):read("a"))))' % f.name],
+                                 capture_output=True, text=True, timeout=30).stdout
+            m = re.search(r"TARGET=(\S+)", out)
+            if m:
+                break
+    finally:
+        os.remove(f.name)
     if not m:
         sys.exit("could not run detectTranslationTarget via hs (is Hammerspoon running with the current init.lua?)")
     return None if m.group(1) == "nil" else m.group(1)

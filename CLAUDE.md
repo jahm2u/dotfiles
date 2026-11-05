@@ -263,19 +263,20 @@ TODOIST_API_TOKEN="your-todoist-api-token-here"
 
 ### OpenAI API Convention
 
-**Every OpenAI API call in this repo MUST pass a `safety_identifier`.** This is a stable, non-PII string that lets OpenAI attribute and rate-limit abuse per-feature instead of blocking the whole account (the shared `OPENAI_API_KEY` is used by 5 call sites). Use `safety_identifier="dotfiles-translate"` for the translation feature and `safety_identifier="dotfiles-meeting-prep"` for meeting-prep scripts. Add the same identifier to any new call site.
+**Every OpenAI API call in this repo MUST pass a `safety_identifier`.** This is a stable, non-PII string that lets OpenAI attribute and rate-limit abuse per-feature instead of blocking the whole account (the shared `OPENAI_API_KEY` is used by 6 call sites). Use `safety_identifier="dotfiles-translate"` for the translation feature and `safety_identifier="dotfiles-meeting-prep"` for meeting-prep scripts. Add the same identifier to any new call site.
 
 - **Python SDK** (`client.chat.completions.create(...)`): pass `safety_identifier="dotfiles-meeting-prep"` as a kwarg.
 - **Raw HTTP** (Lua `hs.http.asyncPost` / shell `curl`): add `"safety_identifier": "..."` to the JSON body.
 
 **Current call sites** (all set the identifier):
 - Translation: `config/hammerspoon/init.lua` (`translateText`, `gpt-5.4-nano`) → `dotfiles-translate`
+- Translation on iPhone: the "Traduzir" shortcut built by `scripts/build-translate-shortcut.py` → `dotfiles-translate-ios`
 - `config/sketchybar/helpers/analyze-meeting-history.py` → `dotfiles-meeting-prep`
 - `config/sketchybar/helpers/generate-meeting-note.py` → `dotfiles-meeting-prep`
 - `config/sketchybar/helpers/identify-participant-from-transcript.py` → `dotfiles-meeting-prep`
 - `config/sketchybar/helpers/generate-meeting-message.sh` (curl) → `dotfiles-meeting-prep`
 
-**Key rotation:** `OPENAI_API_KEY` lives only in `~/dotfiles/.env` (gitignored, unquoted). All 5 call sites resolve to it — Python scripts load it via `load_dotenv` (`~/dotfiles/.env` first), `init.lua` reads it at `init.lua:33`. Rotate by editing that one line, then `open -g hammerspoon://reload`. Requires: `safety_identifier` needs `openai` SDK ≥ ~1.55 (repo venv has 2.6.1).
+**Key rotation:** `OPENAI_API_KEY` lives only in `~/dotfiles/.env` (gitignored, unquoted). All 6 call sites resolve to it — Python scripts load it via `load_dotenv` (`~/dotfiles/.env` first), `init.lua` reads it at `init.lua:33`. Rotate by editing that one line, then `open -g hammerspoon://reload`. Requires: `safety_identifier` needs `openai` SDK ≥ ~1.55 (repo venv has 2.6.1).
 
 ### Translation Shortcut & Log
 
@@ -312,6 +313,12 @@ team feedback that machine-translated tech writing was unreadable in pt-br:
    Known limitation: nano still garbles this case about half the time. It is rare
    (2 of 166 logged, both caused by retrying a half-translated output, which the
    narrow Rule 1 now prevents). Translate the quote and the reply separately.
+6. **No dashes the original doesn't have** (formatting rule 3). In Nov 2026 nano wrote
+   `I don't know if the funnel is right—can you check…` for a comma-joined PT
+   sentence in 5 of 8 runs, and swapped the comma for a period in the other 3.
+   The prompt never said otherwise and its own text was full of em dashes, which
+   the model copies. The rule plus rewording the prompt's own dashes into colons
+   and commas took it to 0 of 8. Keep the prompt text itself free of em dashes.
 
 The text is sent between `<text>` tags rather than in quotes — quoting made the
 model echo quotes back, and the Lua side also strips stray quotes and tags.
@@ -348,7 +355,11 @@ through the API with `scripts/replay-translations.py`. It extracts the prompt fr
 runs the real `detectTranslationTarget` through `hs -c`, so Hammerspoon must be
 running with the current config. A replay of 10 cases costs well under a cent.
 Run a flaky case three times: nano is nondeterministic even at temperature 0.2,
-and a single green run proved nothing for the PT→EN passthrough bug.
+and a single green run proved nothing for the PT→EN passthrough bug. Passing the
+same case several times in one call (`replay-translations.py --old "$T" "$T" "$T"`)
+runs them in parallel; count outcomes per prompt rather than eyeballing one line.
+Replays before Nov 2026 could mislabel the direction: parallel threads shared one
+temp file for the detector, so a case could be judged with another case's language.
 
 **Model:** `TRANSLATE_MODEL` in `init.lua` (currently `gpt-5.4-nano`). In the Sep 2026
 replay `gpt-4.1-mini` wrote slightly more natural Portuguese but kept translating
@@ -359,6 +370,70 @@ after prompt tuning, the model is a bigger lever than the prompt.
 **Open question (raised by Estrella, Sep 2026):** the team may standardize on English
 for all tech writing, which would make the EN→PT direction unnecessary — the shortcut
 would become PT→EN only. Pending a dev-headquarter discussion.
+
+### Translation on iPhone ("Traduzir" shortcut)
+
+The same prompt runs on Jeff's iPhone as an Apple Shortcut named **Traduzir**,
+generated from `init.lua` by `scripts/build-translate-shortcut.py`. Nothing is
+hand-built in the Shortcuts editor, so never edit the shortcut on the phone: change
+`init.lua` (or the generator) and rebuild.
+
+**How it is used on the phone:**
+
+| Trigger | Mode | Result |
+|---|---|---|
+| Select text → Share → Traduzir | read (someone else's text) | Quick Look with the full translation; clipboard untouched |
+| Back Tap (Settings → Accessibility → Touch → Back Tap → Double Tap) | write | translates the clipboard, copies the result, shows a banner |
+| Back Tap with an empty clipboard | write | asks for typed/dictated text first |
+
+The Action Button stays on the native Camera. Making it a smart router (translate
+when text is copied, camera otherwise) was considered and rejected: the Shortcuts
+action database marks Get Clipboard (and Open App, Quick Look) as
+`requiresAuthenticationOnOriginAndRemote`, so every locked press would ask for
+Face ID before the camera opens. Shortcuts cannot read the lock state or a text
+selection in another app, so neither can drive the routing.
+
+**Updating the phone after a prompt change:**
+
+```bash
+scripts/build-translate-shortcut.py   # writes, signs, opens the import sheet; deletes the file after 10 s
+```
+
+Then click **Add Shortcut → Replace** in the Mac's Shortcuts window. Replace (not
+Keep Both) updates the existing shortcut in place, so the Back Tap assignment
+survives, and iCloud syncs it to the phone. Verify on the Mac, where the same
+shortcut runs: `shortcuts list | grep -c '^Traduzir'` must be 1, and
+`printf 'texto' | pbcopy; shortcuts run Traduzir; pbpaste` exercises write mode
+(`shortcuts run Traduzir -i file.txt` exercises read mode).
+
+**What the generator does and why:**
+
+- Prompt, system message, model and temperature come from `init.lua` via
+  `replay-translations.py`'s `extract()`, the stopword lists via regex. The
+  detector is ported to Shortcuts as Match Text + Count + If, same thresholds.
+- The API key is embedded in the signed file (it lives only in the user's iCloud
+  library). Never share the shortcut. The file is written to `$TMPDIR` and removed.
+- **Temperature is computed (20 ÷ 100), never written as `"0.2"`.** Shortcuts parses
+  a number field with the device locale, and pt-BR read "0.2" as **2**, which made
+  the output near-random (PT came back as PT). Any new numeric JSON field needs
+  the same treatment.
+- No logging on the phone (Jeff's choice). Prompt tuning uses the Mac log only.
+- Action formats were copied from shortcuts already in the local library
+  (`~/Library/Shortcuts/Shortcuts.sqlite`, `ZSHORTCUTACTIONS.ZDATA` is a plist of
+  actions). Read a copy of the DB, not the live file. Action ids and auth policies
+  are in `~/Library/Shortcuts/ToolKit/Tools-active` (`Tools` table), Mac actions only.
+
+**Debugging:** `--debug` builds a variant that stops after language detection and
+outputs the counts and chosen direction (`shortcuts run Traduzir -i f.txt -o out.txt`).
+`--url http://127.0.0.1:PORT/...` points it at a local server so the exact request
+body can be captured and diffed against what `init.lua` sends; that is how the
+temperature bug was found. Rebuild without the flags afterwards.
+
+**Gotcha:** clicking the import sheet's buttons through `hs -c` (Hammerspoon AX)
+works but is flaky: `performAction("AXPress")` blocks while a modal opens, and
+stale `hs -c` clients leave the IPC port invalid, which double-pressed and left
+duplicate "Traduzir 1/2/3" copies. Prefer a human click. To remove a duplicate,
+select its tile and use Edit → Delete.
 
 ### Python Virtual Environment
 

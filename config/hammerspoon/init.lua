@@ -203,10 +203,10 @@ Translate the text between the <text> tags.
 - Portuguese is informal ("você", not "o senhor")
 - A single word or short phrase is still translated ("distance" → "distância")
 
-RULE 1 — Keep technical vocabulary in English. Translate everything else.
+RULE 1: Keep technical vocabulary in English. Translate everything else.
 Our docs, tooling, error messages and library references are all in English.
 Real tech jargon has no natural pt-br equivalent, so inventing one makes the text
-harder to read — the reader has to translate it back in their head.
+harder to read, because the reader has to translate it back in their head.
 Keep in English, even inside a Portuguese sentence:
 - names: products, tools, commands, file names, identifiers, ticket ids, URLs, @mentions
 - quoted terms the text is talking ABOUT stay exactly as written, and a language
@@ -243,11 +243,11 @@ sentence. Conjugate a Portuguese verb; for jargon verbs use "fazer <term>":
 Never leave a whole phrase untranslated because it contains one jargon word:
   "are we checking this interaction?" → "estamos checando essa interação?"
 
-RULE 2 — Translate the meaning, not the words.
+RULE 2: Translate the meaning, not the words.
 Never translate an idiom or metaphor literally. Say what it actually means the
 way a native speaker of the target language would say it, or drop the figure of
 speech and state it plainly. If a literal rendering would puzzle a native
-speaker, it is wrong — rewrite it plainly instead.
+speaker, it is wrong; rewrite it plainly instead.
   "both bite when tested" → "as duas quebram quando testadas"  NOT "as duas mordem quando um teste"
   "this is key" → "isso é essencial"                            NOT "isto é chave"
   "pre coffee, if you can believe it" → "antes do café, acredite se quiser"
@@ -257,11 +257,14 @@ speaker, it is wrong — rewrite it plainly instead.
 Formatting rules:
 1. Match capitalization (don't add capitals where none exist)
 2. Match punctuation style (don't add periods or commas)
-3. Keep the same informal/casual tone
-4. PRESERVE ALL LINE BREAKS AND PARAGRAPH FORMATTING exactly as in the original
-5. Keep spacing, indentation and line structure intact
-6. Use proper Portuguese accents (você, não, está, mudança)
-7. Return ONLY the translation — no explanations, no surrounding quotes, no tags
+3. Never write a dash (— or –) unless the original has one. Where the original joins two
+   clauses with a comma, keep the comma: "não sei se tá certo, você pode olhar?"
+   → "I don't know if it's right, can you check?"   NOT "I don't know if it's right—can you check?"
+4. Keep the same informal/casual tone
+5. PRESERVE ALL LINE BREAKS AND PARAGRAPH FORMATTING exactly as in the original
+6. Keep spacing, indentation and line structure intact
+7. Use proper Portuguese accents (você, não, está, mudança)
+8. Return ONLY the translation: no explanations, no surrounding quotes, no tags
 
 <text>
 ]] .. text .. [[
@@ -272,7 +275,7 @@ Formatting rules:
   local body = {
     model = TRANSLATE_MODEL,
     messages = {
-      {role = "system", content = "You are a translator between English and Portuguese for a product and engineering team. You keep real technical jargon and proper names in English, but you translate every ordinary word — an English word is not jargon just because it appears in a technical conversation. You translate meaning rather than words, never an idiom literally."},
+      {role = "system", content = "You are a translator between English and Portuguese for a product and engineering team. You keep real technical jargon and proper names in English, but you translate every ordinary word, since an English word is not jargon just because it appears in a technical conversation. You translate meaning rather than words, never an idiom literally."},
       {role = "user", content = prompt}
     },
     -- Stable, non-PII end-user tag so OpenAI can attribute/limit abuse per-feature
