@@ -135,8 +135,29 @@ Metro with `--clear`. Never symlink an app's `node_modules` by hand to save an i
    the phone or the desktop card and tiles them (4 phone or 2 desktop frames to an image): a 40 s video is ~8.5k tokens, not the
    ~66k of `fps=1`. The **`frame-reviewer`** agent (`claude-haiku-5-5`, `agents/frame-reviewer.md`)
    reads the sheets against the steps file and its checklist; fix, re-record, repeat until it
-   says `clean`. Only then report `video:`. Never open the sheets in the builder's own context,
+   says `clean`. Never open the sheets in the builder's own context,
    and never hand-roll `codex exec` for this (2026-10-18: update menu + 401, the tab hangs).
+4c. **Design lift before Jeff** (Jeff, 2026-11-05: "build a ui ux expert to visually review these
+   videos or screens and provide visual lifts before bringing to me"). After `frame-reviewer`
+   says `clean`, give the same sheets, steps file, goal and repo root to the **`ux-lift`** agent
+   (`agents/ux-lift.md`, Opus). It reviews against Duda's design system and house rules and
+   returns numbered lifts tagged `must` / `should` / `nice` / `needs-jeff`. Apply every `must`
+   and `should` that stays inside existing tokens and the PR's scope, then re-record and run
+   both reviewers again, for **2 lift rounds at most**. Report `video:` with the final verdict and
+   a one-line list of the lifts applied, declined (with the reason) and `needs-jeff`. Colour and
+   new-copy lifts are never applied silently: they go to Jeff as questions.
+   - **Save every round's full report** as `<review dir>/ux-lift-r<N>.md`, beside the sheets, and
+     put the paths in the `video:` report. A one-line summary in a log can't be audited
+     (2026-11-06: three declined lifts could not be re-judged because only summaries survived).
+   - **How a lift may be declined** (Jeff, 2026-11-06: "the spec may have been wrong, jeff may have
+     been wrong... we should think about the declined things better"):
+     - *Bad on its merits.* You may decline it, with the design reason written down.
+     - *Contradicts the spec, a house rule or a past decision* (`overrides:`). Never decline it
+       yourself. Relay it to the orchestrator as a question, with the lift's case and your
+       recommendation. "The spec says" is not a reason.
+     - *Pre-existing or outside this PR's scope.* Don't apply it here. List it under
+       `follow-ups:` in the `video:` report. The orchestrator files every follow-up as an issue,
+       or adds it to an existing one, before merge. Nothing out of scope is dropped.
 5. Commit the final to a `pr-media/<slug>` branch (never the PR branch), link it in the PR
    body, and report the local path.
 6. **Clean up what you started**, every time, including when the run fails (2026-10-21:
@@ -159,6 +180,18 @@ Metro with `--clear`. Never symlink an app's `node_modules` by hand to save an i
    once the reviewer has said `clean`. Keep only the final, the steps file and the shrunk raw.
 
 ## 2. Send (orchestrator)
+
+**Before sending, check the builder's `video:` report includes a `ux-lift` verdict.** If it
+doesn't, run `ux-lift` yourself on the sheets (orchestrator side, a subagent, not your own
+context). Send the lifts back to the builder, and don't send Jeff the video until the
+`must`/`should` lifts are applied or declined with a reason. Put any `needs-jeff` lift in the
+caption as a question.
+
+**Audit the declines yourself before sending.** Open the saved `ux-lift-r<N>.md` files and check
+each declined lift against its reason:
+- A decline that rests on the spec or a past decision is yours to rule on. Overrule it when the
+  lift is better, or send it to Jeff.
+- Every `follow-ups:` item gets an issue (or a line on an existing one) before the PR merges.
 
 Caption, at most 4 short lines, in the language Jeff wrote in:
 what changed, the 2-3 things to look at, and how to answer.
