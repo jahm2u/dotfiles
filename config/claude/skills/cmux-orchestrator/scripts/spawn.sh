@@ -264,6 +264,12 @@ LEDGER
 { mkdir -p "$(dirname "$ROOTS_FILE")" && { grep -qxF "$ROOT" "$ROOTS_FILE" 2>/dev/null || printf '%s\n' "$ROOT" >> "$ROOTS_FILE"; }; } \
   || echo "WARNING: could not record $ROOT in $ROOTS_FILE; spawns from other repos will not count its builders" >&2
 bf_logline "$SLUG" spawning "worktree=$WT branch=$BRANCH base=$BASE orch=$ORCH_WS"
+SHARED_ROOTS=("$ROOT")
+for d in ${ADD_DIRS[@]+"${ADD_DIRS[@]}"}; do
+  r=$(cd "$d" && bf_cwd_root 2>/dev/null) && SHARED_ROOTS+=("$r")
+done
+bf_shared_snapshot "$SLUG" "$WT" "${SHARED_ROOTS[@]}" \
+  || echo "WARNING: shared-state snapshot failed; report.sh and collect.sh will not check this builder's drift" >&2
 
 # The builder skill reads BF_* from its environment; the ledger path lets report.sh find the rest.
 # MCP servers are the builder's biggest fixed context cost (this repo's babaflow MCP alone is

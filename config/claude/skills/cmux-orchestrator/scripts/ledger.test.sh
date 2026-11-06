@@ -85,5 +85,17 @@ reset; ledger "$B" sib
 run_case "ls.sh <slug> dumps a sibling-root builder" "$TMP/a" 0 "$HERE/ls.sh" sib -- \
   "has:slug=sib"
 
+reset; mkdir -p "$A"
+run_case "bf_set on a missing ledger dies naming it and creates nothing" "$TMP/a" 1 -c '. "$0"; bf_set ghost BF_STATUS x' "$HERE/lib.sh" -- \
+  "has:ledger missing: $A/ghost.env" "absent:$A/ghost.env"
+
+reset; mkdir -p "$A"
+run_case "bf_logline on a missing ledger dies naming it and writes no log" "$TMP/a" 1 -c '. "$0"; bf_logline ghost started hi' "$HERE/lib.sh" -- \
+  "has:ledger missing: $A/ghost.env" "absent:$A/ghost.log" "absent:$A/ghost.env"
+
+reset; ledger "$B" sib; mkdir -p "$A"; printf 'BF_STATUS=started\n' > "$A/sib.env"
+run_case "a stub .env without BF_SLUG in a second root is not a ledger" "$TMP/a" 0 -c '. "$0"; bf_find_ledger sib' "$HERE/lib.sh" -- \
+  "is:$B"
+
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]

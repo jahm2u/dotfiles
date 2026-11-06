@@ -79,5 +79,33 @@ check "tracked file changed + clean review" tracked-clean 0 '^== codex round 1: 
 check "tracked file changed + P1 finding" tracked-finding 1 '^== codex round 1: P0=0 P1=1 P2=0 P3=0 -> 1 to address' yes
 SHIM=1 check "cg.sh shim provider (teamclaude) + clean review" shim 0 '^== codex round 1: .* -> CLEAN' no
 
+count=$((count + 1))
+wt=$(new_repo "case$count"); LD="$TMP/ledgerrepo/_bmad/handoff/cmux"; mkdir -p "$LD"
+printf 'BF_SLUG=cx\nBF_STATUS=review-round\n' > "$LD/cx.env"
+set +e
+out=$(cd "$wt" && env -u CG_ACTIVE -u CG_KEY -u CG_URL -u CG_CODEX_URL -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u HERDR_ENV -u TERM_PROGRAM \
+      BF_SLUG=cx BF_LEDGER="$LD/cx.env" HOME="$TMP/home" TMPDIR="$TMP/outpin" FAKE_MODE=clean PATH="$TMP/bin:$PATH" \
+      bash "$REVIEW_SH" --no-tab --timeout 30 2>&1); rc=$?
+set -e
+ok=1 why=""
+[ "$rc" -eq 0 ] || { ok=0; why="rc=$rc"; }
+[ ! -e "$wt/_bmad" ] || { ok=0; why="$why; wrote $wt/_bmad"; }
+grep -q '|codex-review|round 1 started' "$LD/cx.log" 2>/dev/null || { ok=0; why="$why; no log line in BF_LEDGER's dir"; }
+if [ $ok = 1 ]; then pass=$((pass + 1)); echo "ok   ledger writes pinned to BF_LEDGER's dir, none in the cwd repo"
+else fail=$((fail + 1)); echo "FAIL ledger writes pinned to BF_LEDGER's dir ($why)"; printf '%s\n' "$out" | tail -4 | sed 's/^/       /'; fi
+
+count=$((count + 1))
+wt=$(new_repo "case$count")
+set +e
+out=$(cd "$wt" && env -u CG_ACTIVE -u CG_KEY -u CG_URL -u CG_CODEX_URL -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u HERDR_ENV -u TERM_PROGRAM \
+      BF_SLUG=cy BF_LEDGER="$LD/cy.env" HOME="$TMP/home" TMPDIR="$TMP/outpin2" FAKE_MODE=clean PATH="$TMP/bin:$PATH" \
+      bash "$REVIEW_SH" --no-tab --timeout 30 2>&1); rc=$?
+set -e
+ok=1 why=""
+[ "$rc" -eq 0 ] || { ok=0; why="rc=$rc"; }
+[ ! -e "$wt/_bmad" ] && [ ! -e "$LD/cy.env" ] && [ ! -e "$LD/cy.log" ] || { ok=0; why="$why; a stub ledger or log was created"; }
+if [ $ok = 1 ]; then pass=$((pass + 1)); echo "ok   BF_LEDGER naming a missing file -> review runs, no stub ledger"
+else fail=$((fail + 1)); echo "FAIL BF_LEDGER naming a missing file ($why)"; printf '%s\n' "$out" | tail -4 | sed 's/^/       /'; fi
+
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]

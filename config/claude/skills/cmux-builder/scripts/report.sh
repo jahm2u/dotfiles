@@ -21,8 +21,12 @@ LIB="$HOME/.claude/skills/cmux-orchestrator/scripts/lib.sh"
 [ $# -ge 2 ] || bf_die "usage: report.sh <phase> <message> [--ping]"
 PHASE=$1; MSG=$2; PING=${3:-}
 : "${BF_SLUG:?BF_SLUG not set — are you inside the builder workspace?}"
-: "${BF_LEDGER:?BF_LEDGER not set}"
-[ -f "$BF_LEDGER" ] || bf_die "ledger missing: $BF_LEDGER"
+if [ -z "${BF_LEDGER:-}" ] || [ ! -f "$BF_LEDGER" ]; then
+  _found=$(bf_find_ledger "$BF_SLUG") || exit 1
+  BF_LEDGER="$_found/$BF_SLUG.env"
+fi
+_bf_pinned_dir=$(cd "$(dirname "$BF_LEDGER")" && pwd -P)
+BF_LEDGER="$_bf_pinned_dir/$(basename "$BF_LEDGER")"
 set -a; . "$BF_LEDGER"; set +a
 bf_herdr_env   # herdr ledgers: point the CLI at the server this builder lives on
 
@@ -51,6 +55,16 @@ case "$PHASE" in
       [ "$n" != "${BF_PR:-}" ] && bf_set "$BF_SLUG" BF_PR "$n"
     fi;;
 esac
+if [ "$PHASE" = pr-open ]; then
+  DRIFT=$(bf_shared_drift "$_bf_pinned_dir/$BF_SLUG.shared" "$BF_SLUG" 2>/dev/null || true)
+  if [ -n "$DRIFT" ]; then
+    if [ "${#DRIFT}" -gt 600 ]; then
+      printf '%s\n' "$DRIFT" > "$_bf_pinned_dir/$BF_SLUG.shared-drift.txt"
+      DRIFT="${DRIFT:0:500}... (${#DRIFT} chars; full line in $_bf_pinned_dir/$BF_SLUG.shared-drift.txt)"
+    fi
+    MSG="$MSG; $DRIFT"
+  fi
+fi
 bf_set "$BF_SLUG" BF_STATUS "$PHASE"
 bf_logline "$BF_SLUG" "$PHASE" "$MSG"
 
