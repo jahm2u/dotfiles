@@ -95,6 +95,9 @@ done
 echo "==> BMAD root $BMAD_ROOT${ADD_DIRS[@]+ (add-dir: ${ADD_DIRS[*]})}"
 LEDGER=$(bf_ledger_file "$SLUG")
 [ ! -f "$LEDGER" ] || bf_die "ledger already exists for '$SLUG' ($LEDGER). Run the trash collector first, or pick another slug."
+while IFS= read -r r; do
+  [ ! -f "$r/_bmad/handoff/cmux/$SLUG.env" ] || bf_die "ledger already exists for '$SLUG' in another repo ($r/_bmad/handoff/cmux/$SLUG.env); slugs must be unique across repos. Collect it first, or pick another slug."
+done < <(bf_known_roots "$ROOT")
 
 ROOTS_FILE=$(bf_roots_file)
 live_builders() {

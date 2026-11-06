@@ -3,8 +3,9 @@
 # Source this file; do not execute it.
 #
 # Ledger: one KEY=VALUE file per builder at <primary-repo>/_bmad/handoff/cmux/<slug>.env
-# plus an append-only <slug>.log. The primary repo is resolved from git's common dir, so
-# this works from inside any worktree of the same repo.
+# plus an append-only <slug>.log. A new ledger goes under the primary repo resolved from
+# git's common dir, so this works from inside any worktree of the same repo. bf_load finds an
+# existing one in any known root and later calls use that ledger's dir and repo.
 
 export CMUX_QUIET=1
 
