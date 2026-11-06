@@ -101,13 +101,15 @@ while :; do
 
   printf '%s\n' "$WATCH" | while IFS= read -r slug; do
     [ -n "$slug" ] || continue
-    ( bf_load "$slug" ) >/dev/null 2>&1 || continue
+    if [ -n "$SLUG_LIST" ]; then dir="$(bf_find_ledger "$slug" 2>/dev/null)" || continue
+    else dir="$LEDGER_DIR"; fi
+    [ -f "$dir/$slug.env" ] || continue
     # This loop body runs in ONE subshell for every slug, so a field absent from this
     # ledger would keep the previous slug's value -- a pre-herdr ledger would inherit
     # BF_MUX=herdr. Clear the per-builder fields first.
     unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_WS BF_BUILDER_SURFACE BF_BUILDER_TAB BF_BUILDER_AGENT
     # shellcheck disable=SC1090
-    . "$LEDGER_DIR/$slug.env" 2>/dev/null || continue
+    . "$dir/$slug.env" 2>/dev/null || continue
     bf_herdr_env
     [ -n "${BF_BUILDER_WS:-}" ] || continue
 

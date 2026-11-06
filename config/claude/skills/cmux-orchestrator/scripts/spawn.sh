@@ -96,20 +96,10 @@ echo "==> BMAD root $BMAD_ROOT${ADD_DIRS[@]+ (add-dir: ${ADD_DIRS[*]})}"
 LEDGER=$(bf_ledger_file "$SLUG")
 [ ! -f "$LEDGER" ] || bf_die "ledger already exists for '$SLUG' ($LEDGER). Run the trash collector first, or pick another slug."
 
-ROOTS_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/cmux-orchestrator/roots"
-host_roots() {
-  local p cwd r
-  { printf '%s\n' "$ROOT"
-    [ -f "$ROOTS_FILE" ] && cat "$ROOTS_FILE"
-    for p in $(pgrep -f -- "cmux-builder/builder-settings.json" 2>/dev/null); do
-      cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p') || continue
-      case "$cwd" in */.claude/worktrees/wt-*) printf '%s\n' "${cwd%/.claude/worktrees/*}";; esac
-    done
-  } | while IFS= read -r r; do [ -d "$r" ] || continue; (cd "$r" && pwd -P) || true; done | awk '!seen[$0]++'
-}
+ROOTS_FILE=$(bf_roots_file)
 live_builders() {
   local r f
-  host_roots | while IFS= read -r r; do
+  bf_known_roots "$ROOT" | while IFS= read -r r; do
     for f in "$r"/_bmad/handoff/cmux/*.env; do
       [ -f "$f" ] || continue
       ( unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_TAB BF_BUILDER_AGENT BF_BUILDER_WS BF_BUILDER_SURFACE

@@ -120,6 +120,9 @@ run_case "--force passes over both and records BF_FORCED=1" 9.50 "11 12 13" 1 0 
 run_case "a live builder in a repo found only by its process counts" 1.00 "11 12 13" "" 1 \
   here:a-11 here:b-12 third:x-13 pid -- \
   "has:3 live builders" "has:third/x-13" untouched
+run_case "a sibling root holding the same slug does not move the new ledger" 1.00 "" "" 0 \
+  other:case7 -- \
+  spawned "ledger:BF_SLUG=case7"
 
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]

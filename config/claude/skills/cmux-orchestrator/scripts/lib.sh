@@ -11,16 +11,25 @@ export CMUX_QUIET=1
 bf_die() { echo "ERROR: $*" >&2; exit 1; }
 
 # Absolute path of the PRIMARY checkout (the one that owns .git), from anywhere in the repo.
-bf_primary_root() {
+bf_cwd_root() {
   local common
-  common=$(git rev-parse --git-common-dir 2>/dev/null) || bf_die "not inside a git repo"
-  common=$(cd "$common" && pwd -P)
+  common=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+  common=$(cd "$common" && pwd -P) || return 1
   dirname "$common"
 }
 
+bf_primary_root() {
+  if [ -n "${_bf_pinned_dir:-}" ]; then
+    dirname "$(dirname "$(dirname "$_bf_pinned_dir")")"
+    return
+  fi
+  bf_cwd_root || bf_die "not inside a git repo"
+}
+
 bf_ledger_dir() {
-  local root; root=$(bf_primary_root)
-  local d="$root/_bmad/handoff/cmux"
+  local d
+  if [ -n "${_bf_pinned_dir:-}" ]; then d=$_bf_pinned_dir
+  else d="$(bf_primary_root)/_bmad/handoff/cmux"; fi
   mkdir -p "$d/archive"
   echo "$d"
 }
@@ -28,10 +37,41 @@ bf_ledger_dir() {
 bf_ledger_file() { echo "$(bf_ledger_dir)/$1.env"; }
 bf_log_file()    { echo "$(bf_ledger_dir)/$1.log"; }
 
+bf_roots_file() { echo "${XDG_STATE_HOME:-$HOME/.local/state}/cmux-orchestrator/roots"; }
+
+bf_known_roots() {
+  local p cwd r rf; rf=$(bf_roots_file)
+  { [ -n "${1:-}" ] && printf '%s\n' "$1"
+    [ -f "$rf" ] && cat "$rf"
+    for p in $(pgrep -f -- "cmux-builder/builder-settings.json" 2>/dev/null); do
+      cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p') || continue
+      case "$cwd" in */.claude/worktrees/wt-*) printf '%s\n' "${cwd%/.claude/worktrees/*}";; esac
+    done
+  } | while IFS= read -r r; do [ -n "$r" ] && [ -d "$r" ] || continue; (cd "$r" && pwd -P) || true; done | awk '!seen[$0]++'
+}
+
+bf_find_ledger() {
+  local slug=$1 r hits="" n=0 roots
+  roots=$(bf_known_roots "$(bf_cwd_root 2>/dev/null || true)")
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    if [ -f "$r/_bmad/handoff/cmux/$slug.env" ]; then
+      hits="$hits$r/_bmad/handoff/cmux/$slug.env"$'\n'; n=$((n + 1))
+    fi
+  done <<< "$roots"
+  if [ "$n" -eq 0 ]; then
+    bf_die "no ledger for slug '$slug' in any known root: $(printf '%s' "$roots" | tr '\n' ' ')"
+  elif [ "$n" -gt 1 ]; then
+    bf_die "slug '$slug' has a ledger in more than one root; collect or rename one: $(printf '%s' "$hits" | tr '\n' ' ')"
+  fi
+  dirname "${hits%$'\n'}"
+}
+
 # Load a ledger into the current shell (exports BF_* vars).
 bf_load() {
-  local f; f=$(bf_ledger_file "$1")
-  [ -f "$f" ] || bf_die "no ledger for slug '$1' at $f"
+  local d; d=$(bf_find_ledger "$1") || exit 1
+  _bf_pinned_dir=$d
+  local f="$d/$1.env"
   # A pre-herdr ledger has no BF_MUX line, and a herdr builder's own env exports
   # BF_MUX=herdr -- without this unset, that ledger would load as herdr.
   unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_TAB BF_BUILDER_AGENT
