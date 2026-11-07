@@ -161,6 +161,14 @@ check "a builder in an unrelated repo with the same path does not excuse it" "$o
 fresh; run snap; echo garbage > "$ROOT/.git/index"; set +e; out=$(drift 2>&1; echo "rc=$?"); set -e
 check "git status failing in a primary is an error, never a clean result" "$out" "has:ERROR: git status failed" "has:rc=1" "not:shared-state:"
 
+fresh; run snap
+G -C "$ROOT" worktree add -q -b feat/c "$ROOT/.claude/worktrees/wt-c"
+printf 'BF_SLUG=c\nBF_WORKTREE=%s\n' "$ROOT/.claude/worktrees/wt-c" > "$LD/c.env"
+echo c > "$ROOT/.claude/worktrees/wt-c/committed.txt"; G -C "$ROOT/.claude/worktrees/wt-c" add committed.txt; G -C "$ROOT/.claude/worktrees/wt-c" commit -q -m c
+echo c > "$ROOT/committed.txt"
+run drift
+check "a path another live builder already committed -> not attributable (c)" "$out" "has:not attributable (c): $ROOT: status +?? committed.txt" lines=1
+
 fresh; run lib "$ROOT" 'bf_shared_drift "'"$LD"'/me.shared" me'
 check "no snapshot -> drift prints nothing" "$out" empty
 

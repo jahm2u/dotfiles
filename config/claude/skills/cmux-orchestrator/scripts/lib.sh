@@ -231,6 +231,11 @@ def others(self_slug, known):
             touched = set()
             for l in (git(wt, "status", "--porcelain", "--untracked-files=all") or "").splitlines():
                 touched.update(paths(l))
+            for base in ("origin/main", "origin/master", "main", "master"):
+                mb = (git(wt, "merge-base", "HEAD", base) or "").strip()
+                if mb:
+                    touched.update((git(wt, "diff", "--name-only", mb, "HEAD") or "").splitlines())
+                    break
             res.append({"slug": slug, "shares": shares, "paths": touched})
     return res
 
