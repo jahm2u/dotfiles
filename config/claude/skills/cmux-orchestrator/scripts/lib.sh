@@ -240,7 +240,7 @@ def others(self_slug, known):
                 if mb:
                     touched.update((git(wt, "diff", "--name-only", mb, "HEAD") or "").splitlines())
                     break
-            res.append({"slug": slug, "shares": shares, "paths": touched})
+            res.append({"slug": slug, "own": os.path.realpath(r), "shares": shares, "paths": touched})
     return res
 
 def under(path, root):
@@ -305,7 +305,8 @@ def drift(snapfile, self_slug, known):
         return [o["slug"] for o in oth if any(under(root, s) or under(s, root) for s in o["shares"])]
 
     def attribute(root, ps):
-        group = label([o["slug"] for o in oth if root in o["shares"] and any(p in o["paths"] for p in ps)])
+        group = label([o["slug"] for o in oth if root in o["shares"]
+                       and (root != o["own"] or any(p in o["paths"] for p in ps))])
         if not group and collected_spec(root, ps, self_slug):
             group = "not attributable (collector)"
         return group

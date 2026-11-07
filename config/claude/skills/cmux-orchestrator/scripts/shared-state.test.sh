@@ -198,6 +198,15 @@ check "staged content replaced under an unchanged MM line -> status ~MM a.txt" "
 fresh; mkdir -p "$TMP/t1$N" "$TMP/t2$N"; ln -s "$TMP/t1$N" "$ROOT/link"; run snap; rm "$ROOT/link"; ln -s "$TMP/t2$N" "$ROOT/link"; run drift
 check "an untracked symlink retargeted -> status ~?? link" "$out" "has:shared-state: $ROOT: status ~?? link" lines=1
 
+fresh
+BRAIN="$TMP/brain$N"; git init -q -b main "$BRAIN"; G -C "$BRAIN" commit -q --allow-empty -m init
+run lib "$ROOT" 'bf_shared_snapshot me "'"$WT"'" "'"$ROOT"'" "'"$BRAIN"'"'
+G -C "$ROOT" worktree add -q -b feat/other "$ROOT/.claude/worktrees/wt-other"
+printf "BF_SLUG=other\nBF_WORKTREE=%s\nBF_BMAD_ROOT=%s\nBF_ADD_DIRS='%s'\n" "$ROOT/.claude/worktrees/wt-other" "$BRAIN" "$BRAIN" > "$LD/other.env"
+echo w > "$BRAIN/by-someone.md"; run drift
+check "write in an --add-dir root another present builder shares -> not attributable (other)" "$out" \
+  "has:not attributable (other): $BRAIN: status +?? by-someone.md" "not:shared-state: $BRAIN:" lines=1
+
 fresh; run lib "$ROOT" 'bf_shared_drift "'"$LD"'/me.shared" me'
 check "no snapshot -> drift prints nothing" "$out" empty
 
