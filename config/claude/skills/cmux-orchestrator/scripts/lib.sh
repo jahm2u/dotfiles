@@ -345,6 +345,8 @@ def drift(snapfile, self_slug, known):
                         by.setdefault(attribute(root, [p]), []).append(p)
                     for g, ps in by.items():
                         add(g, root, "HEAD +%d local commit(s): %s" % (len(local), " ".join(ps)))
+                    if not by:
+                        add(attribute(root, []), root, "HEAD +%d local commit(s)" % len(local))
             else:
                 add("", root, "HEAD %s->%s (not a fast-forward)" % (old["head"][:9] or "-", cur["head"][:9] or "-"))
         if cur["exclude_sha"] != old["exclude_sha"]:

@@ -125,6 +125,10 @@ fresh; run snap; echo y > "$ROOT/a.txt"; G -C "$ROOT" commit -q -am local; run d
 check "a commit made in the primary itself, not on the upstream -> HEAD +1 local commit(s)" "$out" \
   "has:shared-state: $ROOT: HEAD +1 local commit(s): a.txt" lines=1
 
+fresh; run snap; G -C "$ROOT" commit -q --allow-empty -m empty; run drift
+check "an empty local commit in the primary -> HEAD +1 local commit(s), no paths" "$out" \
+  "has:shared-state: $ROOT: HEAD +1 local commit(s)" lines=1
+
 fresh; run snap
 echo b > "$CLONE/b.txt"; G -C "$CLONE" add b.txt; G -C "$CLONE" commit -q -m b; git -C "$CLONE" push -q origin main 2>/dev/null
 git -C "$ROOT" pull -q --ff-only 2>/dev/null
