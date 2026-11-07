@@ -56,7 +56,7 @@ bf_find_ledger() {
   roots=$(bf_known_roots "$(bf_cwd_root 2>/dev/null || true)")
   while IFS= read -r r; do
     [ -n "$r" ] || continue
-    if [ -f "$r/_bmad/handoff/cmux/$slug.env" ]; then
+    if [ -f "$r/_bmad/handoff/cmux/$slug.env" ] && grep -q '^BF_SLUG=' "$r/_bmad/handoff/cmux/$slug.env"; then
       hits="$hits$r/_bmad/handoff/cmux/$slug.env"$'\n'; n=$((n + 1))
     fi
   done <<< "$roots"
@@ -85,7 +85,7 @@ bf_load() {
 bf_set() { # slug key value
   local f; f=$(bf_ledger_file "$1")
   local key=$2 val=$3
-  touch "$f"
+  [ -f "$f" ] || bf_die "ledger missing: $f"
   if grep -q "^${key}=" "$f"; then
     # portable in-place replace (macOS sed needs the '' arg)
     sed -i '' "s|^${key}=.*|${key}=${val}|" "$f"
@@ -98,7 +98,293 @@ bf_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 # Append a line to the builder's log.
 bf_logline() { # slug phase msg
+  local f; f=$(bf_ledger_file "$1")
+  [ -f "$f" ] || bf_die "ledger missing: $f"
   echo "$(bf_now)|$2|$3" >> "$(bf_log_file "$1")"
+}
+
+bf_shared_snapshot() { # slug worktree root...
+  local slug=$1 wt=$2 out; shift 2
+  out="$(bf_ledger_dir)/$slug.shared"
+  _bf_shared_py snapshot "$out" "$wt" "$@"
+}
+
+bf_shared_drift() { # snapshot-file self-slug
+  [ -f "$1" ] || return 0
+  local -a roots=()
+  local r
+  while IFS= read -r r; do [ -n "$r" ] && roots+=("$r"); done < <(bf_known_roots "$(bf_cwd_root 2>/dev/null || true)")
+  _bf_shared_py drift "$1" "$2" ${roots[@]+"${roots[@]}"}
+}
+
+_bf_shared_py() {
+  GIT_OPTIONAL_LOCKS=0 python3 - "$@" <<'BF_PY'
+import collections, glob, hashlib, json, os, subprocess, sys
+
+SKIP = (".claude/worktrees/", "_bmad/handoff/")
+
+def git(root, *args):
+    r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
+
+def unquote(p):
+    if len(p) > 1 and p[0] == '"' and p[-1] == '"':
+        try:
+            return p[1:-1].encode("latin-1").decode("unicode_escape").encode("latin-1").decode("utf-8")
+        except Exception:
+            return p[1:-1]
+    return p
+
+def paths(line):
+    return [unquote(p) for p in line[3:].split(" -> ")]
+
+def status(root):
+    out = git(root, "status", "--porcelain", "--untracked-files=all")
+    if out is None:
+        sys.exit("ERROR: git status failed in %s" % root)
+    return [l for l in out.splitlines() if l and not any(p.startswith(SKIP) for p in paths(l))]
+
+def root_state(root):
+    head = (git(root, "rev-parse", "--verify", "-q", "HEAD") or "").strip()
+    common = (git(root, "rev-parse", "--git-common-dir") or ".git").strip()
+    excl = os.path.join(root, common, "info", "exclude")
+    try:
+        data = open(excl, "rb").read()
+        sha = hashlib.sha256(data).hexdigest()
+        lines = data.decode("utf-8", "replace").splitlines()
+    except OSError:
+        sha, lines = "-", []
+    st = status(root)
+    return {"root": root, "head": head, "exclude_sha": sha, "exclude": lines, "status": st,
+            "content": {l: content_sha(root, l) for l in st}}
+
+def content_sha(root, line):
+    rel = paths(line)[-1]
+    p = os.path.join(root, rel)
+    h = hashlib.sha256((git(root, "ls-files", "-s", "--", rel) or "").encode())
+    if os.path.islink(p):
+        h.update(("link:" + os.readlink(p)).encode())
+        return h.hexdigest()
+    if not os.path.isfile(p):
+        return h.hexdigest()
+    try:
+        with open(p, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+    except OSError:
+        return "?"
+    return h.hexdigest()
+
+def mtime(p):
+    try:
+        return str(os.stat(p).st_mtime_ns)
+    except OSError:
+        return "gone"
+
+def nm_links(wt):
+    found = []
+    for dp, dns, fns in os.walk(wt):
+        rel = os.path.relpath(dp, wt)
+        depth = 0 if rel == "." else rel.count(os.sep) + 1
+        for n in dns + fns:
+            p = os.path.join(dp, n)
+            if n == "node_modules" and os.path.islink(p):
+                t = os.path.realpath(p)
+                found.append({"link": p, "target": t, "mtime": mtime(t)})
+        dns[:] = [d for d in dns if d not in (".git", "node_modules") and depth < 4]
+    return found
+
+def snapshot(out, wt, roots):
+    seen, rs = set(), []
+    for r in roots:
+        r = os.path.realpath(r)
+        if r in seen or git(r, "rev-parse", "--git-dir") is None:
+            continue
+        seen.add(r)
+        rs.append(root_state(r))
+    nms = [n for n in (nm_links(wt) if os.path.isdir(wt) else []) if any(under(n["target"], r["root"]) for r in rs)]
+    snap = {"version": 1, "worktree": wt, "roots": rs, "node_modules": nms}
+    tmp = out + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(snap, f, indent=1)
+    os.replace(tmp, out)
+
+def env_file(path):
+    d = {}
+    try:
+        for l in open(path, encoding="utf-8", errors="replace"):
+            if "=" in l:
+                k, v = l.rstrip("\n").split("=", 1)
+                d[k] = v.strip("'\"")
+    except OSError:
+        pass
+    return d
+
+def others(self_slug, known):
+    res = []
+    for r in known:
+        for f in sorted(glob.glob(os.path.join(r, "_bmad/handoff/cmux/*.env"))):
+            e = env_file(f)
+            slug, wt = e.get("BF_SLUG"), e.get("BF_WORKTREE", "")
+            if not slug or slug == self_slug or not wt or not os.path.isdir(wt):
+                continue
+            shares = {os.path.realpath(r)}
+            for d in e.get("BF_ADD_DIRS", "").split() + [e.get("BF_BMAD_ROOT", "")]:
+                if d:
+                    shares.add(primary_of(d))
+            touched = set()
+            for l in (git(wt, "status", "--porcelain", "--untracked-files=all") or "").splitlines():
+                touched.update(paths(l))
+            for base in ("origin/main", "origin/master", "main", "master"):
+                mb = (git(wt, "merge-base", "HEAD", base) or "").strip()
+                if mb:
+                    touched.update((git(wt, "diff", "--name-only", mb, "HEAD") or "").splitlines())
+                    break
+            res.append({"slug": slug, "own": os.path.realpath(r), "shares": shares, "paths": touched})
+    return res
+
+def primary_of(d):
+    common = (git(d, "rev-parse", "--git-common-dir") or "").strip() if os.path.isdir(d) else ""
+    if not common:
+        return os.path.realpath(d)
+    return os.path.dirname(os.path.realpath(os.path.join(d, common)))
+
+def overlaps(a, b):
+    return under(a, b) or under(b, a)
+
+def under(path, root):
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+def collected_spec(root, ps, self_slug):
+    arch = os.path.join(root, "_bmad/handoff/cmux/archive")
+    if not os.path.isdir(arch):
+        return False
+    for p in ps:
+        b = os.path.basename(p)
+        if not (p.startswith("_bmad-output/implementation-artifacts/spec-") and b.endswith(".md")):
+            continue
+        for a in os.listdir(arch):
+            if a != self_slug and (b == "spec-%s.md" % a or b.startswith("spec-%s-" % a)) \
+               and os.path.isfile(os.path.join(arch, a, b)):
+                return True
+    return False
+
+def upstream(root):
+    for ref in ("@{u}", "refs/remotes/origin/HEAD"):
+        sha = (git(root, "rev-parse", "--verify", "-q", ref + "^{commit}") or "").strip()
+        if sha:
+            return sha
+    return ""
+
+def commit_paths(root, *revs):
+    out = git(root, "log", "--format=%x1e%H", "--name-only", "-m", *revs) or ""
+    res, cur = collections.OrderedDict(), None
+    for l in out.split("\n"):
+        if l.startswith("\x1e"):
+            cur = l[1:]
+            res.setdefault(cur, [])
+        elif l and cur:
+            res[cur].append(l)
+    return res
+
+def split_commits(root, old, new):
+    up = upstream(root)
+    allc = commit_paths(root, new, "^" + old)
+    local = commit_paths(root, new, "^" + old, "^" + up) if up else allc
+    ff = set()
+    for c, ps in allc.items():
+        if c not in local:
+            ff.update(ps)
+    return local, ff
+
+def drift(snapfile, self_slug, known):
+    snap = json.load(open(snapfile))
+    known = [os.path.realpath(k) for k in known if k and os.path.isdir(k)]
+    known += [r["root"] for r in snap["roots"] if r["root"] not in known and os.path.isdir(r["root"])]
+    oth = others(self_slug, known)
+    groups = collections.OrderedDict()
+
+    def add(group, root, text):
+        groups.setdefault(group, collections.OrderedDict()).setdefault(root, []).append(text)
+
+    def label(slugs):
+        return "not attributable (%s)" % ",".join(slugs) if slugs else ""
+
+    def shares_root(o, root):
+        return any(overlaps(root, s) for s in o["shares"])
+
+    def sharers(root):
+        return [o["slug"] for o in oth if shares_root(o, root)]
+
+    def attribute(root, ps):
+        group = label([o["slug"] for o in oth if shares_root(o, root)
+                       and (not overlaps(root, o["own"]) or any(p in o["paths"] for p in ps))])
+        if not group and collected_spec(root, ps, self_slug):
+            group = "not attributable (collector)"
+        return group
+
+    for old in snap["roots"]:
+        root = old["root"]
+        if not os.path.isdir(root):
+            add("", root, "root gone")
+            continue
+        cur = root_state(root)
+        ff = set()
+        if cur["head"] != old["head"]:
+            if old["head"] and cur["head"] and subprocess.run(
+                    ["git", "-C", root, "merge-base", "--is-ancestor", old["head"], cur["head"]],
+                    capture_output=True).returncode == 0:
+                local, ff = split_commits(root, old["head"], cur["head"])
+                if local:
+                    lpaths = collections.OrderedDict()
+                    for c in local:
+                        for p in local[c]:
+                            lpaths.setdefault(p, None)
+                    by = collections.OrderedDict()
+                    for p in lpaths:
+                        by.setdefault(attribute(root, [p]), []).append(p)
+                    for g, ps in by.items():
+                        add(g, root, "HEAD +%d local commit(s): %s" % (len(local), " ".join(ps)))
+                    if not by:
+                        add(attribute(root, []), root, "HEAD +%d local commit(s)" % len(local))
+            else:
+                add("", root, "HEAD %s->%s (not a fast-forward)" % (old["head"][:9] or "-", cur["head"][:9] or "-"))
+        if cur["exclude_sha"] != old["exclude_sha"]:
+            o, c = collections.Counter(old["exclude"]), collections.Counter(cur["exclude"])
+            texts = ["info/exclude +" + l for l in (c - o).elements()] + ["info/exclude -" + l for l in (o - c).elements()]
+            for t in texts or ["info/exclude changed"]:
+                add(label(sharers(root)), root, t)
+        before, after = set(old["status"]), set(cur["status"])
+        changes = [("+", l) for l in cur["status"] if l not in before] + [("-", l) for l in old["status"] if l not in after]
+        oc = old.get("content", {})
+        changes += [("~", l) for l in cur["status"] if l in before and l in oc and oc[l] != cur["content"][l]]
+        for sign, line in changes:
+            ps = paths(line)
+            if any(p in ff for p in ps):
+                group = "not attributable (fast-forward)"
+            else:
+                group = attribute(root, ps)
+            add(group, root, "status " + sign + line)
+    for nm in snap.get("node_modules", []):
+        now = mtime(nm["target"])
+        if now == nm["mtime"]:
+            continue
+        roots = [r["root"] for r in snap["roots"] if under(nm["target"], r["root"])]
+        root = roots[0] if roots else (snap["roots"][0]["root"] if snap["roots"] else "?")
+        add(label(sharers(root)), root, "node_modules %s mtime %s->%s" % (nm["target"], nm["mtime"], now))
+    if not groups:
+        return
+    parts = []
+    for g in ([""] if "" in groups else []) + [g for g in groups if g]:
+        body = "; ".join("%s: %s" % (r, ", ".join(ts)) for r, ts in groups[g].items())
+        parts.append("%s: %s" % (g, body) if g else body)
+    print("shared-state: " + " // ".join(parts))
+
+if sys.argv[1] == "snapshot":
+    snapshot(sys.argv[2], sys.argv[3], sys.argv[4:])
+else:
+    drift(sys.argv[2], sys.argv[3], sys.argv[4:])
+BF_PY
 }
 
 # --- multiplexer backend ----------------------------------------------------------------

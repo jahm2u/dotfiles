@@ -79,8 +79,26 @@ if [ -d "$WT" ]; then
   fi
 fi
 
-# 2. harvest
 mkdir -p "$ARCH"
+SNAP="$DIR/$SLUG.shared"
+if [ -f "$SNAP" ]; then
+  DRIFT=$(bf_shared_drift "$SNAP" "$SLUG" 2>/dev/null) || DRIFT="shared-state: check failed (snapshot $SNAP)"
+elif [ -f "$ARCH/$SLUG.shared" ] && [ -f "$ARCH/shared-state.txt" ]; then
+  DRIFT=$(grep -v '^clean: ' "$ARCH/shared-state.txt" || true)
+  [ -n "$DRIFT" ] && echo "$DRIFT"
+  DRIFT=KEEP
+else
+  DRIFT="shared-state: not checked (no snapshot)"
+fi
+if [ "$DRIFT" = KEEP ]; then :
+elif [ -n "$DRIFT" ]; then
+  echo "$DRIFT"
+  printf '%s\n' "$DRIFT" > "$ARCH/shared-state.txt"
+else
+  echo "clean: no shared-state drift since spawn" > "$ARCH/shared-state.txt"
+fi
+
+# 2. harvest
 if [ -d "$WT" ]; then
   shopt -s nullglob
   for f in "$WT"/_bmad-output/implementation-artifacts/spec-"$SLUG"*.md; do
@@ -108,7 +126,7 @@ fi
 cp "$(bf_log_file "$SLUG")" "$ARCH/builder.log" 2>/dev/null || true
 # Codex review rounds (codex-review.sh writes them beside the ledger): keep the reviews and
 # transcripts, drop the generated runner scripts and exit markers.
-for f in "$DIR/$SLUG".codex-review-*.md "$DIR/$SLUG".codex-review-*.log; do if [ -e "$f" ]; then mv "$f" "$ARCH/"; fi; done
+for f in "$DIR/$SLUG".codex-review-*.md "$DIR/$SLUG".codex-review-*.log "$DIR/$SLUG".shared "$DIR/$SLUG".shared-drift.txt; do if [ -e "$f" ]; then mv "$f" "$ARCH/"; fi; done
 rm -f "$DIR/$SLUG".codex-review-*.sh "$DIR/$SLUG".codex-review-*.exit
 echo "==> harvested to $ARCH: $(ls "$ARCH" | tr '\n' ' ')"
 
