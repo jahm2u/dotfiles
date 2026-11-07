@@ -165,7 +165,7 @@ ARGS=(${CG_PRE[@]+"${CG_PRE[@]}"}
   echo "echo; echo \"== review done (exit \$rc) ==\"; cat $(q "$REVIEW")"
 } > "$RUNNER"
 chmod +x "$RUNNER"
-logl() { [ $LEDGER_OK = 1 ] && bf_logline "$BF_SLUG" codex-review "$1" || true; }
+logl() { [ $LEDGER_OK = 1 ] && [ -f "$BF_LEDGER" ] && bf_logline "$BF_SLUG" codex-review "$1" || true; }
 logl "round $N started ($MODEL/$EFFORT vs $BASE)"
 
 # herdr: the caller is a herdr pane, so the review tab is a herdr tab in the caller's
@@ -182,14 +182,14 @@ if [ $TAB -eq 1 ] && [ $ORCA = 1 ]; then
   WS=$ORCA_WORKTREE_ID
   OUT=$(bf_orca terminal create --worktree "id:$WS" --title "🔍 review $SLUG #$N" --command "cd $(q "$WT") && SHOW=1 bash $(q "$RUNNER")" --json 2>/dev/null || true)
   SURFACE=$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["terminal"]["handle"])' 2>/dev/null || true)
-  [ -n "$SURFACE" ] && [ $LEDGER_OK = 1 ] && bf_set "$BF_SLUG" BF_REVIEW_TABS "$(grep '^BF_REVIEW_TABS=' "$(bf_ledger_file "$BF_SLUG")" 2>/dev/null | cut -d= -f2)${SURFACE},"
+  [ -n "$SURFACE" ] && [ $LEDGER_OK = 1 ] && [ -f "$BF_LEDGER" ] && bf_set "$BF_SLUG" BF_REVIEW_TABS "$(grep '^BF_REVIEW_TABS=' "$(bf_ledger_file "$BF_SLUG")" 2>/dev/null | cut -d= -f2)${SURFACE},"
 elif [ $TAB -eq 1 ] && [ $HERDR = 1 ]; then
   WS=$HERDR_WORKSPACE_ID
   OUT=$(herdr tab create --workspace "$WS" --cwd "$WT" --label "🔍 review $SLUG #$N" --no-focus 2>/dev/null || true)
   read -r RTAB SURFACE < <(printf '%s' "$OUT" | python3 -c 'import json,sys; p=json.load(sys.stdin)["result"]["root_pane"]; print(p["tab_id"], p["pane_id"])' 2>/dev/null) || true
   # Recorded (comma-separated: the ledger is SOURCED, so a space would break it) so the
   # trash collector can close a review tab left open after a failure.
-  [ -n "$RTAB" ] && [ $LEDGER_OK = 1 ] && bf_set "$BF_SLUG" BF_REVIEW_TABS "$(grep '^BF_REVIEW_TABS=' "$(bf_ledger_file "$BF_SLUG")" 2>/dev/null | cut -d= -f2)${RTAB},"
+  [ -n "$RTAB" ] && [ $LEDGER_OK = 1 ] && [ -f "$BF_LEDGER" ] && bf_set "$BF_SLUG" BF_REVIEW_TABS "$(grep '^BF_REVIEW_TABS=' "$(bf_ledger_file "$BF_SLUG")" 2>/dev/null | cut -d= -f2)${RTAB},"
 elif [ $TAB -eq 1 ] && WS=$(bf_my_workspace 2>/dev/null) && [ -n "$WS" ]; then
   OUT=$(cmux new-surface --type terminal --workspace "$WS" --focus false 2>/dev/null || true)
   SURFACE=$(echo "$OUT" | sed -n 's/^OK \(surface:[0-9]*\).*/\1/p' | tail -1)

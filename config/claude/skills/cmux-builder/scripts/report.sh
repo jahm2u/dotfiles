@@ -56,7 +56,8 @@ case "$PHASE" in
     fi;;
 esac
 if [ "$PHASE" = pr-open ]; then
-  DRIFT=$(bf_shared_drift "$_bf_pinned_dir/$BF_SLUG.shared" "$BF_SLUG" 2>/dev/null || true)
+  DRIFT=$(bf_shared_drift "$_bf_pinned_dir/$BF_SLUG.shared" "$BF_SLUG" 2>/dev/null) \
+    || DRIFT="shared-state: check failed (snapshot $_bf_pinned_dir/$BF_SLUG.shared)"
   if [ -n "$DRIFT" ]; then
     if [ "${#DRIFT}" -gt 600 ]; then
       printf '%s\n' "$DRIFT" > "$_bf_pinned_dir/$BF_SLUG.shared-drift.txt"

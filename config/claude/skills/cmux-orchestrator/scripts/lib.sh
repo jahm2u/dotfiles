@@ -152,7 +152,22 @@ def root_state(root):
         lines = data.decode("utf-8", "replace").splitlines()
     except OSError:
         sha, lines = "-", []
-    return {"root": root, "head": head, "exclude_sha": sha, "exclude": lines, "status": status(root)}
+    st = status(root)
+    return {"root": root, "head": head, "exclude_sha": sha, "exclude": lines, "status": st,
+            "content": {l: content_sha(root, l) for l in st}}
+
+def content_sha(root, line):
+    p = os.path.join(root, paths(line)[-1])
+    if not os.path.isfile(p):
+        return "-"
+    h = hashlib.sha256()
+    try:
+        with open(p, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+    except OSError:
+        return "?"
+    return h.hexdigest()
 
 def mtime(p):
     try:
@@ -220,16 +235,18 @@ def others(self_slug, known):
 def under(path, root):
     return path == root or path.startswith(root.rstrip("/") + "/")
 
-def collected_spec(root, ps):
+def collected_spec(root, ps, self_slug):
     arch = os.path.join(root, "_bmad/handoff/cmux/archive")
     if not os.path.isdir(arch):
         return False
-    names = os.listdir(arch)
     for p in ps:
         b = os.path.basename(p)
-        if p.startswith("_bmad-output/implementation-artifacts/spec-") and b.endswith(".md") \
-           and any(b.startswith("spec-" + a) for a in names):
-            return True
+        if not (p.startswith("_bmad-output/implementation-artifacts/spec-") and b.endswith(".md")):
+            continue
+        for a in os.listdir(arch):
+            if a != self_slug and (b == "spec-%s.md" % a or b.startswith("spec-%s-" % a)) \
+               and os.path.isfile(os.path.join(arch, a, b)):
+                return True
     return False
 
 def drift(snapfile, self_slug, known):
@@ -269,13 +286,15 @@ def drift(snapfile, self_slug, known):
                 add(label(sharers(root)), root, t)
         before, after = set(old["status"]), set(cur["status"])
         changes = [("+", l) for l in cur["status"] if l not in before] + [("-", l) for l in old["status"] if l not in after]
+        oc = old.get("content", {})
+        changes += [("~", l) for l in cur["status"] if l in before and l in oc and oc[l] != cur["content"][l]]
         for sign, line in changes:
             ps = paths(line)
             if any(p in ff for p in ps):
                 group = "not attributable (fast-forward)"
             else:
-                group = label([o["slug"] for o in oth if any(p in o["paths"] for p in ps)])
-                if not group and collected_spec(root, ps):
+                group = label([o["slug"] for o in oth if root in o["shares"] and any(p in o["paths"] for p in ps)])
+                if not group and collected_spec(root, ps, self_slug):
                     group = "not attributable (collector)"
             add(group, root, "status " + sign + line)
     for nm in snap.get("node_modules", []):
@@ -291,7 +310,7 @@ def drift(snapfile, self_slug, known):
     for g in ([""] if "" in groups else []) + [g for g in groups if g]:
         body = "; ".join("%s: %s" % (r, ", ".join(ts)) for r, ts in groups[g].items())
         parts.append("%s: %s" % (g, body) if g else body)
-    print("shared-state: " + " | ".join(parts))
+    print("shared-state: " + " // ".join(parts))
 
 if sys.argv[1] == "snapshot":
     snapshot(sys.argv[2], sys.argv[3], sys.argv[4:])

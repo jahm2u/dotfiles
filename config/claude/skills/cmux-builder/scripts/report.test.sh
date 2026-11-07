@@ -69,7 +69,8 @@ rep() { # name cwd ledger-env(set|unset|missing) want_rc phase msg -- assertions
   printf 'BF_SLUG=%s\nBF_BRANCH=fix/r\nBF_WORKTREE=%s\nBF_ORCH_WS=workspace:test\nBF_ORCH_PEER=test-orch\nBF_MUX=cmux\nBF_STATUS=implementing\nBF_PR=\n' \
     "$slug" "$TMP/nowhere" > "$L2/$slug.env"
   [ -z "${SNAP_BEFORE:-}" ] || (cd "$R2" && HOME="$TMP/home" PATH="$TMP/bin:$PATH" bash -c '. "$0"; bf_shared_snapshot "$1" "$2" "$3"' "$LIB" "$slug" "$TMP/nowhere" "$R2") || true
-  [ -n "${SEED:-}" ] && echo seeded > "$R2/$SEED"
+  [ -z "${SEED:-}" ] || echo seeded > "$R2/$SEED"
+  [ -z "${BADSNAP:-}" ] || echo '{' > "$L2/$slug.shared"
   local -a e=(BF_LEDGER="$L2/$slug.env")
   case "$mode" in unset) e=();; missing) e=(BF_LEDGER="$L2/nope-$slug.env");; esac
   [ "$mode" = missing-unknown ] && { e=(BF_LEDGER="$L2/nope-$slug.env"); rm "$L2/$slug.env"; }
@@ -102,6 +103,8 @@ SNAP_BEFORE=1 SEED=seeded.txt rep "pr-open after an untracked write to the prima
   "has:opened; shared-state: $R2: status +?? seeded.txt" "logged:|pr-open|opened; shared-state: $R2: status +?? seeded.txt"
 rep "pr-open without a snapshot -> nothing appended" "$R2" set 0 pr-open "opened" -- "not:shared-state"
 SNAP_BEFORE=1 rep "a progress phase never checks drift" "$R2" set 0 implementing "x" -- "not:shared-state"
+BADSNAP=1 rep "pr-open with an unreadable snapshot -> says the check failed" "$R2" set 0 pr-open "opened" -- \
+  "has:opened; shared-state: check failed" "logged:shared-state: check failed"
 rm -f "$R2/seeded.txt"
 
 echo "$pass passed, $fail failed, $count cases"

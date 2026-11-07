@@ -129,6 +129,32 @@ fresh; mkdir -p "$TMP/elsewhere$N/node_modules" "$WT/sub"; ln -s "$TMP/elsewhere
 run snap; mkdir "$TMP/elsewhere$N/node_modules/x"; run drift
 check "a node_modules link pointing outside every primary is not tracked" "$out" empty
 
+fresh; echo wip >> "$ROOT/a.txt"; run snap; echo builder-overwrote >> "$ROOT/a.txt"; run drift
+check "a file already dirty at spawn, rewritten after -> status ~ M a.txt" "$out" "has:shared-state: $ROOT: status ~ M a.txt" lines=1
+
+fresh; run snap; mkdir -p "$ROOT/_bmad-output/implementation-artifacts" "$LD/archive/me"
+echo s > "$ROOT/_bmad-output/implementation-artifacts/spec-me.md"; run drift
+check "own spec in the primary, own archive dir present -> still attributable" "$out" \
+  "has:shared-state: $ROOT: status +?? _bmad-output/implementation-artifacts/spec-me.md" "not:not attributable"
+
+fresh; run snap; mkdir -p "$ROOT/_bmad-output/implementation-artifacts" "$LD/archive/m"
+echo s > "$ROOT/_bmad-output/implementation-artifacts/spec-me-2.md"; run drift
+check "an archived slug that is a prefix does not excuse another spec" "$out" "not:not attributable"
+
+fresh; run snap; mkdir -p "$ROOT/_bmad-output/implementation-artifacts" "$LD/archive/done-1"
+echo s > "$ROOT/_bmad-output/implementation-artifacts/spec-done-1.md"; cp "$ROOT/_bmad-output/implementation-artifacts/spec-done-1.md" "$LD/archive/done-1/"
+run drift
+check "a spec the collector harvested for another builder -> not attributable (collector)" "$out" \
+  "has:not attributable (collector): $ROOT: status +?? _bmad-output/implementation-artifacts/spec-done-1.md" lines=1
+
+fresh; run snap
+Y="$TMP/y$N"; git init -q -b main "$Y"; G -C "$Y" commit -q --allow-empty -m init; G -C "$Y" worktree add -q -b feat/b "$Y/.claude/worktrees/wt-b"
+mkdir -p "$Y/_bmad/handoff/cmux"; printf 'BF_SLUG=b\nBF_WORKTREE=%s\n' "$Y/.claude/worktrees/wt-b" > "$Y/_bmad/handoff/cmux/b.env"
+printf '%s\n%s\n' "$ROOT" "$Y" > "$TMP/home/.local/state/cmux-orchestrator/roots"
+echo o > "$Y/.claude/worktrees/wt-b/same.txt"; echo o > "$ROOT/same.txt"
+run drift
+check "a builder in an unrelated repo with the same path does not excuse it" "$out" "has:shared-state: $ROOT: status +?? same.txt" "not:not attributable"
+
 fresh; run lib "$ROOT" 'bf_shared_drift "'"$LD"'/me.shared" me'
 check "no snapshot -> drift prints nothing" "$out" empty
 
