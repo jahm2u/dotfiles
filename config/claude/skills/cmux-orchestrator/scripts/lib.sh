@@ -260,6 +260,34 @@ def collected_spec(root, ps, self_slug):
                 return True
     return False
 
+def upstream(root):
+    for ref in ("@{u}", "refs/remotes/origin/HEAD"):
+        sha = (git(root, "rev-parse", "--verify", "-q", ref + "^{commit}") or "").strip()
+        if sha:
+            return sha
+    return ""
+
+def commit_paths(root, *revs):
+    out = git(root, "log", "--format=%x1e%H", "--name-only", "-m", *revs) or ""
+    res, cur = collections.OrderedDict(), None
+    for l in out.split("\n"):
+        if l.startswith("\x1e"):
+            cur = l[1:]
+            res.setdefault(cur, [])
+        elif l and cur:
+            res[cur].append(l)
+    return res
+
+def split_commits(root, old, new):
+    up = upstream(root)
+    allc = commit_paths(root, new, "^" + old)
+    local = commit_paths(root, new, "^" + old, "^" + up) if up else allc
+    ff = set()
+    for c, ps in allc.items():
+        if c not in local:
+            ff.update(ps)
+    return local, ff
+
 def drift(snapfile, self_slug, known):
     snap = json.load(open(snapfile))
     known = [os.path.realpath(k) for k in known if k and os.path.isdir(k)]
@@ -276,6 +304,12 @@ def drift(snapfile, self_slug, known):
     def sharers(root):
         return [o["slug"] for o in oth if any(under(root, s) or under(s, root) for s in o["shares"])]
 
+    def attribute(root, ps):
+        group = label([o["slug"] for o in oth if root in o["shares"] and any(p in o["paths"] for p in ps)])
+        if not group and collected_spec(root, ps, self_slug):
+            group = "not attributable (collector)"
+        return group
+
     for old in snap["roots"]:
         root = old["root"]
         if not os.path.isdir(root):
@@ -287,7 +321,17 @@ def drift(snapfile, self_slug, known):
             if old["head"] and cur["head"] and subprocess.run(
                     ["git", "-C", root, "merge-base", "--is-ancestor", old["head"], cur["head"]],
                     capture_output=True).returncode == 0:
-                ff = set((git(root, "diff", "--name-only", old["head"], cur["head"]) or "").splitlines())
+                local, ff = split_commits(root, old["head"], cur["head"])
+                if local:
+                    lpaths = collections.OrderedDict()
+                    for c in local:
+                        for p in local[c]:
+                            lpaths.setdefault(p, None)
+                    by = collections.OrderedDict()
+                    for p in lpaths:
+                        by.setdefault(attribute(root, [p]), []).append(p)
+                    for g, ps in by.items():
+                        add(g, root, "HEAD +%d local commit(s): %s" % (len(local), " ".join(ps)))
             else:
                 add("", root, "HEAD %s->%s (not a fast-forward)" % (old["head"][:9] or "-", cur["head"][:9] or "-"))
         if cur["exclude_sha"] != old["exclude_sha"]:
@@ -304,9 +348,7 @@ def drift(snapfile, self_slug, known):
             if any(p in ff for p in ps):
                 group = "not attributable (fast-forward)"
             else:
-                group = label([o["slug"] for o in oth if root in o["shares"] and any(p in o["paths"] for p in ps)])
-                if not group and collected_spec(root, ps, self_slug):
-                    group = "not attributable (collector)"
+                group = attribute(root, ps)
             add(group, root, "status " + sign + line)
     for nm in snap.get("node_modules", []):
         now = mtime(nm["target"])

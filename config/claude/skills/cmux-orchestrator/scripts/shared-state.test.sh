@@ -122,7 +122,29 @@ check "untracked file in an --add-dir primary -> listed under that root" "$out" 
   "has:shared-state: $BRAIN: status +?? written-by-builder.md" lines=1
 
 fresh; run snap; echo y > "$ROOT/a.txt"; G -C "$ROOT" commit -q -am local; run drift
-check "a commit made in the primary itself is a fast-forward too -> no line" "$out" empty
+check "a commit made in the primary itself, not on the upstream -> HEAD +1 local commit(s)" "$out" \
+  "has:shared-state: $ROOT: HEAD +1 local commit(s): a.txt" lines=1
+
+fresh; run snap
+echo b > "$CLONE/b.txt"; G -C "$CLONE" add b.txt; G -C "$CLONE" commit -q -m b; git -C "$CLONE" push -q origin main 2>/dev/null
+git -C "$ROOT" pull -q --ff-only 2>/dev/null
+echo c > "$ROOT/c.txt"; G -C "$ROOT" add c.txt; G -C "$ROOT" commit -q -m c; run drift
+check "pull then a local commit -> only the local commit is reported" "$out" \
+  "has:shared-state: $ROOT: HEAD +1 local commit(s): c.txt" "not:b.txt" lines=1
+
+fresh; run snap
+git -C "$ROOT" branch -q --unset-upstream; git -C "$ROOT" remote set-head origin main
+echo b > "$CLONE/b.txt"; G -C "$CLONE" add b.txt; G -C "$CLONE" commit -q -m b; git -C "$CLONE" push -q origin main 2>/dev/null
+git -C "$ROOT" fetch -q origin; git -C "$ROOT" merge -q --ff-only origin/main; run drift
+check "no @{u}: a fast-forward to origin/HEAD -> no line" "$out" empty
+
+fresh; run snap
+G -C "$ROOT" worktree add -q -b feat/other "$ROOT/.claude/worktrees/wt-other"
+printf 'BF_SLUG=other\nBF_WORKTREE=%s\n' "$ROOT/.claude/worktrees/wt-other" > "$LD/other.env"
+echo o > "$ROOT/.claude/worktrees/wt-other/shared.txt"
+echo s > "$ROOT/shared.txt"; G -C "$ROOT" add shared.txt; G -C "$ROOT" commit -q -m s; run drift
+check "a local commit on a path another builder changed -> not attributable (other)" "$out" \
+  "has:not attributable (other): $ROOT: HEAD +1 local commit(s): shared.txt" "not:shared-state: $ROOT:" lines=1
 
 fresh; run snap; G -C "$ROOT" checkout -q --orphan alt; G -C "$ROOT" commit -q -m alt
 run drift
