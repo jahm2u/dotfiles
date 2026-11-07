@@ -83,10 +83,15 @@ mkdir -p "$ARCH"
 SNAP="$DIR/$SLUG.shared"
 if [ -f "$SNAP" ]; then
   DRIFT=$(bf_shared_drift "$SNAP" "$SLUG" 2>/dev/null) || DRIFT="shared-state: check failed (snapshot $SNAP)"
+elif [ -f "$ARCH/$SLUG.shared" ] && [ -f "$ARCH/shared-state.txt" ]; then
+  DRIFT=$(grep -v '^clean: ' "$ARCH/shared-state.txt" || true)
+  [ -n "$DRIFT" ] && echo "$DRIFT"
+  DRIFT=KEEP
 else
   DRIFT="shared-state: not checked (no snapshot)"
 fi
-if [ -n "$DRIFT" ]; then
+if [ "$DRIFT" = KEEP ]; then :
+elif [ -n "$DRIFT" ]; then
   echo "$DRIFT"
   printf '%s\n' "$DRIFT" > "$ARCH/shared-state.txt"
 else

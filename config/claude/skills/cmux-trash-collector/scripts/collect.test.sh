@@ -154,6 +154,9 @@ PRE="$SNAP" run_case "clean since spawn -> no shared-state line, snapshot archiv
   "not:shared-state:" "arch:clean: no shared-state drift" snap-archived "has:DONE:"
 run_case "ledger older than the guard -> not checked (no snapshot), still collects" 50 "[$MINE_MERGED]" 0 "" 0 \
   "has:shared-state: not checked (no snapshot)" "arch:shared-state: not checked (no snapshot)" "has:DONE:"
+PRE='mkdir -p "$LEDGER_DIR/archive/$slug"; : > "$LEDGER_DIR/archive/$slug/$slug.shared"; echo "shared-state: earlier run: status +?? lost.txt" > "$LEDGER_DIR/archive/$slug/shared-state.txt"' \
+  run_case "retry after the snapshot was archived -> keeps the archived report" 50 "[$MINE_MERGED]" 0 "" 0 \
+  "has:shared-state: earlier run: status +?? lost.txt" "arch:shared-state: earlier run: status +?? lost.txt" "not:not checked (no snapshot)" "has:DONE:"
 
 mkdir -p "$TMP/screens"
 cat > "$TMP/screens/claude" <<'SCR'
