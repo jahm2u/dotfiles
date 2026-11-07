@@ -1,0 +1,66 @@
+#!/bin/bash
+# tell-mini REPO FROM < message   -- put a message in front of the Mini's Orca Claude working in REPO.
+# Run from the MBP as:  ssh <mini|mini-2024> '~/.claude/skills/mbp-builder/scripts/tell-mini hive-paid-traffic "mbp:hive-paid-traffic/pm"' < msg.md
+# (mini-mp also keeps a copy at ~/.local/bin/tell-mini for older callers.)
+# The body lands in ~/.local/state/from-mbp/ on the Mini; the prompt points at it (no quoting trouble).
+# Several Claudes on REPO: the one with the most recent output gets it (MINI_TERM pins a handle).
+# It prints where it went by name, and tells the receiver to answer with tell-mbp, which signs the
+# reply as mini:orca/REPO (Jeff 06/10).
+set -euo pipefail
+REPO="${1:?usage: tell-mini REPO FROM < message}"
+# the paid-traffic hive runs from the hive repo on the Mini (hive-9b), not this team-tech-mgt pane (Jeff 10/10)
+[ "$REPO" = "hive-paid-traffic" ] && REPO=hive
+FROM="${2:?usage: tell-mini REPO FROM < message}"
+# hive-paid-traffic was renamed mkt-crew on the MBP (Jeff 09/10); old callers still sign the old name.
+FROM="${FROM/#mbp:hive-paid-traffic\//mbp:mkt-crew/}"
+orca_cli() {
+  local app="${ORCA_APP:-/Applications/Orca.app}"
+  if [ -x "$app/Contents/MacOS/Orca" ]; then
+    ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Orca" "$app/Contents/Resources/app.asar.unpacked/out/cli/index.js" "$@"
+  else
+    /usr/local/bin/orca "$@"
+  fi
+}
+d=~/.local/state/from-mbp; mkdir -p "$d"; f="$d/$(date +%Y%m%dT%H%M%S)-$$.md"; cat > "$f"
+[ -s "$f" ] || { echo "tell-mini: empty message" >&2; rm -f "$f"; exit 2; }
+pick=$(orca_cli terminal list --json | REPO="$REPO" MINI_TERM="${MINI_TERM:-}" python3 -c '
+import json, os, sys
+ts = [t for t in json.load(sys.stdin)["result"]["terminals"] if not t.get("orphaned")]
+pin = os.environ["MINI_TERM"]
+if pin:
+    ts = [t for t in ts if t["handle"] == pin]
+else:
+    ts = [t for t in ts if t.get("worktreePath", "").rstrip("/").endswith("/" + os.environ["REPO"])
+          and t.get("agentIdentity") == "claude"]
+    ts.sort(key=lambda t: t.get("lastOutputAt") or 0, reverse=True)
+if not ts:
+    sys.exit(0)
+t = ts[0]
+print("\t".join([t["handle"], t.get("worktreePath", ""), (t.get("branch") or "").removeprefix("refs/heads/"),
+                 (t.get("title") or "").strip() or "untitled", str(len(ts))]))')
+[ -n "$pick" ] || { echo "tell-mini: no Claude terminal for $REPO in Orca on the Mini; body kept at $f" >&2; exit 3; }
+IFS=$'\t' read -r T WT BR TITLE N <<<"$pick"
+WTNAME=$(cd "$WT" 2>/dev/null && orca_cli worktree current --json 2>/dev/null | python3 -c '
+import json,sys; r=json.load(sys.stdin).get("result",{}); print((r.get("worktree",r) or {}).get("displayName") or "")' || true)
+# Never type into an open question or menu: the keys would answer it (06/10, the paid-traffic Top-up).
+tail=$(orca_cli terminal read --terminal "$T" --limit 40 --json 2>/dev/null | python3 -c '
+import json,sys; print("\n".join(json.load(sys.stdin)["result"]["terminal"]["tail"][-25:]))' || true)
+if grep -qE "Enter to select|Esc to cancel|Enter to confirm|Do you want to proceed" <<<"$tail"; then
+  echo "tell-mini: $REPO's Claude ('$TITLE' [$T]) is waiting on a question or menu; not typing into it. Body kept at $f" >&2
+  exit 4
+fi
+case "$FROM" in
+  mbp:builders/b-*) REPLY="~/.claude/skills/mbp-builder/scripts/send.sh ${FROM#mbp:builders/b-} --file reply.md" ;;
+  mini:orca/*) REPLY="~/.local/bin/tell-mini ${FROM#mini:orca/} mini:orca/$REPO < reply.md" ;;
+  *) REPLY="~/.local/bin/tell-mbp $FROM < reply.md (signs you as mini:orca/$REPO)" ;;
+esac
+orca_cli terminal send --terminal "$T" --text "[mini-tell from $FROM] read $f and answer as it asks. Reply with: $REPLY" --enter >/tmp/tell-mini.$$ 2>&1 || {
+  if grep -q agent_prompt_blocked /tmp/tell-mini.$$; then
+    rm -f /tmp/tell-mini.$$
+    echo "tell-mini: $REPO's Claude ('$TITLE' [$T]) is waiting on a question or menu (Orca refused to type); body kept at $f" >&2
+    exit 4
+  fi
+  cat /tmp/tell-mini.$$ >&2; rm -f /tmp/tell-mini.$$; exit 1; }
+rm -f /tmp/tell-mini.$$
+more=""; [ "$N" -gt 1 ] && more=" (newest of $N Claudes on $REPO)"
+echo "delivered to mini:orca/$REPO -- Orca: repo $(basename "$WT"), worktree '${WTNAME:-?}' ($BR), tab '$TITLE' [$T]$more: $f"

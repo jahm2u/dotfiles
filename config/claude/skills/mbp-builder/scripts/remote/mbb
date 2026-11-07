@@ -1,0 +1,178 @@
+#!/bin/bash
+# mbb: the MBP half of the mbp-builder skill. Installed to ~/builders/bin/mbb by launch.sh and called over ssh.
+# Every subcommand prints plain lines; JSON from herdr is parsed with python3, never jq.
+set -euo pipefail
+
+B="$HOME/builders"
+S="${MBB_SESSION:-builders}"
+LEDGER="$B/ledger"
+mkdir -p "$B/bin" "$B/wt" "$B/briefs" "$LEDGER"
+
+die() { echo "mbb: $*" >&2; exit 1; }
+hd() { herdr --session "$S" "$@"; }
+json() { python3 -c "import json,sys; d=json.load(sys.stdin); $1"; }
+ledger_get() { sed -n "s/^$2=//p" "$LEDGER/$1.env" 2>/dev/null | head -1; }
+
+guard_session() {
+  case "$S" in mkt-crew|dev-crew|hive-paid-traffic|default|orgs) die "refusing herdr session '$S': it belongs to a live crew" ;; esac
+}
+
+cmd_mem() {
+  local p
+  p=$(memory_pressure -Q 2>/dev/null | sed -n 's/.*free percentage: \([0-9]*\)%.*/\1/p')
+  echo "free=${p:-unknown}"
+}
+
+cmd_server() {
+  guard_session
+  if herdr session list 2>/dev/null | awk -v s="$S" '$1==s && $2=="running"{f=1} END{exit !f}'; then
+    echo "server=running"; return
+  fi
+  nohup herdr --session "$S" server >> "$B/herdr-$S-server.log" 2>&1 &
+  for _ in $(seq 1 20); do
+    sleep 0.5
+    herdr session list 2>/dev/null | awk -v s="$S" '$1==s && $2=="running"{f=1} END{exit !f}' && { echo "server=started"; return; }
+  done
+  die "herdr session $S did not start (see $B/herdr-$S-server.log)"
+}
+
+cmd_clone() {
+  local repo=$1 name clone live
+  name=${repo##*/}; clone="$B/$name"
+  if [ ! -d "$clone/.git" ]; then
+    live=$(find "$HOME/repos" -maxdepth 4 -type d -name "$name" -exec test -d '{}/.git' ';' -print 2>/dev/null | head -1 || true)
+    if [ -n "$live" ]; then
+      git clone -q "$live" "$clone"
+      echo "clone=bootstrapped-from-local $live"
+    else
+      git -c include.path="$HOME/.gitconfig-mp" clone -q "https://github.com/$repo.git" "$clone"
+      echo "clone=from-github"
+    fi
+    git -C "$clone" remote set-url origin "https://github.com/$repo.git"
+    git -C "$clone" config include.path "$HOME/.gitconfig-mp"
+  fi
+  git -C "$clone" fetch -q --prune origin
+  echo "clone=$clone main=$(git -C "$clone" rev-parse --short origin/main)"
+}
+
+cmd_worktree() {
+  local repo=$1 slug=$2 branch=$3 clone wt
+  clone="$B/${repo##*/}"; wt="$B/wt/$slug"
+  [ -e "$wt" ] && die "worktree $wt already exists"
+  if git -C "$clone" rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
+    git -C "$clone" worktree add -q -B "$branch" "$wt" "origin/$branch"
+  else
+    git -C "$clone" worktree add -q -b "$branch" "$wt" origin/main
+  fi
+  git -C "$wt" branch -q --unset-upstream 2>/dev/null || true
+  echo "wt=$wt head=$(git -C "$wt" rev-parse --short HEAD)"
+}
+
+cmd_venv() {
+  local wt=$1
+  cd "$wt"
+  if [ -f uv.lock ]; then
+    uv sync -q && echo "venv=uv-sync"
+  elif [ -f requirements.txt ]; then
+    uv venv -q --python 3.12 .venv && uv pip install -q --python .venv/bin/python -r requirements.txt && echo "venv=requirements"
+  elif [ -f pyproject.toml ]; then
+    uv venv -q --python 3.12 .venv && uv pip install -q --python .venv/bin/python -e . && echo "venv=pyproject"
+  else
+    echo "venv=none"
+  fi
+}
+
+cmd_pane() {
+  local slug=$1 wt=$2 ws pane
+  guard_session
+  ws=$(hd workspace create --cwd "$wt" --label "🔨 $slug" --no-focus | json 'print(d["result"]["workspace"]["workspace_id"] if "workspace" in d["result"] else d["result"]["workspace_id"])')
+  pane=$(hd pane list --workspace "$ws" | json 'print(d["result"]["panes"][0]["pane_id"])')
+  echo "ws=$ws pane=$pane"
+}
+
+cmd_start() {
+  local pane=$1 model=$2 slug=$3
+  hd pane run "$pane" "bash $B/bin/claude-builder.sh $model $slug"
+  echo "started"
+}
+
+cmd_read() {
+  local target=$1 lines=${2:-40}
+  if [[ "$target" == *:p* ]]; then hd pane read "$target" --source recent --lines "$lines"; else hd agent read "$target" --source recent --lines "$lines"; fi
+}
+
+cmd_keys() { local pane=$1; shift; hd pane send-keys "$pane" "$@"; }
+
+cmd_rename() {
+  local pane=$1 name=$2
+  for _ in $(seq 1 30); do
+    if hd agent rename "$pane" "$name" >/dev/null 2>&1; then echo "agent=$name"; return; fi
+    sleep 2
+  done
+  die "could not rename $pane to $name (no claude detected in the pane)"
+}
+
+cmd_prompt() {
+  local agent=$1 file=$2
+  hd agent prompt "$agent" "$(cat "$file")" >/dev/null
+  echo "prompted"
+}
+
+cmd_list() {
+  hd agent list | json '
+for a in d["result"]["agents"]:
+    n = a.get("name") or ""
+    if n.startswith("b-"):
+        print("\t".join([n, str(a.get("agent_status")), str(a.get("pane_id")), str(a.get("cwd"))]))'
+}
+
+cmd_close_check() {
+  local slug=$1 wt
+  wt=$(ledger_get "$slug" WT)
+  [ -n "$wt" ] || die "no ledger for $slug"
+  echo "branch=$(ledger_get "$slug" BRANCH)"
+  echo "repo=$(ledger_get "$slug" REPO)"
+  if [ -d "$wt" ]; then
+    echo "dirty=$(git -C "$wt" status --porcelain | wc -l | tr -d ' ')"
+    echo "unpushed=$(git -C "$wt" log --oneline "origin/$(ledger_get "$slug" BRANCH)..HEAD" 2>/dev/null | wc -l | tr -d ' ')"
+  else
+    echo "dirty=0"
+  fi
+}
+
+cmd_close() {
+  local slug=$1 wt ws agent clone branch
+  wt=$(ledger_get "$slug" WT); ws=$(ledger_get "$slug" WS); agent=$(ledger_get "$slug" AGENT)
+  clone=$(ledger_get "$slug" CLONE); branch=$(ledger_get "$slug" BRANCH)
+  [ -n "$wt" ] || die "no ledger for $slug"
+  hd agent prompt "$agent" "/exit" >/dev/null 2>&1 || true
+  sleep 4
+  [ -n "$ws" ] && hd workspace close "$ws" >/dev/null 2>&1 || true
+  if [ -d "$wt" ]; then git -C "$clone" worktree remove --force "$wt"; fi
+  git -C "$clone" worktree prune
+  git -C "$clone" branch -q -D "$branch" 2>/dev/null || true
+  mv "$LEDGER/$slug.env" "$LEDGER/$slug.closed-$(date +%Y%m%dT%H%M%S).env"
+  echo "closed=$slug ws=$ws"
+  echo "left: wt=$([ -e "$wt" ] && echo yes || echo no) branch=$(git -C "$clone" rev-parse -q --verify "refs/heads/$branch" >/dev/null && echo yes || echo no) agent=$(hd agent list | grep -c "\"name\":\"$agent\"" || true)"
+}
+
+sub=${1:?usage: mbb <sub> ...}; shift
+case "$sub" in
+  mem) cmd_mem ;;
+  server) cmd_server ;;
+  clone) cmd_clone "$@" ;;
+  worktree) cmd_worktree "$@" ;;
+  venv) cmd_venv "$@" ;;
+  pane) cmd_pane "$@" ;;
+  start) cmd_start "$@" ;;
+  read) cmd_read "$@" ;;
+  keys) cmd_keys "$@" ;;
+  rename) cmd_rename "$@" ;;
+  prompt) cmd_prompt "$@" ;;
+  list) cmd_list ;;
+  close-check) cmd_close_check "$@" ;;
+  close) cmd_close "$@" ;;
+  ledger) cat "$LEDGER/$1.env" ;;
+  ledger-set) slug=$1; shift; for kv in "$@"; do k=${kv%%=*}; touch "$LEDGER/$slug.env"; grep -v "^$k=" "$LEDGER/$slug.env" > "$LEDGER/$slug.env.tmp" || true; echo "$kv" >> "$LEDGER/$slug.env.tmp"; mv "$LEDGER/$slug.env.tmp" "$LEDGER/$slug.env"; done; echo "ledger=$LEDGER/$slug.env" ;;
+  *) die "unknown subcommand $sub" ;;
+esac
