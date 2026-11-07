@@ -173,7 +173,7 @@ def content_sha(root, line):
 
 def mtime(p):
     try:
-        return str(int(os.stat(p).st_mtime))
+        return str(os.stat(p).st_mtime_ns)
     except OSError:
         return "gone"
 

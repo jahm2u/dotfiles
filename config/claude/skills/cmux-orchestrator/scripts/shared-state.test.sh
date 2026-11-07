@@ -107,7 +107,10 @@ check "a ledger whose worktree is gone does not excuse a path" "$out" "has:share
 
 fresh; OLD=$(stat -f %m "$ROOT/node_modules"); run snap; mkdir "$ROOT/node_modules/newpkg"; run drift
 check "node_modules target mtime moved -> node_modules <target> mtime a->b" "$out" \
-  "has:shared-state: $ROOT: node_modules $ROOT/node_modules mtime $OLD->" lines=1
+  "has:shared-state: $ROOT: node_modules $ROOT/node_modules mtime ${OLD}000000000->"
+
+fresh; touch "$ROOT/node_modules"; run snap; mkdir "$ROOT/node_modules/fast"; run drift
+check "a node_modules change within the same second as the snapshot is still seen" "$out" "has:shared-state: $ROOT: node_modules $ROOT/node_modules mtime" lines=1 lines=1
 
 fresh
 mkdir -p "$TMP/brain$N"; git init -q -b main "$TMP/brain$N"; G -C "$TMP/brain$N" commit -q --allow-empty -m init
