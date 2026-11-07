@@ -159,10 +159,11 @@ def root_state(root):
             "content": {l: content_sha(root, l) for l in st}}
 
 def content_sha(root, line):
-    p = os.path.join(root, paths(line)[-1])
+    rel = paths(line)[-1]
+    p = os.path.join(root, rel)
+    h = hashlib.sha256((git(root, "ls-files", "-s", "--", rel) or "").encode())
     if not os.path.isfile(p):
-        return "-"
-    h = hashlib.sha256()
+        return h.hexdigest()
     try:
         with open(p, "rb") as f:
             for chunk in iter(lambda: f.read(1 << 20), b""):

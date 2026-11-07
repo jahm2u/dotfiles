@@ -169,6 +169,10 @@ echo c > "$ROOT/committed.txt"
 run drift
 check "a path another live builder already committed -> not attributable (c)" "$out" "has:not attributable (c): $ROOT: status +?? committed.txt" lines=1
 
+fresh; echo staged > "$ROOT/a.txt"; G -C "$ROOT" add a.txt; echo wt > "$ROOT/a.txt"; run snap
+echo other-staged > "$ROOT/a.txt"; G -C "$ROOT" add a.txt; echo wt > "$ROOT/a.txt"; run drift
+check "staged content replaced under an unchanged MM line -> status ~MM a.txt" "$out" "has:shared-state: $ROOT: status ~MM a.txt" lines=1
+
 fresh; run lib "$ROOT" 'bf_shared_drift "'"$LD"'/me.shared" me'
 check "no snapshot -> drift prints nothing" "$out" empty
 
