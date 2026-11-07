@@ -155,6 +155,9 @@ echo o > "$Y/.claude/worktrees/wt-b/same.txt"; echo o > "$ROOT/same.txt"
 run drift
 check "a builder in an unrelated repo with the same path does not excuse it" "$out" "has:shared-state: $ROOT: status +?? same.txt" "not:not attributable"
 
+fresh; run snap; echo garbage > "$ROOT/.git/index"; set +e; out=$(drift 2>&1; echo "rc=$?"); set -e
+check "git status failing in a primary is an error, never a clean result" "$out" "has:ERROR: git status failed" "has:rc=1" "not:shared-state:"
+
 fresh; run lib "$ROOT" 'bf_shared_drift "'"$LD"'/me.shared" me'
 check "no snapshot -> drift prints nothing" "$out" empty
 

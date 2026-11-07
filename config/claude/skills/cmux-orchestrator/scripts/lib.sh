@@ -139,7 +139,9 @@ def paths(line):
     return [unquote(p) for p in line[3:].split(" -> ")]
 
 def status(root):
-    out = git(root, "status", "--porcelain", "--untracked-files=all") or ""
+    out = git(root, "status", "--porcelain", "--untracked-files=all")
+    if out is None:
+        sys.exit("ERROR: git status failed in %s" % root)
     return [l for l in out.splitlines() if l and not any(p.startswith(SKIP) for p in paths(l))]
 
 def root_state(root):
