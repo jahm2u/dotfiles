@@ -36,20 +36,32 @@ cmd_server() {
   die "herdr session $S did not start (see $B/herdr-$S-server.log)"
 }
 
+# MP repos authenticate as jeffheartmp through ~/.gitconfig-mp; everything else (jahm2u/*, the TP repos) uses the
+# MBP's default git identity and gh credential helper.
+is_mp() { case "${1%%/*}" in jeffheartmp|meupatrocinio) return 0 ;; *) return 1 ;; esac; }
+
 cmd_clone() {
   local repo=$1 name clone live
+  local -a inc=()
   name=${repo##*/}; clone="$B/$name"
+  is_mp "$repo" && inc=(-c "include.path=$HOME/.gitconfig-mp")
   if [ ! -d "$clone/.git" ]; then
     live=$(find "$HOME/repos" -maxdepth 4 -type d -name "$name" -exec test -d '{}/.git' ';' -print 2>/dev/null | head -1 || true)
     if [ -n "$live" ]; then
       git clone -q "$live" "$clone"
       echo "clone=bootstrapped-from-local $live"
     else
-      git -c include.path="$HOME/.gitconfig-mp" clone -q "https://github.com/$repo.git" "$clone"
+      git ${inc[@]+"${inc[@]}"} clone -q "https://github.com/$repo.git" "$clone"
       echo "clone=from-github"
     fi
     git -C "$clone" remote set-url origin "https://github.com/$repo.git"
-    git -C "$clone" config include.path "$HOME/.gitconfig-mp"
+    if is_mp "$repo"; then git -C "$clone" config include.path "$HOME/.gitconfig-mp"; fi
+  fi
+  # The MBP has no global git identity; non-MP clones commit as jahm2u (the identity on origin/main), set on the
+  # clone only so the worktrees inherit it and nothing else on the MBP changes.
+  if ! is_mp "$repo" && [ -z "$(git -C "$clone" config --local user.email || true)" ]; then
+    git -C "$clone" config user.name "${MBB_GIT_NAME:-jahm2u}"
+    git -C "$clone" config user.email "${MBB_GIT_EMAIL:-87615519+jahm2u@users.noreply.github.com}"
   fi
   git -C "$clone" fetch -q --prune origin
   echo "clone=$clone main=$(git -C "$clone" rev-parse --short origin/main)"
@@ -77,6 +89,8 @@ cmd_venv() {
     uv venv -q --python 3.12 .venv && uv pip install -q --python .venv/bin/python -r requirements.txt && echo "venv=requirements"
   elif [ -f pyproject.toml ]; then
     uv venv -q --python 3.12 .venv && uv pip install -q --python .venv/bin/python -e . && echo "venv=pyproject"
+  elif [ -f package-lock.json ]; then
+    npm ci --no-audit --no-fund --loglevel=error >/dev/null && echo "venv=npm-ci"
   else
     echo "venv=none"
   fi
@@ -91,8 +105,9 @@ cmd_pane() {
 }
 
 cmd_start() {
-  local pane=$1 model=$2 slug=$3
-  hd pane run "$pane" "bash $B/bin/claude-builder.sh $model $slug"
+  local pane=$1 model=$2 slug=$3 pool=${4:-mp}
+  case "$pool" in mp|tp) ;; *) die "pool must be mp or tp" ;; esac
+  hd pane run "$pane" "bash $B/bin/claude-builder.sh $model $slug $pool"
   echo "started"
 }
 

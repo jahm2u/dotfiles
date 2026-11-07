@@ -3,12 +3,13 @@
 # usage: launch.sh --repo owner/repo --slug <slug> --branch <branch> --brief <file>
 #                  [--orchestrator <name>] [--model claude-opus-5-5] [--report-term <orca handle>]
 #                  [--report-repo <tell-mini repo>] [--report-host <mbp's ssh alias for this Mac>]
+#                  [--pool mp|tp (default: mp for jeffheartmp/meupatrocinio repos, tp otherwise)]
 #                  [--rules <file>] [--min-free 20] [--no-venv]
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 repo="" slug="" branch="" brief="" orch="the orchestrator" model="claude-opus-5-5"
-term="${ORCA_TERMINAL_HANDLE:-}" report_repo="" report_host="" rules="" min_free=20 venv=1
+term="${ORCA_TERMINAL_HANDLE:-}" report_repo="" report_host="" pool="" rules="" min_free=20 venv=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo=$2; shift 2 ;;
@@ -20,6 +21,7 @@ while [ $# -gt 0 ]; do
     --report-term) term=$2; shift 2 ;;
     --report-repo) report_repo=$2; shift 2 ;;
     --report-host) report_host=$2; shift 2 ;;
+    --pool) pool=$2; shift 2 ;;
     --rules) rules=$2; shift 2 ;;
     --min-free) min_free=$2; shift 2 ;;
     --no-venv) venv=0; shift ;;
@@ -38,6 +40,10 @@ if [ -z "$report_repo" ]; then
 fi
 if [ -z "$rules" ] && [ -f orchestrator/fixes/_rules.md ]; then rules=orchestrator/fixes/_rules.md; fi
 agent="b-$slug"
+case "${repo%%/*}" in jeffheartmp|meupatrocinio) mp=1 ;; *) mp=0 ;; esac
+[ -n "$pool" ] || { [ "$mp" = 1 ] && pool=mp || pool=tp; }
+[[ "$pool" =~ ^(mp|tp)$ ]] || die "--pool must be mp or tp"
+if [ "$mp" = 1 ]; then ghpr="GH_CONFIG_DIR=~/.config/gh-mp gh pr create ..."; else ghpr="gh pr create ... (the MBP's gh is logged in as jahm2u)"; fi
 [ -n "$report_host" ] || report_host=$(default_report_host)
 [[ "$report_host" =~ ^[A-Za-z0-9._-]+$ ]] || die "--report-host must be an ssh alias"
 tell="~/.claude/skills/mbp-builder/scripts/tell-mini"
@@ -81,8 +87,8 @@ trap 'rm -f "$tmp"' EXIT
   echo
   echo "Also append each report to \`~/$dir/log.md\`. Answers arrive typed into your pane. Never ask the human directly."
   echo "Push only with the explicit refspec \`git push origin HEAD:$branch\`. Open PRs with"
-  echo "\`GH_CONFIG_DIR=~/.config/gh-mp gh pr create ...\`; if gh answers 401 here, push and tell the orchestrator,"
-  echo "which opens the PR from the Mini."
+  echo "\`$ghpr\`; if gh answers 401 here, push and tell the orchestrator,"
+  echo "which opens the PR from the Mini. Never merge: the orchestrator decides."
   echo
   [ -n "$rules" ] && echo "Read \`~/$dir/_rules.md\` first, then the brief: \`~/$dir/brief.md\`." \
                   || echo "Read the brief: \`~/$dir/brief.md\`."
@@ -95,14 +101,20 @@ panes=$(mbb 30 pane "$slug" "$wt_abs")
 ws=$(sed -n 's/.*ws=\([^ ]*\).*/\1/p' <<< "$panes"); pane=$(sed -n 's/.*pane=\([^ ]*\).*/\1/p' <<< "$panes")
 [ -n "$ws" ] && [ -n "$pane" ] || die "could not create a herdr workspace ($panes)"
 mbb 20 ledger-set "$slug" "REPO=$repo" "BRANCH=$branch" "WT=$wt_abs" "CLONE=$home/builders/${repo##*/}" \
-  "WS=$ws" "PANE=$pane" "AGENT=$agent" "ORCH=$orch" "REPORT_HOST=$report_host" "REPORT_TERM=$term" "MODEL=$model" >/dev/null
-mbb 20 start "$pane" "$model" "$slug" >/dev/null
+  "WS=$ws" "PANE=$pane" "AGENT=$agent" "ORCH=$orch" "REPORT_HOST=$report_host" "REPORT_TERM=$term" "MODEL=$model" "POOL=$pool" >/dev/null
+mbb 20 start "$pane" "$model" "$slug" "$pool" >/dev/null
+echo "pool: $pool"
 
 ready=0
 for _ in $(seq 1 45); do
   sleep 2
   screen=$(mbb 20 read "$pane" 30 2>/dev/null || true)
-  if grep -q -i "trust this folder" <<< "$screen"; then mbb 20 keys "$pane" Enter >/dev/null; continue; fi
+  if grep -q -i "trust this folder" <<< "$screen"; then
+    # The cursor may start on "No, exit" (it does in a fresh BabaFlow worktree): a bare Enter would quit claude.
+    if grep -q -E "❯ *(1\. *)?No, exit" <<< "$screen"; then mbb 20 keys "$pane" Down Enter >/dev/null
+    else mbb 20 keys "$pane" Enter >/dev/null; fi
+    continue
+  fi
   if grep -q "Bypass Permissions mode" <<< "$screen" && grep -q "Yes, I accept" <<< "$screen"; then
     mbb 20 keys "$pane" Down Enter >/dev/null; continue
   fi

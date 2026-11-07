@@ -12,8 +12,26 @@ back through `tell-mini`. The ipm `kitchen remote` path can't do this, because i
 
 ## When to use
 
-- The work's gates run on the MBP: paid-traffic (`jeffheartmp/hive-paid-traffic`), dev-crew, other Python repos.
+- The work's gates run on the MBP: paid-traffic (`jeffheartmp/hive-paid-traffic`), dev-crew, other Python repos,
+  and `jahm2u/BabaFlow` (Node; mocha runs with no `.env` or services).
 - The Mini's builder slots are full, and the MBP has memory to spare.
+
+## MP repos vs TP repos
+
+The owner decides, and `--pool` overrides only the pool:
+
+| | `jeffheartmp/*`, `meupatrocinio/*` (MP) | everything else, e.g. `jahm2u/BabaFlow` (TP) |
+|---|---|---|
+| Claude pool | `https://claude.ipmedia.com.br`, `~/.config/claude-gateway/key` | `http://100.127.163.81:3456`, `~/.config/claude-gateway/tp-key` (spec-660: the fleet belongs on the TP pool) |
+| git | `include.path ~/.gitconfig-mp` (jeffheartmp) | the MBP's default credentials; identity `jahm2u <87615519+jahm2u@users.noreply.github.com>` set on the clone only (the MBP has no global identity) |
+| PRs | `GH_CONFIG_DIR=~/.config/gh-mp gh pr create` | plain `gh pr create` (gh is jahm2u) |
+| deps | uv | uv, or `npm ci` when there is a `package-lock.json` (root only; `admin-app` is the builder's job) |
+
+BabaFlow note: `npx mocha <file>` does NOT narrow, because `.mocharc.json`'s spec globs merge with the positional
+argument and the whole suite (~37k tests) runs. To run one file:
+`NODE_ENV=test npx mocha --no-config --no-parallel --require dotenv/config --require src/test-setup.js --timeout 10000 --exit <file>`.
+The MBP builder does not have the Mini's bmad-build/cmux-builder loop or Codex review: the brief carries the
+Intent, Boundaries and Done, and the orchestrator runs the review gates before merging.
 - Not for docs-ipm db-e2e: every docs-ipm builder shares the Mini's Postgres on 4132 under
   `lockf /tmp/docs-ipm-db-e2e.lock`, so put docs-ipm builders on the Mini.
 
