@@ -162,6 +162,9 @@ def content_sha(root, line):
     rel = paths(line)[-1]
     p = os.path.join(root, rel)
     h = hashlib.sha256((git(root, "ls-files", "-s", "--", rel) or "").encode())
+    if os.path.islink(p):
+        h.update(("link:" + os.readlink(p)).encode())
+        return h.hexdigest()
     if not os.path.isfile(p):
         return h.hexdigest()
     try:

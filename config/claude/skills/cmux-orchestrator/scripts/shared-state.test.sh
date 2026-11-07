@@ -173,6 +173,9 @@ fresh; echo staged > "$ROOT/a.txt"; G -C "$ROOT" add a.txt; echo wt > "$ROOT/a.t
 echo other-staged > "$ROOT/a.txt"; G -C "$ROOT" add a.txt; echo wt > "$ROOT/a.txt"; run drift
 check "staged content replaced under an unchanged MM line -> status ~MM a.txt" "$out" "has:shared-state: $ROOT: status ~MM a.txt" lines=1
 
+fresh; mkdir -p "$TMP/t1$N" "$TMP/t2$N"; ln -s "$TMP/t1$N" "$ROOT/link"; run snap; rm "$ROOT/link"; ln -s "$TMP/t2$N" "$ROOT/link"; run drift
+check "an untracked symlink retargeted -> status ~?? link" "$out" "has:shared-state: $ROOT: status ~?? link" lines=1
+
 fresh; run lib "$ROOT" 'bf_shared_drift "'"$LD"'/me.shared" me'
 check "no snapshot -> drift prints nothing" "$out" empty
 
