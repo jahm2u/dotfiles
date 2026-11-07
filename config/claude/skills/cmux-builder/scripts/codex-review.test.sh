@@ -29,6 +29,7 @@ case "$FAKE_MODE" in
 esac
 CODEX
 chmod +x "$TMP/bin/codex"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/bin/pgrep"; chmod +x "$TMP/bin/pgrep"
 
 new_repo() {
   local d="$TMP/$1"
@@ -106,6 +107,34 @@ ok=1 why=""
 [ ! -e "$wt/_bmad" ] && [ ! -e "$LD/cy.env" ] && [ ! -e "$LD/cy.log" ] || { ok=0; why="$why; a stub ledger or log was created"; }
 if [ $ok = 1 ]; then pass=$((pass + 1)); echo "ok   BF_LEDGER naming a missing file -> review runs, no stub ledger"
 else fail=$((fail + 1)); echo "FAIL BF_LEDGER naming a missing file ($why)"; printf '%s\n' "$out" | tail -4 | sed 's/^/       /'; fi
+
+mkdir -p "$TMP/home/.local/state/cmux-orchestrator" "$TMP/dup1/_bmad/handoff/cmux" "$TMP/dup2/_bmad/handoff/cmux"
+printf '%s\n' "$TMP/ledgerrepo" "$TMP/dup1" "$TMP/dup2" > "$TMP/home/.local/state/cmux-orchestrator/roots"
+printf 'BF_SLUG=cz\nBF_STATUS=review-round\n' > "$LD/cz.env"; printf 'BF_SLUG=cw\nBF_STATUS=review-round\n' > "$LD/cw.env"
+for dd in dup1 dup2; do printf 'BF_SLUG=cd\nBF_STATUS=review-round\n' > "$TMP/$dd/_bmad/handoff/cmux/cd.env"; done
+fallback() { # name slug ledger-env-or-empty check...
+  local name=$1 slug=$2 led=$3 ok=1 why="" rc wt; shift 3
+  count=$((count + 1)); wt=$(new_repo "case$count")
+  set +e
+  out=$(cd "$wt" && env -u CG_ACTIVE -u CG_KEY -u CG_URL -u CG_CODEX_URL -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u HERDR_ENV -u TERM_PROGRAM -u BF_LEDGER \
+        BF_SLUG="$slug" ${led:+BF_LEDGER="$led"} HOME="$TMP/home" TMPDIR="$TMP/out$count" FAKE_MODE=clean PATH="$TMP/bin:$PATH" \
+        bash "$REVIEW_SH" --no-tab --timeout 30 2>&1); rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || { ok=0; why="rc=$rc"; }
+  [ ! -e "$wt/_bmad" ] || { ok=0; why="$why; wrote $wt/_bmad"; }
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      logged:*) grep -q '|codex-review|round 1 started' "${1#logged:}" 2>/dev/null || { ok=0; why="$why; no log line in ${1#logged:}"; };;
+      absent:*) [ ! -e "${1#absent:}" ] || { ok=0; why="$why; ${1#absent:} exists"; };;
+    esac
+    shift
+  done
+  if [ $ok = 1 ]; then pass=$((pass + 1)); echo "ok   $name"
+  else fail=$((fail + 1)); echo "FAIL $name ($why)"; printf '%s\n' "$out" | tail -3 | sed 's/^/       /'; fi
+}
+fallback "BF_LEDGER unset -> ledger resolved by slug, log written there" cz "" "logged:$LD/cz.log"
+fallback "BF_LEDGER names a missing file -> ledger resolved by slug" cw "$LD/gone-cw.env" "logged:$LD/cw.log" "absent:$LD/gone-cw.env"
+fallback "slug in two roots -> no ledger writes in either" cd "" "absent:$TMP/dup1/_bmad/handoff/cmux/cd.log" "absent:$TMP/dup2/_bmad/handoff/cmux/cd.log"
 
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]

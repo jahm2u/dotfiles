@@ -96,6 +96,9 @@ fi
 # Artifacts live beside the ledger (gitignored, in the PRIMARY checkout) so the worktree stays
 # clean for the collector; without a ledger they go to a temp dir.
 SLUG="${BF_SLUG:-$(basename "$WT")}"
+if [ -n "${BF_SLUG:-}" ] && { [ -z "${BF_LEDGER:-}" ] || [ ! -f "$BF_LEDGER" ]; }; then
+  if _found=$(bf_find_ledger "$BF_SLUG" 2>/dev/null); then BF_LEDGER="$_found/$BF_SLUG.env"; fi
+fi
 if [ -n "${BF_LEDGER:-}" ]; then OUTDIR=$(dirname "$BF_LEDGER"); else OUTDIR="${TMPDIR:-/tmp}/codex-review"; fi
 LEDGER_OK=0
 if [ -n "${BF_SLUG:-}" ] && [ -n "${BF_LEDGER:-}" ] && [ -f "$BF_LEDGER" ]; then
