@@ -231,7 +231,7 @@ def others(self_slug, known):
             shares = {os.path.realpath(r)}
             for d in e.get("BF_ADD_DIRS", "").split() + [e.get("BF_BMAD_ROOT", "")]:
                 if d:
-                    shares.add(os.path.realpath(d))
+                    shares.add(primary_of(d))
             touched = set()
             for l in (git(wt, "status", "--porcelain", "--untracked-files=all") or "").splitlines():
                 touched.update(paths(l))
@@ -242,6 +242,15 @@ def others(self_slug, known):
                     break
             res.append({"slug": slug, "own": os.path.realpath(r), "shares": shares, "paths": touched})
     return res
+
+def primary_of(d):
+    common = (git(d, "rev-parse", "--git-common-dir") or "").strip() if os.path.isdir(d) else ""
+    if not common:
+        return os.path.realpath(d)
+    return os.path.dirname(os.path.realpath(os.path.join(d, common)))
+
+def overlaps(a, b):
+    return under(a, b) or under(b, a)
 
 def under(path, root):
     return path == root or path.startswith(root.rstrip("/") + "/")
@@ -301,12 +310,15 @@ def drift(snapfile, self_slug, known):
     def label(slugs):
         return "not attributable (%s)" % ",".join(slugs) if slugs else ""
 
+    def shares_root(o, root):
+        return any(overlaps(root, s) for s in o["shares"])
+
     def sharers(root):
-        return [o["slug"] for o in oth if any(under(root, s) or under(s, root) for s in o["shares"])]
+        return [o["slug"] for o in oth if shares_root(o, root)]
 
     def attribute(root, ps):
-        group = label([o["slug"] for o in oth if root in o["shares"]
-                       and (root != o["own"] or any(p in o["paths"] for p in ps))])
+        group = label([o["slug"] for o in oth if shares_root(o, root)
+                       and (not overlaps(root, o["own"]) or any(p in o["paths"] for p in ps))])
         if not group and collected_spec(root, ps, self_slug):
             group = "not attributable (collector)"
         return group

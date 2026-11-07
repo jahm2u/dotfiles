@@ -207,6 +207,18 @@ echo w > "$BRAIN/by-someone.md"; run drift
 check "write in an --add-dir root another present builder shares -> not attributable (other)" "$out" \
   "has:not attributable (other): $BRAIN: status +?? by-someone.md" "not:shared-state: $BRAIN:" lines=1
 
+fresh
+BRAIN="$TMP/brain$N"; git init -q -b main "$BRAIN"; G -C "$BRAIN" commit -q --allow-empty -m init
+G -C "$BRAIN" worktree add -q -b side "$TMP/brainwt$N"
+run lib "$ROOT" 'bf_shared_snapshot me "'"$WT"'" "'"$ROOT"'" "'"$BRAIN"'"'
+Y="$TMP/y$N"; git init -q -b main "$Y"; G -C "$Y" commit -q --allow-empty -m init; G -C "$Y" worktree add -q -b feat/b "$Y/.claude/worktrees/wt-b"
+mkdir -p "$Y/_bmad/handoff/cmux"
+printf "BF_SLUG=b\nBF_WORKTREE=%s\nBF_ADD_DIRS='%s'\n" "$Y/.claude/worktrees/wt-b" "$TMP/brainwt$N" > "$Y/_bmad/handoff/cmux/b.env"
+printf '%s\n%s\n' "$ROOT" "$Y" > "$TMP/home/.local/state/cmux-orchestrator/roots"
+echo w > "$BRAIN/by-b.md"; echo '/b-only' >> "$BRAIN/.git/info/exclude"; run drift
+check "an add-dir that is a worktree of the brain resolves to the brain -> not attributable (b)" "$out" \
+  "has:not attributable (b): $BRAIN: info/exclude +/b-only, status +?? by-b.md" "not:shared-state: $BRAIN:" lines=1
+
 fresh; run lib "$ROOT" 'bf_shared_drift "'"$LD"'/me.shared" me'
 check "no snapshot -> drift prints nothing" "$out" empty
 
