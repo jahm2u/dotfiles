@@ -42,8 +42,10 @@ push() {
 install_remote() {
   with_timeout 20 ssh -o ConnectTimeout=10 -o BatchMode=yes "$MBP_HOST" 'mkdir -p "$HOME/builders/bin"' \
     || die "cannot reach $MBP_HOST over ssh"
-  push "$SKILL_DIR/scripts/remote/mbb" builders/bin/mbb.tmp
-  push "$SKILL_DIR/scripts/remote/claude-builder.sh" builders/bin/claude-builder.sh.tmp
+  # A per-launch suffix: two launches at once used to race on one mbb.tmp, and the second mv failed.
+  local t="tmp.$(hostname -s).$$"
+  push "$SKILL_DIR/scripts/remote/mbb" "builders/bin/mbb.$t"
+  push "$SKILL_DIR/scripts/remote/claude-builder.sh" "builders/bin/claude-builder.sh.$t"
   with_timeout 20 ssh -o ConnectTimeout=10 -o BatchMode=yes "$MBP_HOST" \
-    'cd "$HOME/builders/bin" && mv mbb.tmp mbb && mv claude-builder.sh.tmp claude-builder.sh && chmod 755 mbb claude-builder.sh'
+    "cd \"\$HOME/builders/bin\" && chmod 755 mbb.$t claude-builder.sh.$t && mv -f mbb.$t mbb && mv -f claude-builder.sh.$t claude-builder.sh"
 }

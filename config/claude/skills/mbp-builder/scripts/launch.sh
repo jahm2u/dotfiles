@@ -4,12 +4,14 @@
 #                  [--orchestrator <name>] [--model claude-opus-5-5] [--report-term <orca handle>]
 #                  [--report-repo <tell-mini repo>] [--report-host <mbp's ssh alias for this Mac>]
 #                  [--pool mp|tp (default: mp for jeffheartmp/meupatrocinio repos, tp otherwise)]
+#                  [--ipm on|off (default: on for MP repos, off otherwise; off disables the ipm plugin and its
+#                   worker guard, so --force-with-lease to the builder's own branch works)]
 #                  [--rules <file>] [--min-free 20] [--no-venv]
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
 repo="" slug="" branch="" brief="" orch="the orchestrator" model="claude-opus-5-5"
-term="${ORCA_TERMINAL_HANDLE:-}" report_repo="" report_host="" pool="" rules="" min_free=20 venv=1
+term="${ORCA_TERMINAL_HANDLE:-}" report_repo="" report_host="" pool="" ipm="" rules="" min_free=20 venv=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo=$2; shift 2 ;;
@@ -22,6 +24,7 @@ while [ $# -gt 0 ]; do
     --report-repo) report_repo=$2; shift 2 ;;
     --report-host) report_host=$2; shift 2 ;;
     --pool) pool=$2; shift 2 ;;
+    --ipm) ipm=$2; shift 2 ;;
     --rules) rules=$2; shift 2 ;;
     --min-free) min_free=$2; shift 2 ;;
     --no-venv) venv=0; shift ;;
@@ -43,6 +46,8 @@ agent="b-$slug"
 case "${repo%%/*}" in jeffheartmp|meupatrocinio) mp=1 ;; *) mp=0 ;; esac
 [ -n "$pool" ] || { [ "$mp" = 1 ] && pool=mp || pool=tp; }
 [[ "$pool" =~ ^(mp|tp)$ ]] || die "--pool must be mp or tp"
+[ -n "$ipm" ] || { [ "$mp" = 1 ] && ipm=on || ipm=off; }
+[[ "$ipm" =~ ^(on|off)$ ]] || die "--ipm must be on or off"
 if [ "$mp" = 1 ]; then ghpr="GH_CONFIG_DIR=~/.config/gh-mp gh pr create ..."; else ghpr="gh pr create ... (the MBP's gh is logged in as jahm2u)"; fi
 [ -n "$report_host" ] || report_host=$(default_report_host)
 [[ "$report_host" =~ ^[A-Za-z0-9._-]+$ ]] || die "--report-host must be an ssh alias"
@@ -88,8 +93,13 @@ trap 'rm -f "$tmp"' EXIT
   echo "Also append each report to \`~/$dir/log.md\`. Answers arrive typed into your pane. Never ask the human directly."
   echo "If tell-mini answers QUEUED, it delivers on its own when the orchestrator's menu closes: do not resend. If it"
   echo "prints \"Use MINI_TERM=<handle> from now on\", use that handle in every later report."
-  echo "Force pushes are refused on this Mac (the ipm worker guard has no record of your branch): to catch up with main,"
-  echo "merge origin/main and push fast-forward rather than rebasing."
+  if [ "$ipm" = on ]; then
+    echo "Force pushes are refused here (the ipm worker guard has no record of your branch): to catch up with main,"
+    echo "merge origin/main and push fast-forward rather than rebasing."
+  else
+    echo "The ipm plugin is off for you, so you may rebase and \`git push --force-with-lease origin HEAD:$branch\`"
+    echo "(your own branch only; never main, never a plain --force)."
+  fi
   echo "Push only with the explicit refspec \`git push origin HEAD:$branch\`. Open PRs with"
   echo "\`$ghpr\`; if gh answers 401 here, push and tell the orchestrator,"
   echo "which opens the PR from the Mini. Never merge: the orchestrator decides."
@@ -105,9 +115,9 @@ panes=$(mbb 30 pane "$slug" "$wt_abs")
 ws=$(sed -n 's/.*ws=\([^ ]*\).*/\1/p' <<< "$panes"); pane=$(sed -n 's/.*pane=\([^ ]*\).*/\1/p' <<< "$panes")
 [ -n "$ws" ] && [ -n "$pane" ] || die "could not create a herdr workspace ($panes)"
 mbb 20 ledger-set "$slug" "REPO=$repo" "BRANCH=$branch" "WT=$wt_abs" "CLONE=$home/builders/${repo##*/}" \
-  "WS=$ws" "PANE=$pane" "AGENT=$agent" "ORCH=$orch" "REPORT_HOST=$report_host" "REPORT_TERM=$term" "MODEL=$model" "POOL=$pool" >/dev/null
-mbb 20 start "$pane" "$model" "$slug" "$pool" >/dev/null
-echo "pool: $pool"
+  "WS=$ws" "PANE=$pane" "AGENT=$agent" "ORCH=$orch" "REPORT_HOST=$report_host" "REPORT_TERM=$term" "MODEL=$model" "POOL=$pool" "IPM=$ipm" >/dev/null
+mbb 20 start "$pane" "$model" "$slug" "$pool" "$ipm" >/dev/null
+echo "pool: $pool  ipm: $ipm"
 
 ready=0
 for _ in $(seq 1 45); do

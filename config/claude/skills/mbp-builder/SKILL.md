@@ -101,10 +101,16 @@ reply delivered, closed clean). The builder also appends each report to
 
 ## Landmines
 
-- **No force pushes on the MBP.** `claude-builder.sh` exports `IPM_WORKER_SLUG`, so the ipm plugin's worker guard
-  treats the builder as a worker; with no ipm ledger record it knows no "own branch" and refuses every force push,
-  `--force-with-lease` included. Plain pushes work. Catch up by merging `origin/main` and pushing fast-forward
-  (b-4933 did this; squash-merge keeps main clean).
+- **The ipm plugin and force pushes: `--ipm on|off`.** With `--ipm on`, `claude-builder.sh` exports `IPM_WORKER_SLUG`,
+  so the ipm plugin's worker guard treats the builder as a worker; with no ipm ledger record it knows no "own branch"
+  and refuses every force push, `--force-with-lease` included ("[worker guard: git-push-protected] Push only your own
+  branch."). `--ipm off` starts claude with `--settings '{"enabledPlugins":{"ipm@ipmedia-skills":false}}'` and no
+  `IPM_WORKER_SLUG`, so the plugin (hooks and skills; it has no MCP servers) never loads and the builder may rebase and
+  `--force-with-lease` its own branch. **Default: off for TP repos, on for MP repos** (they use ipm's skills); the
+  kickoff tells the builder which. Verified 2026-11-08 with a dry-run force push from two BabaFlow builders: on →
+  refused by the guard, off → ran.
+- **Launching several at once** is safe: `install_remote` uploads through per-launch temp names (two simultaneous
+  launches used to race on one `mbb.tmp` and the second died silently).
 - **Work that needs the Mini comes back as a request.** Prod SQL (`scripts/prod.sh sql`) and baba-brain doc patches
   can't be done on the MBP: the builder sends the query or patch and the orchestrator runs or lands it. Budget a round
   trip for each (b-4933, b-4935, b-digest-store all did).

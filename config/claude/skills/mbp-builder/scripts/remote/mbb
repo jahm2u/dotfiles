@@ -105,9 +105,10 @@ cmd_pane() {
 }
 
 cmd_start() {
-  local pane=$1 model=$2 slug=$3 pool=${4:-mp}
+  local pane=$1 model=$2 slug=$3 pool=${4:-mp} ipm=${5:-on}
   case "$pool" in mp|tp) ;; *) die "pool must be mp or tp" ;; esac
-  hd pane run "$pane" "bash $B/bin/claude-builder.sh $model $slug $pool"
+  case "$ipm" in on|off) ;; *) die "ipm must be on or off" ;; esac
+  hd pane run "$pane" "bash $B/bin/claude-builder.sh $model $slug $pool $ipm"
   echo "started"
 }
 
