@@ -86,6 +86,10 @@ trap 'rm -f "$tmp"' EXIT
   echo "    ssh -o ConnectTimeout=10 $report_host '${pin}$tell $report_repo mbp:$MBB_SESSION/$agent' < <file>"
   echo
   echo "Also append each report to \`~/$dir/log.md\`. Answers arrive typed into your pane. Never ask the human directly."
+  echo "If tell-mini answers QUEUED, it delivers on its own when the orchestrator's menu closes: do not resend. If it"
+  echo "prints \"Use MINI_TERM=<handle> from now on\", use that handle in every later report."
+  echo "Force pushes are refused on this Mac (the ipm worker guard has no record of your branch): to catch up with main,"
+  echo "merge origin/main and push fast-forward rather than rebasing."
   echo "Push only with the explicit refspec \`git push origin HEAD:$branch\`. Open PRs with"
   echo "\`$ghpr\`; if gh answers 401 here, push and tell the orchestrator,"
   echo "which opens the PR from the Mini. Never merge: the orchestrator decides."

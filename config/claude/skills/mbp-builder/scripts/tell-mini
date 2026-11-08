@@ -8,6 +8,7 @@
 # reply as mini:orca/REPO (Jeff 06/10).
 set -euo pipefail
 REPO="${1:?usage: tell-mini REPO FROM < message}"
+ARG_REPO="$REPO"
 # the paid-traffic hive runs from the hive repo on the Mini (hive-9b), not this team-tech-mgt pane (Jeff 10/10)
 [ "$REPO" = "hive-paid-traffic" ] && REPO=hive
 FROM="${2:?usage: tell-mini REPO FROM < message}"
@@ -21,33 +22,49 @@ orca_cli() {
     /usr/local/bin/orca "$@"
   fi
 }
-d=~/.local/state/from-mbp; mkdir -p "$d"; f="$d/$(date +%Y%m%dT%H%M%S)-$$.md"; cat > "$f"
+d=~/.local/state/from-mbp; mkdir -p "$d"
+# TELL_MINI_BODY: a queued retry re-sends the body it already saved instead of writing a new copy.
+if [ -n "${TELL_MINI_BODY:-}" ]; then f="$TELL_MINI_BODY"
+else f="$d/$(date +%Y%m%dT%H%M%S)-$$.md"; cat > "$f"; fi
 [ -s "$f" ] || { echo "tell-mini: empty message" >&2; rm -f "$f"; exit 2; }
+# A busy orchestrator (a question or menu open) is not a failure: queue the body and type it when the menu
+# closes, retrying every 30 s for 30 min, so the sender never resends and the Mini never collects duplicates.
+queue_or_fail() {
+  if [ -n "${TELL_MINI_BACKGROUND:-}" ]; then exit 4; fi
+  nohup env TELL_MINI_BODY="$f" TELL_MINI_BACKGROUND=1 MINI_TERM="$T" bash -c \
+    'for _ in $(seq 1 60); do sleep 30; "$0" "$1" "$2" </dev/null && exit 0; rc=$?; [ "$rc" -eq 4 ] || exit "$rc"; done; echo "gave up after 30 min: $TELL_MINI_BODY"' \
+    "$0" "$ARG_REPO" "$FROM" >>"$d/queue.log" 2>&1 </dev/null &
+  echo "tell-mini: $REPO's Claude ('$TITLE' [$T]) has a question or menu open; QUEUED, it will be typed in when that closes (up to 30 min). Do not resend. Body: $f"
+  exit 0
+}
 pick=$(orca_cli terminal list --json | REPO="$REPO" MINI_TERM="${MINI_TERM:-}" python3 -c '
 import json, os, sys
 ts = [t for t in json.load(sys.stdin)["result"]["terminals"] if not t.get("orphaned")]
 pin = os.environ["MINI_TERM"]
-if pin:
-    ts = [t for t in ts if t["handle"] == pin]
+pinned = [t for t in ts if pin and t["handle"] == pin]
+gone = "pin-gone" if pin and not pinned else ""
+if pinned:
+    ts = pinned
 else:
+    # No pin, or the pinned tab was closed (an orchestrator restarted in a new tab): the Claude tabs of the repo,
+    #   "orchestrator" tabs first (builder tabs share the repo path), then the most recent output.
     ts = [t for t in ts if t.get("worktreePath", "").rstrip("/").endswith("/" + os.environ["REPO"])
           and t.get("agentIdentity") == "claude"]
-    ts.sort(key=lambda t: t.get("lastOutputAt") or 0, reverse=True)
+    ts.sort(key=lambda t: ("orchestrator" in (t.get("title") or ""), t.get("lastOutputAt") or 0), reverse=True)
 if not ts:
     sys.exit(0)
 t = ts[0]
-print("\t".join([t["handle"], t.get("worktreePath", ""), (t.get("branch") or "").removeprefix("refs/heads/"),
-                 (t.get("title") or "").strip() or "untitled", str(len(ts))]))')
+print("\x1f".join([t["handle"], t.get("worktreePath", ""), (t.get("branch") or "").removeprefix("refs/heads/"),
+                 (t.get("title") or "").strip() or "untitled", str(len(ts)), gone]))')
 [ -n "$pick" ] || { echo "tell-mini: no Claude terminal for $REPO in Orca on the Mini; body kept at $f" >&2; exit 3; }
-IFS=$'\t' read -r T WT BR TITLE N <<<"$pick"
+IFS=$'\x1f' read -r T WT BR TITLE N GONE <<<"$pick"
 WTNAME=$(cd "$WT" 2>/dev/null && orca_cli worktree current --json 2>/dev/null | python3 -c '
 import json,sys; r=json.load(sys.stdin).get("result",{}); print((r.get("worktree",r) or {}).get("displayName") or "")' || true)
 # Never type into an open question or menu: the keys would answer it (06/10, the paid-traffic Top-up).
 tail=$(orca_cli terminal read --terminal "$T" --limit 40 --json 2>/dev/null | python3 -c '
 import json,sys; print("\n".join(json.load(sys.stdin)["result"]["terminal"]["tail"][-25:]))' || true)
 if grep -qE "Enter to select|Esc to cancel|Enter to confirm|Do you want to proceed" <<<"$tail"; then
-  echo "tell-mini: $REPO's Claude ('$TITLE' [$T]) is waiting on a question or menu; not typing into it. Body kept at $f" >&2
-  exit 4
+  queue_or_fail
 fi
 case "$FROM" in
   mbp:builders/b-*) REPLY="~/.claude/skills/mbp-builder/scripts/send.sh ${FROM#mbp:builders/b-} --file reply.md" ;;
@@ -57,10 +74,10 @@ esac
 orca_cli terminal send --terminal "$T" --text "[mini-tell from $FROM] read $f and answer as it asks. Reply with: $REPLY" --enter >/tmp/tell-mini.$$ 2>&1 || {
   if grep -q agent_prompt_blocked /tmp/tell-mini.$$; then
     rm -f /tmp/tell-mini.$$
-    echo "tell-mini: $REPO's Claude ('$TITLE' [$T]) is waiting on a question or menu (Orca refused to type); body kept at $f" >&2
-    exit 4
+    queue_or_fail
   fi
   cat /tmp/tell-mini.$$ >&2; rm -f /tmp/tell-mini.$$; exit 1; }
 rm -f /tmp/tell-mini.$$
 more=""; [ "$N" -gt 1 ] && more=" (newest of $N Claudes on $REPO)"
 echo "delivered to mini:orca/$REPO -- Orca: repo $(basename "$WT"), worktree '${WTNAME:-?}' ($BR), tab '$TITLE' [$T]$more: $f"
+[ -z "${GONE:-}" ] || echo "NOTE: the pinned tab ${MINI_TERM:-} is gone; this went to [$T] instead. Use MINI_TERM=$T from now on."

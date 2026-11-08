@@ -88,10 +88,26 @@ work mini also keeps an older copy at `~/.local/bin/tell-mini`. The message land
 the Mini and is typed into the pinned Orca tab as a `[mini-tell from mbp:builders/b-<slug>]` line, whose reply hint
 is `send.sh <slug> --file reply.md`. Verified end to end from Mini-2024 on 2026-11-07 (smoke builder, report in ~30 s,
 reply delivered, closed clean). The builder also appends each report to
-`~/builders/briefs/<slug>/log.md`. If the orchestrator restarts in a new tab, the pinned handle is stale: send the
-builder the new handle with `send.sh`. SendMessage and ListAgents can't see MBP builders.
+`~/builders/briefs/<slug>/log.md`. SendMessage and ListAgents can't see MBP builders.
+
+- **Orchestrator restarted in a new tab.** The pinned handle is gone. `tell-mini` then delivers to the repo's newest
+  `🎛 orchestrator` tab (builder tabs share the repo path, so "orchestrator" in the title wins) and prints
+  `Use MINI_TERM=<handle> from now on`; the kickoff tells the builder to switch. Still send it the new handle with
+  `send.sh` when you restart, since a tab with no "orchestrator" title can't be told apart from a builder's.
+  (2026-11-08: b-digest-store's CI report failed for this reason until it was repinned by hand.)
+- **Orchestrator on a menu.** `tell-mini` queues the saved body and types it in when the menu closes (every 30 s, up
+  to 30 min; log in `~/.local/state/from-mbp/queue.log`) and answers QUEUED, so the builder does not resend.
+  (Before: one saved copy per attempt, three identical design reports from b-digest-store.)
 
 ## Landmines
+
+- **No force pushes on the MBP.** `claude-builder.sh` exports `IPM_WORKER_SLUG`, so the ipm plugin's worker guard
+  treats the builder as a worker; with no ipm ledger record it knows no "own branch" and refuses every force push,
+  `--force-with-lease` included. Plain pushes work. Catch up by merging `origin/main` and pushing fast-forward
+  (b-4933 did this; squash-merge keeps main clean).
+- **Work that needs the Mini comes back as a request.** Prod SQL (`scripts/prod.sh sql`) and baba-brain doc patches
+  can't be done on the MBP: the builder sends the query or patch and the orchestrator runs or lands it. Budget a round
+  trip for each (b-4933, b-4935, b-digest-store all did).
 
 - **Kimi by default.** On the MBP, `~/.config/claude-gateway/base` is `/kimi`, and an interactive shell's `cg`
   wrapper pins k3.1. `claude-builder.sh` exports the Claude-pool env for its own process only:
