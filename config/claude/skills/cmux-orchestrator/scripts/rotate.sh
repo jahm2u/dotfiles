@@ -33,7 +33,7 @@ case "$ACT" in
     bf_builder_alive || bf_die "builder $(bf_builder_where) is gone"
     read -r _ pct _ <<<"$(ctx)"
     date +%s >"$MARK"
-    bf_say_to_builder "[orchestrator] Context rotation: you are at ${pct}% of your window. Finish only the step in hand (commit and push WIP to your branch if the tree is dirty), then write your handoff with the handoff skill and SKIP its interview: no questions, record open decisions as next steps with your recommendation. It must name the spec ($BF_SPEC), the branch, the head sha, the PR if any, what is done, what is next, and anything you were waiting on. Write it to $HANDOFF (only that file counts, and only if written after this message). Then reply with the single word $WORD and stop. I will /clear you and reseed you from it."
+    bf_say_to_builder "[orchestrator] Context rotation: you are at ${pct}% of your window. Finish only the step in hand (commit WIP locally if the tree is dirty; do NOT push unless I said so -- a push restarts CI on your PR), then write your handoff with the handoff skill and SKIP its interview: no questions, record open decisions as next steps with your recommendation. It must name the spec ($BF_SPEC), the branch, the head sha, the PR if any, what is done, what is next, and anything you were waiting on. Write it to $HANDOFF (only that file counts, and only if written after this message) and do NOT git add or commit it. Then reply with the single word $WORD and stop. I will /clear you and reseed you from it."
     bf_logline "$SLUG" orchestrator "rotation asked at ${pct}%"
     echo "asked $SLUG for a handoff at ${pct}%; run 'rotate.sh $SLUG finish' once it replies $WORD" ;;
   status)
@@ -55,6 +55,12 @@ case "$ACT" in
     read -r _ before _ _ oldtr <<<"$(ctx)"
     cp "$HANDOFF" "$KEEP"
     bf_say_to_builder "/clear"
+    # herdr forgets the agent name on /clear (2026-11-11: peek/ls/ctx all answered
+    # agent_not_found until the pane was renamed), so put it back before anything else.
+    if bf_is_herdr && [ -n "${BF_BUILDER_AGENT:-}" ]; then
+      sleep 3; herdr agent rename "$BF_BUILDER_SURFACE" "$BF_BUILDER_AGENT" >/dev/null 2>&1 \
+        || echo "WARN: herdr agent rename $BF_BUILDER_SURFACE $BF_BUILDER_AGENT failed; do it by hand" >&2
+    fi
     for _ in $(seq 1 30); do
       sleep 2
       read -r _ pct _ _ tr <<<"$(ctx)"

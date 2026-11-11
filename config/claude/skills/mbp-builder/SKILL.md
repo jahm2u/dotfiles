@@ -72,16 +72,21 @@ since reports are typed into its tab.
    - `herdr --remote mbp --session builders` attaches live.
 5. **Rotate it at 60% context. No exceptions.** `scripts/ctx.sh [slug...]` reads each builder's transcript on the
    MBP and prints `<slug> <pct> <tokens> <window>`. Run it before you send any builder new work and whenever you
-   `peek.sh`. On 2026-11-11 `b-1235-support-inbox` hit 97% (78% by ctx.sh, which counts the raw 1M window) and
-   `b-1234-ops-foundation` 91%, both still being handed work. At 60%:
-   1. `send.sh <slug> "Context rotation: finish only the step in hand, commit and push WIP, write your handoff with
-      the handoff skill and SKIP its interview (open decisions become next steps with your recommendation): brief,
-      branch, head sha, PR, done, next. Write it to _bmad/handoff/HANDOFF-latest.md in your worktree, reply with the
-      single word CHECKPOINTED and stop."`
-   2. When `peek.sh` shows `CHECKPOINTED` and the builder is idle: `send.sh <slug> "/clear"`.
+   `peek.sh`. Its percent matches Claude Code's own meter. On 2026-11-11 `b-1235-support-inbox` hit 97% and
+   `b-1234-ops-foundation` was past 100% of the meter, both still being handed work. At 60%:
+   1. `send.sh <slug> "Context rotation: finish only the step in hand, commit WIP locally (do not push: a push
+      restarts CI on your PR), write your handoff with the handoff skill and SKIP its interview (open decisions
+      become next steps with your recommendation): brief, branch, head sha, PR, done, next. Write it to
+      _bmad/handoff/HANDOFF-latest.md in your worktree and do NOT git add it, reply with the single word
+      CHECKPOINTED and stop."`
+   2. When `peek.sh` shows `CHECKPOINTED` and the builder is idle: `send.sh <slug> "/clear"`, then
+      `ssh mbp 'herdr --session builders agent rename <pane> b-<slug>'` (pane from `ls.sh`): `/clear` drops the
+      agent name, and peek/ls/ctx answer `agent_not_found` until it is back.
    3. `send.sh <slug> "You were rotated at a context ceiling. Read _bmad/handoff/HANDOFF-latest.md and your brief
       first, then continue from the handoff's next steps; report through tell-mini as before."`
-   4. `ctx.sh <slug>` must now read under ~10%. Never hand new work to a builder above 60%: rotate it first.
+   4. `ctx.sh <slug>` must now read under ~20% (about 11% after reading its handoff and brief), and check it did not
+      commit the handoff file. Never hand new work to a builder above 60%: rotate it first.
+   First live run 2026-11-11 (ajuda-brain-9d, 1234 and 1235): about 100 s per handoff, both reseeded cleanly.
 6. Close it with `scripts/close.sh <slug>`. It refuses when the worktree is dirty, when commits aren't on
    `origin/<branch>`, or when the branch has no MERGED PR (checked with gh on the Mini). Otherwise it sends `/exit`,
    closes the workspace, and removes the worktree and the local branch. The ledger is kept as

@@ -14,9 +14,13 @@
 # The number: the last main-thread assistant turn in the session's transcript
 # (~/.claude/projects/<cwd, every non-alphanumeric as ->/<session>.jsonl) carries `usage`; the
 # context in use is input + cache_creation + cache_read tokens. Subagent turns
-# (isSidechain) are skipped, they have their own window. Window = 1,000,000 when the
-# ledger model has [1m] (or the usage already exceeds 200k), else 200,000;
-# BF_CTX_WINDOW overrides.
+# (isSidechain) are skipped, they have their own window.
+#
+# Window = what Claude Code's own meter divides by, so the two agree: 80% of the raw window.
+# Measured 2026-11-11 on three MBP builders: 780,019 tokens showed 97%, 88,386 showed 11.0%,
+# 87,488 showed 10.9% -- a divisor of ~803k on a 1M model. Raw window is 1M for every model
+# except Haiku (200k); a fresh session at 88k must not be read against 200k. BF_CTX_WINDOW
+# overrides the divisor itself.
 #
 # Output, one line per builder:  <slug> <pct> <tokens> <window> <transcript>
 # pct is an integer; "?" when there is no transcript yet (a builder still starting).
@@ -76,7 +80,8 @@ for raw in reversed(lines):
     break
 if tok is None:
     out("?", 0, 0, path); sys.exit(0)
-win = int(override) if override else (1_000_000 if ("[1m]" in model or tok > 200_000) else 200_000)
+raw = 200_000 if ("haiku" in model.lower() and tok <= 200_000) else 1_000_000
+win = int(override) if override else int(raw * 0.8)
 out(round(100 * tok / win), tok, win, path)
 PY
 }

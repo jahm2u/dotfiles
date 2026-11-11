@@ -1,10 +1,8 @@
 #!/bin/bash
 # ctx.sh [slug ...]: context use of each b-* builder on the MBP, read from its transcript.
 # Prints: <slug> <pct> <tokens> <window> <transcript>. MBP builders run claude-opus-5-5
-# (remote/claude-builder.sh); ctx.sh assumes 200k until usage passes it, then 1M (measured
-# 2026-11-11: four MBP builders at 282k-914k, so their window is 1M). Claude Code's own meter
-# read 97% where this read 78%: it counts against the auto-compact limit, so this is the
-# LOWER of the two and 60% here is a conservative trigger, not a late one.
+# (remote/claude-builder.sh), a 1M window. ctx.sh divides by 80% of it so its percent matches
+# Claude Code's own meter (measured 2026-11-11: 780,019 tokens = 97%, 88,386 = 11.0%).
 #
 # The 60% rotation rule (SKILL.md "Context rotation") is enforced from here: on 2026-11-11
 # b-1235-support-inbox reached 97% after five rounds and was still being handed questions.
