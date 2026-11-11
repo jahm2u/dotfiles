@@ -191,7 +191,7 @@ move to In progress) before spawning; the builder only references the issue in i
 
 ```
 Monitor(command: "~/.claude/skills/cmux-orchestrator/scripts/watchdog.sh --interval 120 <slug> [<slug>...]",
-        description: "cmux builders -- stalls and idle waits",
+        description: "cmux builders -- stalls, idle waits and context over 60%",
         persistent: true, timeout_ms: 3600000)
 ```
 
@@ -211,6 +211,38 @@ how an orchestrator reruns a command nobody checked.
 idle builder is either done, waiting on you, or waiting on the human. If it's the human, tell
 them now, naming the tab and the exact answer it needs. Never let an IDLE event pass with "that's
 expected" before you have read the screen.
+
+#### Context rotation: no builder past 60%, ever
+
+**You rotate builders; they do not rotate themselves.** The builder skill always said "hand off
+at ~70%", and builders never did it: on 2026-11-11 `b-1235-support-inbox` was at 97% of its
+window after five rounds and still being sent questions, and `b-1234-ops-foundation` sat at 91%.
+A builder deep in a task does not watch its own meter, so the limit is enforced from here.
+
+- **Measure:** `scripts/ctx.sh [slug...]` reads each builder's transcript (input + cache tokens
+  of its last main-thread turn) and prints `<slug> <pct> <tokens> <window>`. Check it before you
+  hand any builder a new task, and every time you `peek.sh`. MBP builders:
+  `~/.claude/skills/mbp-builder/scripts/ctx.sh`.
+- **Push:** the watchdog emits `CONTEXT <slug> N%` on crossing **60%** (`BF_CTX_ROTATE`), every
+  5th poll while it stays over, and every poll past **80%** (`BF_CTX_HARD`).
+- **Act on every `CONTEXT` event, the same turn:**
+  1. `scripts/rotate.sh <slug> ask`: the builder finishes only the step in hand, pushes WIP,
+     writes `_bmad/handoff/HANDOFF-latest.md` with the handoff skill **without its interview**,
+     and replies `CHECKPOINTED`.
+  2. When the watchdog next reports it IDLE (or `rotate.sh <slug> status` shows a fresh handoff
+     and `CHECKPOINTED`): `scripts/rotate.sh <slug> finish`. It refuses unless the handoff is newer
+     than the ask, over 400 bytes, and the builder is idle on `CHECKPOINTED`. It then copies the
+     handoff to `<slug>.handoff.md` beside the ledger, sends `/clear`, and reseeds the builder from
+     the copy. The builder keeps its pane and `BF_*` environment, so it reports to you as before.
+  3. `ctx.sh <slug>` must now read a new transcript under ~10%. If `finish` says the transcript
+     did not change, `peek.sh` and fix it by hand.
+- **Never hand a builder new work above 60%**: rotate first, then give it the task. Between 60%
+  and 80% you may let it finish the step it is on; past 80% rotate even mid-task.
+- **You too.** Check yourself with `scripts/ctx.sh --path "$(pwd)" --model 'opus[1m]'` when the
+  watchdog fires. At 60%: write your own handoff (handoff skill), tell the human to `/clear` this
+  pane, and stop taking new work. Builders keep reporting to your pane across the clear.
+- As of 2026-11-11, `ask`/`finish` had not yet had a live run; only its refusal paths were tested.
+  Watch the first one closely, report what happened, and fix the script if it misbehaves.
 
 Measured 2026-09-12: builder `3561-routing-enable` sat from 06:25 holding
 `node scripts/pr-watch.js 3567 --wait` unsubmitted, while its PR was CONFLICTING with 4
