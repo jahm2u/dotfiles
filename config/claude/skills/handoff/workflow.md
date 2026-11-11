@@ -123,6 +123,8 @@ picks up the new checkpoint exactly once.
    particular, anything genuinely awaiting the human's call belongs in
    `open_questions`, and a merged/closed item should be `status: fixed`, not left
    `open`.
+   **Progress page.** If the project has `progress/*-progress.html`, run the
+   `progress-page` skill to refresh it now, and list its path in the handoff.
 8. **Copy the continuation prompt to the clipboard.** Write a tight kickoff
    prompt for the next session (what to read, the ordered next actions as
    settled in the interview, the load-bearing landmines — grounded in the JSON
