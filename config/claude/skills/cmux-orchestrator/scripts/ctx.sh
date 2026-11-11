@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # ctx.sh [--json] [slug ...]          context use of each builder, read from its transcript
-# ctx.sh --path <dir> [--model M]     same, for any Claude session whose cwd was <dir>
+# ctx.sh --path <dir> [--model M] [--session <id>]   same, for any Claude session whose cwd was <dir>
+#   (--session picks that transcript; without it the newest wins, and ctx.sh warns on stderr when
+#    another session in the same cwd wrote in the last 10 min -- shared primary checkouts)
 #
 # WHY THIS EXISTS
 # ---------------
@@ -25,12 +27,13 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo .)
 # shellcheck disable=SC1091
 [ -f "$HERE/lib.sh" ] && . "$HERE/lib.sh"
 
-JSON=0; PATH_ARG=""; MODEL_ARG=""; SLUGS=""
+JSON=0; PATH_ARG=""; MODEL_ARG=""; SID_ARG=""; SLUGS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --json)  JSON=1; shift ;;
     --path)  PATH_ARG="$2"; shift 2 ;;
     --model) MODEL_ARG="$2"; shift 2 ;;
+    --session) SID_ARG="$2"; shift 2 ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) SLUGS="$SLUGS $1"; shift ;;
   esac
@@ -39,10 +42,18 @@ done
 measure() { # label cwd model
   local label="$1" cwd="$2" model="$3" proj
   proj="$HOME/.claude/projects/$(printf '%s' "$cwd" | sed 's#[^A-Za-z0-9]#-#g')"
-  python3 - "$label" "$proj" "$model" "${BF_CTX_WINDOW:-}" "$JSON" <<'PY'
-import glob, json, os, sys
-label, proj, model, override, as_json = sys.argv[1:6]
+  python3 - "$label" "$proj" "$model" "${BF_CTX_WINDOW:-}" "$JSON" "$SID_ARG" <<'PY'
+import glob, json, os, sys, time
+label, proj, model, override, as_json, sid = sys.argv[1:7]
 files = sorted(glob.glob(os.path.join(proj, "*.jsonl")), key=os.path.getmtime)
+if sid:
+    files = [f for f in files if os.path.basename(f) == sid + ".jsonl"]
+elif len(files) > 1 and time.time() - os.path.getmtime(files[-2]) < 600:
+    # Several sessions share this cwd (an orchestrator's primary checkout often does): the
+    # newest transcript may be someone else's. Builders own their worktree, so never hit this.
+    n = sum(1 for f in files[:-1] if time.time() - os.path.getmtime(f) < 600)
+    print(f"ctx.sh: {label}: {n} other transcript(s) in this cwd written in the last 10 min; "
+          "the number may be another session's. Pass --session <id>.", file=sys.stderr)
 def out(pct, tok, win, path):
     if as_json == "1":
         print(json.dumps({"slug": label, "pct": pct, "tokens": tok, "window": win, "transcript": path}))

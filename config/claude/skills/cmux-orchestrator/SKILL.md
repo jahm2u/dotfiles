@@ -238,8 +238,11 @@ A builder deep in a task does not watch its own meter, so the limit is enforced 
      did not change, `peek.sh` and fix it by hand.
 - **Never hand a builder new work above 60%**: rotate first, then give it the task. Between 60%
   and 80% you may let it finish the step it is on; past 80% rotate even mid-task.
-- **You too.** Check yourself with `scripts/ctx.sh --path "$(pwd)" --model 'opus[1m]'` when the
-  watchdog fires. At 60%: write your own handoff (handoff skill), tell the human to `/clear` this
+- **You too.** Check yourself with `scripts/ctx.sh --path "$(pwd)" --model 'opus[1m]' --session <id>`
+  when the watchdog fires. A primary checkout is usually shared by several sessions, so without
+  `--session` you may read another session's number (ctx.sh warns on stderr when it might).
+  Your id is the basename of your transcript: `grep -l "<a phrase from your last reply>"
+  ~/.claude/projects/<cwd dashed>/*.jsonl`. At 60%: write your own handoff (handoff skill), tell the human to `/clear` this
   pane, and stop taking new work. Builders keep reporting to your pane across the clear.
 - As of 2026-11-11, `ask`/`finish` had not yet had a live run; only its refusal paths were tested.
   Watch the first one closely, report what happened, and fix the script if it misbehaves.
