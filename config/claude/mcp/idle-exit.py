@@ -14,8 +14,8 @@ Sleeping stops only the server process; this wrapper (~15 MB) stays connected, s
 sees a disconnect and never asks to restart the server. On the next request the server is
 started again and the session's original initialize handshake is replayed to it (its reply is
 swallowed) before the request goes through. What is lost is server-side state, e.g. which
-Chrome tab was selected. Idle means no tools/call and no call still waiting for its answer,
-so a long-running call is never cut. Closing the session stops everything.
+Chrome tab was selected. Idle means no tools/call for N minutes and no request of any kind
+still waiting for its answer, so neither a long call nor a wake-up request is ever cut. Closing the session stops everything.
 """
 import json
 import os
@@ -128,7 +128,10 @@ def client_to_server():
                     initialized_note = line
                 elif m.get("method") == "tools/call":
                     last_call = time.monotonic()
+                if "id" in m and "method" in m:  # any request: never sleep before it is answered
                     pending.add(json.dumps(m.get("id")))
+            if child is None:
+                last_call = time.monotonic()  # a fresh wake gets a full idle period
             proc = child or start(replay=True)
             try:
                 write(proc, line)
