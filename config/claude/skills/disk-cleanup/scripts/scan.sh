@@ -1,6 +1,6 @@
 #!/bin/bash
 # Read-only triage of every git worktree under the given roots, plus the big caches.
-# Never deletes anything. Usage: scan.sh [root ...]   (default: ~/repos ~/work)
+# Never deletes anything. Usage: scan.sh [root ...]   (default: ~/repos ~/work ~/orca/workspaces)
 #
 # Verdicts:
 #   SAFE  PR merged at this exact HEAD (or HEAD already in origin's default branch),
@@ -15,9 +15,17 @@
 #     look exactly like that and are in use.
 #   - watchman drops .watchman-cookie-* files into roots it watches; they are not work.
 #   - Directory mtime is meaningless (watchman touches it); age = last commit.
+#
+# Lessons baked in (2026-11-12 cleanup):
+#   - ~/repos is a symlink to an external drive, and BSD find does not descend a symlinked
+#     starting point without -H. The scan listed zero worktrees for weeks and looked clean.
+#     Every find here uses -H, and finding no checkout at all is an error, not a result.
+#   - A BMAD module refresh rewrites _bmad/<module>/ in every checkout (80+ files), which made
+#     about 30 merged worktrees look like "uncommitted changes" forever. Changes confined to an
+#     installed module (a dir with a tracked .bmad-modules-version) are reported, not counted.
 
 ROOTS=("$@")
-[[ ${#ROOTS[@]} -eq 0 ]] && ROOTS=("$HOME/repos" "$HOME/work")
+[[ ${#ROOTS[@]} -eq 0 ]] && ROOTS=("$HOME/repos" "$HOME/work" "$HOME/orca/workspaces")
 
 FIND=/usr/bin/find
 DU=/usr/bin/du
@@ -33,13 +41,25 @@ in_use() {  # $1 = worktree path; prints the first command running inside it
     ps -o comm= -p "$pid" 2>/dev/null | xargs basename 2>/dev/null
 }
 
+# Installed BMAD modules (their files are reinstalled, never hand-edited) as porcelain regexes.
+# Same rule in remove.sh: keep the two in step.
+module_regex() {
+    git -C "$1" ls-files -- '_bmad/*/.bmad-modules-version' 2>/dev/null |
+        sed 's|/[^/]*$|/|; s|[.]|[.]|g; s|^|^.. |'
+}
+
 ROWS=$(mktemp)
 {
 
 PRIMARIES=$(for r in "${ROOTS[@]}"; do
-    [[ -d "$r" ]] && $FIND "$r" -maxdepth 7 \( -name node_modules -o -path '*/.claude/worktrees' \) -prune \
+    [[ -d "$r" ]] && $FIND -H "$r" -maxdepth 7 \( -name node_modules -o -path '*/.claude/worktrees' \) -prune \
         -o -type d -name .git -print 2>/dev/null
 done | sed 's|/\.git$||' | sort -u)
+if [[ -z "$PRIMARIES" ]]; then
+    echo "ERROR: no git checkout found under: ${ROOTS[*]}" >&2
+    echo "       A symlinked or unmounted root looks exactly like an empty one; check before trusting this scan." >&2
+    NO_PRIMARIES=1
+fi
 
 SEEN=$(mktemp); REGISTERED=$(mktemp)
 while IFS= read -r primary; do
@@ -69,6 +89,13 @@ while IFS= read -r primary; do
         last=$(git -C "$wt" log -1 --format=%ct 2>/dev/null || echo "$NOW")
         age="$(( (NOW - last) / 86400 ))d"
         status=$(git -C "$wt" status --porcelain 2>/dev/null | grep -v '\.watchman-cookie-')
+        drift=0
+        mods=$(module_regex "$wt")
+        if [[ -n "$mods" && -n "$status" ]]; then
+            drift=$(grep -cE -f <(printf '%s\n' "$mods") <<<"$status")
+            status=$(grep -vE -f <(printf '%s\n' "$mods") <<<"$status")
+        fi
+        note=""; [[ "$drift" -gt 0 ]] && note="; $drift BMAD module files refreshed (not work)"
         tracked=$(grep -vc '^??' <<<"$status" | tr -d ' '); [[ -z "$status" ]] && tracked=0
         untracked=$(grep -c '^??' <<<"$status" | tr -d ' ')
         head=$(git -C "$wt" rev-parse HEAD 2>/dev/null)
@@ -105,15 +132,15 @@ while IFS= read -r primary; do
             verdict=ASK; why="$pr; $ahead ahead of $default, all pushed (no PR + nothing ahead can be a long-lived checkout)"
             [[ "$untracked" -gt 0 ]] && why="$why; $untracked untracked files"
         fi
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$verdict" "$size" "$age" "$branch" "$why" "$wt"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$verdict" "$size" "$age" "$branch" "$why$note" "$wt"
     done
 done <<<"$PRIMARIES"
 
 # Orphans: dirs under .claude/worktrees (or named *.stale*) that no repo registers
 for r in "${ROOTS[@]}"; do
     [[ -d "$r" ]] || continue
-    { $FIND "$r" -maxdepth 8 -name node_modules -prune -o -type d -path '*/.claude/worktrees/*' -prune -print 2>/dev/null
-      $FIND "$r" -maxdepth 4 -name node_modules -prune -o -type d -name '*.stale*' -prune -print 2>/dev/null; } |
+    { $FIND -H "$r" -maxdepth 8 -name node_modules -prune -o -type d -path '*/.claude/worktrees/*' -prune -print 2>/dev/null
+      $FIND -H "$r" -maxdepth 4 -name node_modules -prune -o -type d -name '*.stale*' -prune -print 2>/dev/null; } |
     while IFS= read -r d; do
         d_real=$(cd "$d" && pwd -P)
         grep -qxF "$d_real" "$REGISTERED" && continue
@@ -139,11 +166,51 @@ echo "CACHES (all regenerate on demand)"
 for c in "$HOME/.npm" "$HOME/Library/Caches/CocoaPods" "$HOME/.cache/uv" "$HOME/.cache/puppeteer" \
          "$HOME/Library/Caches/ms-playwright" "$HOME/Library/Developer/Xcode/DerivedData" \
          "$HOME/Library/Developer/Xcode/iOS DeviceSupport" "$HOME/Library/Developer/CoreSimulator/Caches" \
-         "$HOME/Library/Caches/pip" "$HOME/.Trash" "$HOME/Library/Application Support/Claude/vm_bundles"; do
+         "$HOME/Library/Caches/pip" "$HOME/Library/Caches/com.apple.python" "$HOME/Library/Caches/orca-updater" \
+         "$HOME/.Trash" "$HOME/Library/Application Support/Claude/vm_bundles"; do
     [[ -e "$c" ]] && printf '%s\t%s\n' "$($DU -sh "$c" 2>/dev/null | cut -f1)" "$c"
 done
+
+echo
+echo "BIG DEV DATA (size, then what clearing it costs)"
+row() { [[ -e "$2" ]] && printf '%s\t%s\t%s\n' "$($DU -sh "$2" 2>/dev/null | cut -f1)" "$2" "$1"; }
+big() { local s; s=$($DU -sk "$1" 2>/dev/null | cut -f1); [[ "${s:-0}" -gt 512000 ]]; }  # > 500 MB
+SIMS="$HOME/Library/Developer/CoreSimulator/Devices"
+row "iOS simulators: erase loses installed apps and sign-ins; booted: $(xcrun simctl list devices booted 2>/dev/null | grep -c Booted)" "$SIMS"
+for d in "$SIMS"/*/; do
+    big "$d" || continue
+    id=$(basename "$d"); name=$(xcrun simctl list devices 2>/dev/null | grep -F "$id" | sed 's/^ *//; s/ (.*//')
+    printf '%s\t  %s\t%s\n' "$($DU -sh "$d" | cut -f1)" "$id" "${name:-unknown device} (xcrun simctl erase $id)"
+done
+row "Android emulators: AVD data and snapshots; re-create the AVD" "$HOME/.android/avd"
+row "Android system images: re-download with sdkmanager" "$HOME/Library/Android/sdk/system-images"
+row "Gradle caches: next Android build downloads deps again (slow)" "$HOME/.gradle/caches"
+row "Xcode archives: needed to symbolicate shipped builds; ask" "$HOME/Library/Developer/Xcode/Archives"
+if [[ -d "$HOME/Movies" ]]; then
+    # Review captures regenerate by re-recording. Store/marketing imagery (mascot-art widget-art,
+    # store screenshots) is chosen artwork: always list it on its own line, never in the captures.
+    IMG=$($FIND "$HOME/Movies" -maxdepth 3 -type d \( -iname 'widget-art' -o -iname '*store*' -o -iname '*marketing*' \) 2>/dev/null)
+    caps=$($FIND "$HOME/Movies" -maxdepth 1 -type d -name '*-review*' 2>/dev/null | wc -l | tr -d ' ')
+    row "~/Movies review captures ($caps dirs; raws re-record, PR evidence videos may be linked)" "$HOME/Movies"
+    while IFS= read -r d; do
+        [[ -n "$d" ]] && printf '%s\t  %s\t%s\n' "$($DU -sh "$d" | cut -f1)" "$d" "STORE/MARKETING IMAGERY: chosen artwork, ask separately"
+    done <<<"$IMG"
+fi
+# Per-builder scratch: ~/.cache/<ticket-slug>/ holds screenshots, logs, sometimes a worktree.
+BC=$($FIND "$HOME/.cache" -maxdepth 1 -type d \( -name 'ai-*' -o -name 'console-*' -o -name 'uxs-*' \) 2>/dev/null)
+if [[ -n "$BC" ]]; then
+    old=$($FIND "$HOME/.cache" -maxdepth 1 -type d \( -name 'ai-*' -o -name 'console-*' -o -name 'uxs-*' \) -mtime +3 2>/dev/null | wc -l | tr -d ' ')
+    kb=$(tr '\n' '\0' <<<"$BC" | xargs -0 $DU -sk 2>/dev/null | awk '{s+=$1} END {print s+0}')
+    printf '%sM\t%s\t%s\n' "$((kb / 1024))" "$HOME/.cache/{ai,console,uxs}-*" \
+        "per-builder caches: $(wc -l <<<"$BC" | tr -d ' ') dirs, $old untouched 3+ days; dirs holding a worktree go through remove.sh"
+fi
+row "discus-gate checkouts: worktrees, listed above with verdicts" "$HOME/.cache/discus-gate"
+row "Orca workspaces: worktrees, listed above with verdicts" "$HOME/orca/workspaces"
+row "OrbStack/Docker: docker system prune; named volumes hold local databases" "$HOME/Library/Group Containers/HUXTH76Q8E.dev.orbstack"
 
 echo
 echo "DISK"
 df -h /System/Volumes/Data | awk 'NR==2 {print "free " $4 " of " $2 " (" $5 " used)"}'
 echo "local TM snapshots: $(tmutil listlocalsnapshots / 2>/dev/null | grep -c TimeMachine)"
+[[ -n "${NO_PRIMARIES:-}" ]] && exit 2
+exit 0

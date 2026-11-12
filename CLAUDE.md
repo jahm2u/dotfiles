@@ -119,12 +119,17 @@ components → cache/API → event trigger → widget update
 **Service Names:** `calendar-sync` | `todoist-precache` | `tm-snapshot-cleanup`
 
 **Disk filling up:** run `/disk-cleanup` (skill in `config/claude/skills/disk-cleanup/`). Its
-`scan.sh` triages every git worktree under `~/repos` and `~/work` as SAFE / ASK / KEEP (merged
-PR at HEAD, uncommitted work, unpushed commits, live processes) and lists regenerable caches;
+`scan.sh` triages every git worktree under `~/repos`, `~/work` and `~/orca/workspaces` as SAFE / ASK / KEEP (merged
+PR at HEAD, uncommitted work, unpushed commits, live processes) and lists regenerable caches
+and big dev data (simulators, emulators, `~/Movies` captures, builder caches);
 `remove.sh` removes only what you approve. Time Machine local snapshots pin every deleted file
 for up to a day (87 GB on 2026-10-17). They can't be disabled while Time Machine is on, so the
 hourly agent thins them whenever the external backup is under 24 h old. Its old trigger watched
 `/var/db/.TimeMachine.Results.plist`, which macOS 26 no longer writes, so it never ran.
+The fix then sat unused on the mini until 2026-11-12, because `install.sh` skipped any agent
+that was already loaded; it now reinstalls any agent whose plist differs from the repo.
+`~/repos` is a symlink, so every `find` over it needs `-H` (without it, `scan.sh` saw no worktrees
+and `mac-autoclean` treated every builder as finished).
 
 **Loading agents from Claude Code:** Claude's shell can run in launchd's *Background* session
 (`launchctl managername`), where `launchctl load` lands outside your login session and
