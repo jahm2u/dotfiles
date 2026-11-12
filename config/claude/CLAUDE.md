@@ -37,7 +37,7 @@ as herdr agents `b-<slug>`, reports arrive via `herdr agent prompt`. The ledger'
 backend per builder (absent = cmux), so cmux builders and herdr builders coexist.
 **Orca too:** run the orchestrator from an Orca.app terminal (`TERM_PROGRAM=Orca`) and builders
 become `🔨 <slug>` Orca terminal tabs in the orchestrator's Orca worktree (`BF_MUX=orca`); phases
-show in the tab title. lib.sh's `bf_orca` calls the app's bundled CLI, since `/usr/local/bin/orca` is broken.
+show in the tab title. lib.sh's `bf_orca` calls the app's bundled CLI directly: `/usr/local/bin/orca` only works when it is a symlink into the app (it is on mini-mp), not a copy.
 
 # Gemini API key (machine-wide)
 

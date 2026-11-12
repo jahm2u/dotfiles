@@ -100,8 +100,8 @@ The builder writes its message to a file and runs:
 ssh -o ConnectTimeout=10 <report-host> 'MINI_TERM=<handle> ~/.claude/skills/mbp-builder/scripts/tell-mini <repo> mbp:builders/b-<slug>' < file
 ```
 
-`tell-mini` ships in this skill (it calls Orca's bundled CLI; `/usr/local/bin/orca` is broken on Mini-2024). The
-work mini also keeps an older copy at `~/.local/bin/tell-mini`. The message lands in `~/.local/state/from-mbp/` on
+`tell-mini` ships in this skill (it calls Orca's bundled CLI, which works even where `/usr/local/bin/orca` is an installed copy and
+broken). On the work mini, `~/.local/bin/tell-mini` is a symlink to this script, for older callers. The message lands in `~/.local/state/from-mbp/` on
 the Mini and is typed into the pinned Orca tab as a `[mini-tell from mbp:builders/b-<slug>]` line, whose reply hint
 is `send.sh <slug> --file reply.md`. Verified end to end from Mini-2024 on 2026-11-07 (smoke builder, report in ~30 s,
 reply delivered, closed clean). The builder also appends each report to

@@ -1,7 +1,7 @@
 #!/bin/bash
 # tell-mini REPO FROM < message   -- put a message in front of the Mini's Orca Claude working in REPO.
 # Run from the MBP as:  ssh <mini|mini-2024> '~/.claude/skills/mbp-builder/scripts/tell-mini hive-paid-traffic "mbp:hive-paid-traffic/pm"' < msg.md
-# (mini-mp also keeps a copy at ~/.local/bin/tell-mini for older callers.)
+# (on mini-mp, ~/.local/bin/tell-mini is a symlink to this script, for older callers.)
 # The body lands in ~/.local/state/from-mbp/ on the Mini; the prompt points at it (no quoting trouble).
 # Several Claudes on REPO: the one with the most recent output gets it (MINI_TERM pins a handle).
 # It prints where it went by name, and tells the receiver to answer with tell-mbp, which signs the
