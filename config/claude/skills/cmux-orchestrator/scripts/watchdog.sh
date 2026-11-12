@@ -27,6 +27,9 @@
 #                                                    polls. Often legitimate (awaiting you),
 #                                                    which is why it is not instant.
 #   GONE     surface missing / builder exited     -> emitted once.
+#   CONTEXT  transcript usage >= BF_CTX_ROTATE    -> emitted on crossing, every 5th poll
+#            (60%) or >= BF_CTX_HARD (80%)           after, every poll past the hard limit.
+#                                                    Independent of the states above.
 #
 # Reads only. It never types into a builder -- deciding what to say is the orchestrator's
 # job, and a watchdog that "helpfully" pressed Enter would resubmit stale text blind.
@@ -107,7 +110,7 @@ while :; do
     # This loop body runs in ONE subshell for every slug, so a field absent from this
     # ledger would keep the previous slug's value -- a pre-herdr ledger would inherit
     # BF_MUX=herdr. Clear the per-builder fields first.
-    unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_WS BF_BUILDER_SURFACE BF_BUILDER_TAB BF_BUILDER_AGENT
+    unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_WS BF_BUILDER_SURFACE BF_BUILDER_TAB BF_BUILDER_AGENT BF_WORKTREE BF_MODEL
     # shellcheck disable=SC1090
     . "$dir/$slug.env" 2>/dev/null || continue
     bf_herdr_env
@@ -122,6 +125,31 @@ while :; do
     if [ -z "$screen" ]; then
       [ "$prev" = "GONE" ] || emit "$slug GONE -- surface $BF_BUILDER_SURFACE unreadable; builder exited or was collected"
       echo GONE >"$sf.state"; echo 0 >"$sf.count"; continue
+    fi
+
+    # CONTEXT: checked every poll, whatever the screen state. A builder never notices its own
+    # meter (2026-11-11: one reached 97% still taking work), so the orchestrator rotates it.
+    # Emitted when it first crosses BF_CTX_ROTATE (default 60), then every 5th poll while it
+    # stays over, and every poll at BF_CTX_HARD (default 80).
+    if [ -n "${BF_WORKTREE:-}" ]; then
+      ctx="$("$HERE/ctx.sh" --path "$BF_WORKTREE" --model "${BF_MODEL:-opus[1m]}" 2>/dev/null | awk '{print $2}')"
+      cprev="$(cat "$sf.ctx" 2>/dev/null || echo 0)"
+      case "$ctx" in
+        ''|*[!0-9]*) ;;
+        *)
+          cn="$(cat "$sf.ctxn" 2>/dev/null || echo 0)"
+          if [ "$ctx" -ge "${BF_CTX_HARD:-80}" ]; then
+            emit "$slug CONTEXT ${ctx}% -- OVER THE HARD LIMIT. Rotate it NOW (SKILL.md 'Context rotation'), even mid-task."
+          elif [ "$ctx" -ge "${BF_CTX_ROTATE:-60}" ]; then
+            if [ "$cprev" -lt "${BF_CTX_ROTATE:-60}" ] || [ $(( cn % 5 )) -eq 0 ]; then
+              emit "$slug CONTEXT ${ctx}% -- rotate it: handoff, /clear, resume from the handoff (SKILL.md 'Context rotation')."
+            fi
+            echo $(( cn + 1 )) >"$sf.ctxn"
+          else
+            echo 0 >"$sf.ctxn"
+          fi
+          echo "$ctx" >"$sf.ctx" ;;
+      esac
     fi
 
     res="$(classify "$screen")"
