@@ -21,13 +21,24 @@ holding deleted files. That was 87 GB on 2026-10-17. Thin them before anything e
 every later deletion also stays pinned until you do:
 
 ```bash
-tmutil thinlocalsnapshots / 999999999999 4   # no sudo needed; tmutil keeps the newest few
+tmutil thinlocalsnapshots / 999999999999 4   # no sudo needed. It does NOT keep the newest:
+                                             # on 2026-11-12 it left zero local snapshots
 ```
 
-Only do this when the last backup is under a day old. `tmutil latestbackup` needs Full Disk
-Access, which Claude's shell lacks; read `ReferenceLocalSnapshotDate` (UTC) from
-`defaults read /Library/Preferences/com.apple.TimeMachine.plist` instead, and check the backup
-volume is mounted (`tmutil destinationinfo`). If the backup drive has been away, local
+**Never thin while a backup runs (`tmutil status`: `Running = 1`), and expect the next backup
+to be slow.** Time Machine diffs each backup against its newest local snapshot
+(`ReferenceLocalSnapshotDate`). Thinning everything deletes that reference, so the next backup
+must scan the whole disk. On 2026-11-12 a full thin at 09:55, plus the hourly agent thinning
+again at 11:16, was followed by failed backups (RESULT 11) and the "not backed up" warning.
+After a thin, run `tmutil startbackup` and watch `tmutil status` until `Running = 0`.
+
+Only thin when the last *completed* backup is under a day old. `tmutil latestbackup` needs Full
+Disk Access, which Claude's shell lacks. `ReferenceLocalSnapshotDate` is NOT a completed backup.
+Use the backup drive itself: `diskutil apfs listSnapshots <backup disk> | grep Name: | tail -1`
+(disk from `df /Volumes/backup`), or the last `SnapshotDates` entry (UTC) of the destination in
+`defaults read /Library/Preferences/com.apple.TimeMachine.plist`. There, `RESULT` other than 0 and
+an `AttemptDates` newer than the last `SnapshotDates` mean backups are failing: fix that before
+thinning anything. If the backup drive has been away, local
 snapshots are the only copy, so tell the user instead of thinning.
 
 The gap between the two numbers understates what the snapshots hold. On 2026-11-12 it was 7 GB

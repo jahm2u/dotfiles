@@ -9,11 +9,19 @@
 # APFS snapshots (backup exclusions do not shrink them). They only duplicate what the
 # external backup already holds, so when that backup is recent we thin them hard. When
 # the backup drive has been away for a day, they are the only safety net: thin gently.
+#
+# But only when space is actually short (THIN_BELOW_GB), and never during a backup.
+# Time Machine diffs each backup against its newest local snapshot, and a hard thin deletes
+# that one too (it leaves zero). Thinning every hour forced every backup to rescan the whole
+# disk; on 2026-11-12, with fseventsd at 17 GB, those backups were killed for memory.
+# DRY_RUN=1 logs the decision and thins nothing.
 
 LOG_FILE="$HOME/.config/sketchybar/logs/tm-cleanup.log"
 NOTIFY_STAMP="$HOME/.cache/sketchybar/disk-low-notified"
 BACKUP_FRESH_HOURS=24
 LOW_SPACE_GB=40
+THIN_BELOW_GB=${THIN_BELOW_GB:-60}
+DRY="${DRY_RUN:-0}"
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
@@ -71,9 +79,17 @@ if [[ -d "$PODS_EXTERNAL" ]]; then
     done
 fi
 
-tmutil thinlocalsnapshots / "$PURGE_BYTES" 4 2>&1 | while read -r line; do
-    log "$line"
-done
+if tmutil status 2>/dev/null | grep -q 'Running = 1'; then
+    log "Backup running: not thinning (it would delete the snapshot the backup diffs against)"
+elif [[ "$FREE_BEFORE" -ge "$THIN_BELOW_GB" ]]; then
+    log "${FREE_BEFORE}G free, at or above ${THIN_BELOW_GB}G: not thinning"
+elif [[ "$DRY" == 1 ]]; then
+    log "DRY_RUN: would thin $PURGE_BYTES bytes"
+else
+    tmutil thinlocalsnapshots / "$PURGE_BYTES" 4 2>&1 | while read -r line; do
+        log "$line"
+    done
+fi
 
 FREE_AFTER=$(free_gb)
 log "Free space: ${FREE_BEFORE}G -> ${FREE_AFTER}G"
