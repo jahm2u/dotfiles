@@ -53,7 +53,7 @@ There are no sidebar folders or pills in herdr: `--group` is ignored and phases 
 
 **Orca backend.** Run from an Orca terminal (`TERM_PROGRAM=Orca`) and the scripts drive Orca.app's
 CLI (`bf_orca` in lib.sh calls the bundled CLI directly, because `/usr/local/bin/orca` breaks when it
-is installed as a copy). spawn.sh records `BF_MUX=orca`; the builder is an Orca terminal TAB
+is installed as a copy; as a symlink into the app, as on mini-mp, it works). spawn.sh records `BF_MUX=orca`; the builder is an Orca terminal TAB
 `🔨 <slug>` in YOUR Orca worktree (Orca only opens terminals in worktrees it registered, and
 `wt-<slug>` is not one), whose command cd's into the builder worktree. BF_* plus the gateway/gh env
 travel in a 0600 file the tab sources and deletes, so no key lands in scrollback. Messages go

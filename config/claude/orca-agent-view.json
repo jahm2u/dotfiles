@@ -1,0 +1,8 @@
+{
+  "owner": "stablyai/orca/claude-agent-view",
+  "setup": "attempted",
+  "binding": {
+    "context": "Chat",
+    "chord": "ctrl+alt+g"
+  }
+}

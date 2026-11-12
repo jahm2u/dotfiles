@@ -19,12 +19,14 @@ for wt in "$@"; do
 
     # A worktree has a .git FILE pointing at <primary>/.git/worktrees/<name>
     if [[ -f "$real/.git" ]] && common=$(git -C "$real" rev-parse --git-common-dir 2>/dev/null); then
-        if git -C "$real" status --porcelain | grep -v '^??' | grep -q .; then
+        # Installed BMAD modules are reinstalled, not edited: their churn is not work (same rule as scan.sh)
+        mods=$(git -C "$real" ls-files -- '_bmad/*/.bmad-modules-version' | sed 's|/[^/]*$|/|; s|[.]|[.]|g; s|^|^.. |')
+        if git -C "$real" status --porcelain | grep -v '^??' | { [[ -n "$mods" ]] && grep -vE -f <(printf '%s\n' "$mods") || cat; } | grep -q .; then
             echo "REFUSE $wt: uncommitted changes"; rc=1; continue
         fi
         primary=$(cd "$real" && cd "$common/.." && pwd -P)
         branch=$(git -C "$real" branch --show-current)
-        # --force only clears untracked files (watchman cookies, build output); tracked changes were refused above
+        # --force clears untracked files and BMAD module churn; any other tracked change was refused above
         if git -C "$primary" worktree remove --force "$real"; then
             [[ -n "$branch" ]] && git -C "$primary" branch -D "$branch" >/dev/null 2>&1
             echo "OK     $wt${branch:+ (branch $branch deleted)}"

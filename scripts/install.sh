@@ -237,6 +237,16 @@ backup_existing() {
     fi
 }
 
+# True only when the agent is loaded AND its installed plist equals the repo's, rendered.
+launchagent_current() {
+    local label="$1"
+    local source="$DOTFILES_DIR/config/sketchybar/launchagents/$label.plist"
+    local target="$HOME/Library/LaunchAgents/$label.plist"
+    launchctl list 2>/dev/null | grep -q "$label" || return 1
+    [[ -f "$source" && -f "$target" ]] || return 1
+    sed "s|HOME_DIR|$HOME|g" "$source" | cmp -s - "$target"
+}
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # PHASE 1: SYSTEM STATE DETECTION
 # Silently scan system and store state in global variables
@@ -319,14 +329,17 @@ detect_system_state() {
         STATE_ENV_HAS_OBSIDIAN="false"
     fi
 
-    # Detect LaunchAgents
-    if launchctl list 2>/dev/null | grep -q "com.user.calendar-sync"; then
+    # Detect LaunchAgents. "Loaded" alone is not "installed": the 2026-10 fix to
+    # tm-snapshot-cleanup never reached a Mac where the old agent was already loaded,
+    # and it sat there for a month on a trigger macOS 26 no longer fires.
+    if launchagent_current "com.user.calendar-sync"; then
         STATE_CALENDAR_LAUNCHAGENT_LOADED="true"
     else
         STATE_CALENDAR_LAUNCHAGENT_LOADED="false"
     fi
 
-    if launchctl list 2>/dev/null | grep -q "com.user.tm-snapshot-cleanup"; then
+    # install_tm_cleanup_launchagent also installs mac-autoclean, so both must be current
+    if launchagent_current "com.user.tm-snapshot-cleanup" && launchagent_current "com.user.mac-autoclean"; then
         STATE_TM_CLEANUP_LAUNCHAGENT_LOADED="true"
     else
         STATE_TM_CLEANUP_LAUNCHAGENT_LOADED="false"
@@ -634,7 +647,7 @@ gather_configuration() {
     elif [[ "$FLAG_YES" == "true" ]]; then
         CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="true"
     else
-        if ask_user "Install Time Machine snapshot cleanup LaunchAgent (auto-cleans after backups)?"; then
+        if ask_user "Install Time Machine snapshot cleanup (hourly) and daily cache cleanup LaunchAgents?"; then
             CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="true"
         else
             CONFIG_INSTALL_TM_CLEANUP_LAUNCHAGENT="false"
@@ -2167,7 +2180,7 @@ install_tm_cleanup_launchagent() {
     # Load LaunchAgent
     if launchctl load -w "$plist_target" 2>/dev/null; then
         log "✓ LaunchAgent loaded successfully"
-        log "Snapshot cleanup will run after each Time Machine backup"
+        log "Snapshot cleanup runs hourly"
         log "Manual trigger: launchctl start $label"
     else
         warn "Failed to load LaunchAgent (non-blocking)"

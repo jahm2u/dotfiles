@@ -11,7 +11,9 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 DRY="${DRY_RUN:-0}"
 LOG="$HOME/.local/share/mac-autoclean/autoclean.log"
 mkdir -p "$(dirname "$LOG")"
-log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG"; [ -t 1 ] && printf '%s\n' "$*"; }
+# Returns 0 even without a terminal: it used to return 1 under launchd, and a caller's
+# `[ dry ] && log ... || truncate` then truncated during dry runs.
+log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG"; [ -t 1 ] && printf '%s\n' "$*"; return 0; }
 free_gb() { df -g /System/Volumes/Data | awk 'NR==2{print $4}'; }
 rmpath() { if [ "$DRY" = 1 ]; then log "would remove $1"; else /bin/rm -rf -- "$1"; fi; }
 held() { lsof +D "$1" >/dev/null 2>&1; }
@@ -22,7 +24,8 @@ log "start: ${before}G free (dry=$DRY)"
 # 1. Transcripts of builders whose worktree is gone, untouched for 3 days.
 # The trash collector archives each builder's spec and log; the transcript is not needed.
 n=0
-live=$(find "$HOME/repos" -maxdepth 7 -type d -path '*/.claude/worktrees/wt-*' -prune 2>/dev/null | sed 's#.*/##')
+# -H: ~/repos is a symlink, and without it find returns nothing, so every builder looked finished.
+live=$(find -H "$HOME/repos" -maxdepth 7 -type d -path '*/.claude/worktrees/wt-*' -prune 2>/dev/null | sed 's#.*/##')
 for d in "$HOME"/.claude/projects/*worktrees-wt-*; do
   [ -d "$d" ] || continue
   wt="${d##*worktrees-}"
@@ -64,7 +67,7 @@ find "$HOME/Library/Developer/Xcode/DerivedData" -mindepth 1 -maxdepth 1 -mtime 
 # 5. Dev build caches (babel-loader, webpack packs) under ~/repos. Entries untouched for 7
 # days go even from a cache in daily use (admin-app's reached 15 GB that way); a cache still
 # over 2 GB with no write for a day goes whole. The next build is slower once.
-find "$HOME/repos" -maxdepth 8 -type d -path '*/node_modules/.cache' -prune 2>/dev/null | while read -r d; do
+find -H "$HOME/repos" -maxdepth 8 -type d -path '*/node_modules/.cache' -prune 2>/dev/null | while read -r d; do
   if [ "$DRY" = 1 ]; then log "would prune entries >7d in $d"; else find "$d" -type f -mtime +7 -delete 2>/dev/null; fi
   [ -n "$(find "$d" -mtime -1 -print -quit 2>/dev/null)" ] && continue
   [ "$(du -sk "$d" 2>/dev/null | cut -f1)" -gt 2097152 ] && rmpath "$d"
@@ -94,7 +97,7 @@ fi
 for f in "$HOME/.local/share/mac-monitor/logs/stderr.log" /opt/homebrew/var/log/sketchybar/*.log "$LOG"; do
   [ -f "$f" ] || continue
   if [ "$(stat -f %z "$f")" -gt 52428800 ]; then
-    [ "$DRY" = 1 ] && log "would truncate $f" || : > "$f"
+    if [ "$DRY" = 1 ]; then log "would truncate $f"; else : > "$f"; fi
   fi
 done
 

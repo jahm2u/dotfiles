@@ -68,6 +68,15 @@ The installation script (`scripts/install.sh`) uses a **four-phase declarative a
 - **Hooks**: Custom notification and audio scripts
 - **Settings**: Contains tool hooks for PreToolUse notifications
 
+**chrome-devtools MCP sleeps when idle.** It is in the global MCP list (`~/.claude.json`, not in
+this repo), so every interactive session starts its own copy: 16 sessions meant 16 node processes,
+one at 1.15 GB after two idle days (2026-11-12). `config/claude/mcp/idle-exit.py` wraps it: after
+30 min without a tool call it stops the server but stays connected, and the next request restarts
+it and replays the handshake, so Claude never shows a "restart server?" prompt. Lost on sleep:
+which Chrome tab was selected. Set up on a new machine with:
+`claude mcp add -s user chrome-devtools -- ~/dotfiles/config/claude/mcp/idle-exit.py -- ~/.npm-global/bin/chrome-devtools-mcp --autoConnect --no-usage-statistics --no-performance-crux`
+(`MCP_IDLE_MINUTES` changes the 30.)
+
 ### 6. Other Configurations
 - **Raycast**: `config/raycast/`
 - **Obsidian**: `config/obsidian/` (syncs to iCloud)
@@ -119,12 +128,17 @@ components → cache/API → event trigger → widget update
 **Service Names:** `calendar-sync` | `todoist-precache` | `tm-snapshot-cleanup`
 
 **Disk filling up:** run `/disk-cleanup` (skill in `config/claude/skills/disk-cleanup/`). Its
-`scan.sh` triages every git worktree under `~/repos` and `~/work` as SAFE / ASK / KEEP (merged
-PR at HEAD, uncommitted work, unpushed commits, live processes) and lists regenerable caches;
+`scan.sh` triages every git worktree under `~/repos`, `~/work` and `~/orca/workspaces` as SAFE / ASK / KEEP (merged
+PR at HEAD, uncommitted work, unpushed commits, live processes) and lists regenerable caches
+and big dev data (simulators, emulators, `~/Movies` captures, builder caches);
 `remove.sh` removes only what you approve. Time Machine local snapshots pin every deleted file
 for up to a day (87 GB on 2026-10-17). They can't be disabled while Time Machine is on, so the
 hourly agent thins them whenever the external backup is under 24 h old. Its old trigger watched
 `/var/db/.TimeMachine.Results.plist`, which macOS 26 no longer writes, so it never ran.
+The fix then sat unused on the mini until 2026-11-12, because `install.sh` skipped any agent
+that was already loaded; it now reinstalls any agent whose plist differs from the repo.
+`~/repos` is a symlink, so every `find` over it needs `-H` (without it, `scan.sh` saw no worktrees
+and `mac-autoclean` treated every builder as finished).
 
 **Loading agents from Claude Code:** Claude's shell can run in launchd's *Background* session
 (`launchctl managername`), where `launchctl load` lands outside your login session and
@@ -539,21 +553,39 @@ The following devices are excluded from the picker: Microsoft Teams Audio, Jump 
 
 | Tailscale name | What it is |
 |----------------|------------|
-| `mini-2024` | This Mac mini (desk machine, wired Ethernet). Runs the herdr *client* |
-| `ts-macbook-pro` | MacBook Pro (`ssh mbp`). Hosts the herdr sessions below |
-| `mini-mp`, `mox` | Other Mac mini / Linux box (`mox` = staging) |
+| `mini-2024` | Mac mini at the desk (wired Ethernet). Runs the herdr *client* |
+| `mini-mp` | The work Mac mini (`ws-Mac-mini.local`, 100.105.3.119). Runs Orca, where the orchestrators live, and launches builders on the MBP |
+| `ts-macbook-pro` | MacBook Pro (`ssh mbp`). Hosts the herdr sessions below and the offloaded builders |
+| `mox` | Linux box (staging) |
 | `claude-gateway` | Linux box on the LAN (192.168.0.224), `tag:claude-gw` |
 | `db-gateway` | Linux DB gateway |
+
+Both minis use this same dotfiles repo, so "the mini" below means Mini-2024 unless it says
+mini-mp. Check which one you are on with `hostname` (mini-mp is `ws-Mac-mini.local`).
 
 Everything is in one tailnet. There are no separate org tailnets: "mbp orgs", "dev hive"
 and "mkt crew" are **herdr sessions**, not Tailscale devices. On the mini, Tailscale is
 the Homebrew `tailscaled` running as root (state in `/Library/Tailscale`, log
 `/opt/homebrew/var/log/tailscaled.log`), not the App Store app.
 
+### Builders on the MBP (`mbp-builder` skill)
+
+An orchestrator in an Orca tab on mini-mp starts builders on the MBP with
+`~/.claude/skills/mbp-builder/scripts/launch.sh`. Transport is plain `ssh mbp` over Tailscale
+(the MBP answers back over `ssh mini`). On the MBP each builder runs in the herdr session
+`builders`: workspace `🔨 <slug>`, agent `b-<slug>`, worktree `~/builders/wt/<slug>`, ledger
+`~/builders/ledger/<slug>.env`. herdr on the mini plays no part. Builder reports come back
+through `tell-mini`, which types into the orchestrator's Orca tab, so the orchestrator must run
+in Orca. The only resource check is at launch: it refuses when `memory_pressure` shows under 20%
+free on the MBP (`--min-free`). After that only context use is watched (`ctx.sh`), and rotating a
+builder at 60% is done by hand with `send.sh`. Close with `close.sh`, which needs a merged PR.
+
 ### herdr remote sessions
 
 herdr (0.9.3, must match on both Macs) on the mini lists three saved SSH machines in its
-**machines** sidebar. All three go through ssh host `mbp` (`~/.ssh/config`: HostName
+**machines** sidebar. (On mini-mp, `~/.local/state/herdr/client/endpoints.json` lists four:
+`mbp` → `default`, `mbp orgs` → `orgs`, `mkt hive` → the leftover `hive-paid-traffic` session,
+and `dev hive` → `dev-crew`. None points at `builders`.) All three go through ssh host `mbp` (`~/.ssh/config`: HostName
 `ts-macbook-pro`, user `v`, port 22, i.e. over Tailscale):
 
 | Sidebar label | herdr session on the MBP | Repo on the MBP (live checkout) | Brought up by |

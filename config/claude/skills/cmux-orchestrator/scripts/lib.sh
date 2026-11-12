@@ -417,7 +417,8 @@ bf_herdr_env() { # point the herdr CLI at the ledger's server
 # `orca worktree ps` reports agent state under (working / idle / ...), via Orca's Claude hook.
 #
 # /usr/local/bin/orca resolves the app from its own symlink and fails when it was installed as
-# a copy ("Unable to determine Orca.app path"), so this calls the bundled CLI directly.
+# a copy ("Unable to determine Orca.app path"); a symlink into the app works (mini-mp, 2026-11-12).
+# Calling the bundled CLI directly works either way.
 bf_orca() {
   local app="${ORCA_APP:-/Applications/Orca.app}"
   ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Orca" "$app/Contents/Resources/app.asar.unpacked/out/cli/index.js" "$@"
