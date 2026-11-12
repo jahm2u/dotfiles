@@ -68,6 +68,15 @@ The installation script (`scripts/install.sh`) uses a **four-phase declarative a
 - **Hooks**: Custom notification and audio scripts
 - **Settings**: Contains tool hooks for PreToolUse notifications
 
+**chrome-devtools MCP sleeps when idle.** It is in the global MCP list (`~/.claude.json`, not in
+this repo), so every interactive session starts its own copy: 16 sessions meant 16 node processes,
+one at 1.15 GB after two idle days (2026-11-12). `config/claude/mcp/idle-exit.py` wraps it: after
+30 min without a tool call it stops the server but stays connected, and the next request restarts
+it and replays the handshake, so Claude never shows a "restart server?" prompt. Lost on sleep:
+which Chrome tab was selected. Set up on a new machine with:
+`claude mcp add -s user chrome-devtools -- ~/dotfiles/config/claude/mcp/idle-exit.py -- ~/.npm-global/bin/chrome-devtools-mcp --autoConnect --no-usage-statistics --no-performance-crux`
+(`MCP_IDLE_MINUTES` changes the 30.)
+
 ### 6. Other Configurations
 - **Raycast**: `config/raycast/`
 - **Obsidian**: `config/obsidian/` (syncs to iCloud)
