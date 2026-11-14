@@ -86,6 +86,8 @@ run_case() {
     case "$1" in
       has:*) printf '%s' "$out" | grep -qF -- "${1#has:}" || ok=0;;
       ledger:*) grep -qx -- "${1#ledger:}" "$LEDGER_DIR/$slug.env" 2>/dev/null || ok=0;;
+      snapshot) python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if [r["root"] for r in s["roots"]] == [sys.argv[2]] and s["worktree"] == sys.argv[3] else 1)' \
+        "$LEDGER_DIR/$slug.shared" "$TMP/repo" "$TMP/repo/.claude/worktrees/wt-$slug" 2>/dev/null || ok=0;;
       untouched)
         [ ! -e "$LEDGER_DIR/$slug.env" ] || ok=0
         [ ! -e "$TMP/repo/.claude/worktrees/wt-$slug" ] || ok=0
@@ -107,7 +109,7 @@ run_case "3 live builders (2 here, 1 in another repo) refuses" 1.00 "11 12 13" "
   "has:3 live builders" "has:BF_MAX_BUILDERS=3" "has:repo/a-11" "has:repo/b-12" "has:other/c-13" "has:load 1.00" "has:BF_MAX_LOAD=8" "has:--force" untouched
 run_case "2 live builders passes the gate" 1.00 "11 12" "" 0 \
   here:a-11 other:b-12 -- \
-  "has:2/3 live builders" spawned "ledger:BF_FORCED=0"
+  "has:2/3 live builders" spawned "ledger:BF_FORCED=0" snapshot
 run_case "3 ledgers but only 2 alive passes" 1.00 "11 12" "" 0 \
   here:a-11 here:b-12 other:c-13 -- \
   "has:2/3 live builders" spawned
@@ -120,6 +122,12 @@ run_case "--force passes over both and records BF_FORCED=1" 9.50 "11 12 13" 1 0 
 run_case "a live builder in a repo found only by its process counts" 1.00 "11 12 13" "" 1 \
   here:a-11 here:b-12 third:x-13 pid -- \
   "has:3 live builders" "has:third/x-13" untouched
+run_case "a sibling root holding the same slug refuses and names it" 1.00 "" "" 1 \
+  other:case7 -- \
+  "has:in another repo" "has:other/_bmad/handoff/cmux/case7.env" untouched
+run_case "a sibling root holding another slug still spawns into the cwd repo" 1.00 "" "" 0 \
+  other:z-14 -- \
+  spawned "ledger:BF_SLUG=case8"
 
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]

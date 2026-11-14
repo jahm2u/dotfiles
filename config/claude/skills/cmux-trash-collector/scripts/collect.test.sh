@@ -8,7 +8,7 @@ LIB="$HERE/../../cmux-orchestrator/scripts/lib.sh"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin" "$TMP/home/.claude/skills/cmux-orchestrator/scripts"
 ln -s "$LIB" "$TMP/home/.claude/skills/cmux-orchestrator/scripts/lib.sh"
-printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/bin/osascript"; chmod +x "$TMP/bin/osascript"
+for t in osascript pgrep; do printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/bin/$t"; chmod +x "$TMP/bin/$t"; done
 cat > "$TMP/bin/fakemux" <<'MUX'
 #!/usr/bin/env bash
 mux=$1; shift
@@ -66,6 +66,7 @@ printf '#!/usr/bin/env bash\nshift\nexec "%s/bin/fakemux" orca "$@"\n' "$TMP" > 
 chmod +x "$TMP/bin/fakemux" "$TMP/bin/cmux" "$TMP/bin/herdr" "$TMP/Orca.app/Contents/MacOS/Orca"
 cat > "$TMP/bin/gh" <<'GH'
 #!/usr/bin/env bash
+echo "$PWD $1 $2" >> "$CASE_DIR/gh.calls"
 [ -f "$CASE_DIR/gh-fails" ] && { echo "error connecting to api.github.com" >&2; exit 1; }
 jqx=. head= sub="$1 $2" num=${3:-}
 while [ $# -gt 0 ]; do case "$1" in --jq) jqx=$2; shift;; --head) head=$2; shift;; esac; shift; done
@@ -95,6 +96,7 @@ run_case() {
   if [ -n "$BUILDER" ]; then echo "$SCREEN" > "$d/state"; printf '%s\n' "$RULES" > "$d/rules"; : > "$d/keys"; fi
   { printf 'BF_SLUG=%s\nBF_BRANCH=fix/mine\nBF_WORKTREE=%s\nBF_SPEC=%s\nBF_ORCH_WS=workspace:test\nBF_MUX=cmux\nBF_STATUS=done\nBF_BUILDER_WS=\nBF_PR=%s\n' \
     "$slug" "$TMP/repo/.claude/worktrees/wt-$slug" "$TMP/repo/spec-$slug.md" "$prior"; printf '%s' "$BUILDER"; } > "$LEDGER_DIR/$slug.env"
+  if [ -n "${PRE:-}" ]; then eval "$PRE" || true; fi
   set +e
   out=$(cd "$TMP/repo" && env -u BF_SLUG -u HERDR_ENV -u TERM_PROGRAM HOME="$TMP/home" PATH="$TMP/bin:$PATH" CASE_DIR="$d" \
     SCREENS="$TMP/screens" ORCA_APP="$TMP/Orca.app" BF_EXIT_WAIT="$EXIT_WAIT" \
@@ -107,6 +109,8 @@ run_case() {
       not:*) printf '%s' "$out" | grep -qF -- "${1#not:}" && ok=0;;
       pr=*) got=$(sed -n 's/^BF_PR=//p' "$LEDGER_DIR/$slug.env" 2>/dev/null || true); [ "$got" = "${1#pr=}" ] || ok=0;;
       ledger-kept) [ -f "$LEDGER_DIR/$slug.env" ] || ok=0;;
+      arch:*) grep -qF -- "${1#arch:}" "$LEDGER_DIR/archive/$slug/shared-state.txt" 2>/dev/null || ok=0;;
+      snap-archived) [ -f "$LEDGER_DIR/archive/$slug/$slug.shared" ] && [ ! -e "$LEDGER_DIR/$slug.shared" ] || ok=0;;
       keys=*) got=$(tr '\n' ' ' < "$d/keys" | sed 's/ $//'); [ "$got" = "${1#keys=}" ] || { ok=0; out="$out
 keys sent: '$got', want '${1#keys=}'"; };;
     esac
@@ -140,6 +144,19 @@ run_case "BF_PR unset, no PR on the branch -> state none" "" "[$OTHER_MERGED]" 0
   "has:==> PR none: none" "has:not MERGED" ledger-kept pr=
 run_case "BF_PR matches a merged PR -> collects the sandbox" 50 "[$MINE_MERGED,$OTHER_MERGED]" 0 "" 0 \
   "has:==> PR 50: MERGED" "has:DONE: case9 collected. PR 50 (MERGED)"
+
+REPO_P=$(cd "$TMP/repo" && pwd -P)
+SNAP='(cd "$TMP/repo" && env -i HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin:/usr/sbin:/sbin" bash -c ". \"\$0\"; bf_shared_snapshot \"\$1\" \"\$2\" \"\$3\"" "$LIB" "$slug" "$TMP/repo/.claude/worktrees/wt-$slug" "$TMP/repo")'
+PRE="$SNAP; echo x > \"\$TMP/repo/drift-\$slug.txt\"" run_case "drift since spawn -> printed, archived, and still collects" 50 "[$MINE_MERGED]" 0 "" 0 \
+  "has:shared-state: $REPO_P: status +?? drift-case$((count + 1)).txt" "arch:shared-state: $REPO_P: status +?? drift-case$((count + 1)).txt" snap-archived "has:DONE:"
+rm -f "$TMP/repo"/drift-*.txt
+PRE="$SNAP" run_case "clean since spawn -> no shared-state line, snapshot archived" 50 "[$MINE_MERGED]" 0 "" 0 \
+  "not:shared-state:" "arch:clean: no shared-state drift" snap-archived "has:DONE:"
+run_case "ledger older than the guard -> not checked (no snapshot), still collects" 50 "[$MINE_MERGED]" 0 "" 0 \
+  "has:shared-state: not checked (no snapshot)" "arch:shared-state: not checked (no snapshot)" "has:DONE:"
+PRE='mkdir -p "$LEDGER_DIR/archive/$slug"; : > "$LEDGER_DIR/archive/$slug/$slug.shared"; echo "shared-state: earlier run: status +?? lost.txt" > "$LEDGER_DIR/archive/$slug/shared-state.txt"' \
+  run_case "retry after the snapshot was archived -> keeps the archived report" 50 "[$MINE_MERGED]" 0 "" 0 \
+  "has:shared-state: earlier run: status +?? lost.txt" "arch:shared-state: earlier run: status +?? lost.txt" "not:not checked (no snapshot)" "has:DONE:"
 
 mkdir -p "$TMP/screens"
 cat > "$TMP/screens/claude" <<'SCR'
@@ -245,6 +262,32 @@ builder_case "cmux: /exit typed but its Enter lost -> Enter again" cmux claude $
 builder_case "cmux: statusline ending in % is not a shell" cmux claude-pct $'claude-pct exit shell' "exit close" "not:skipping /exit"
 EXIT_WAIT=3
 builder_case "cmux: Stay selected -> never pressed, tab closed after the wait" cmux claude $'claude exit tasks-stay' "exit close" "has:WARNING"
+
+count=$((count + 1)); d="$TMP/case$count"; mkdir -p "$d" "$TMP/home/.local/state/cmux-orchestrator"
+SIB=$(cd "$TMP" && mkdir -p sib && cd sib && pwd -P); REPO=$(cd "$TMP/repo" && pwd -P)
+git init -q "$SIB"
+git -C "$SIB" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+git -C "$SIB" worktree add -q -b fix/mine "$SIB/.claude/worktrees/wt-xroot"
+git -C "$REPO" branch fix/mine
+printf '%s\n' "$SIB" > "$TMP/home/.local/state/cmux-orchestrator/roots"
+mkdir -p "$SIB/_bmad/handoff/cmux"
+printf 'BF_SLUG=xroot\nBF_BRANCH=fix/mine\nBF_WORKTREE=%s\nBF_SPEC=%s\nBF_ORCH_WS=workspace:test\nBF_MUX=cmux\nBF_STATUS=done\nBF_BUILDER_WS=\nBF_PR=50\n' \
+  "$SIB/.claude/worktrees/wt-xroot" "$SIB/spec-xroot.md" > "$SIB/_bmad/handoff/cmux/xroot.env"
+printf '[%s]' "$MINE_MERGED" > "$d/prs.json"
+set +e
+out=$(cd "$REPO" && env -u BF_SLUG -u HERDR_ENV -u TERM_PROGRAM HOME="$TMP/home" PATH="$TMP/bin:$PATH" CASE_DIR="$d" \
+  SCREENS="$TMP/screens" ORCA_APP="$TMP/Orca.app" bash "$COLLECT_SH" xroot 2>&1); rc=$?
+set -e
+ok=1 why=""
+[ "$rc" -eq 0 ] || { ok=0; why="rc=$rc"; }
+[ ! -d "$SIB/.claude/worktrees/wt-xroot" ] || { ok=0; why="$why; sibling worktree still there"; }
+git -C "$SIB" show-ref --verify --quiet refs/heads/fix/mine && { ok=0; why="$why; sibling branch kept"; }
+git -C "$REPO" show-ref --verify --quiet refs/heads/fix/mine || { ok=0; why="$why; cwd repo's fix/mine deleted"; }
+grep -q "^$SIB pr view" "$d/gh.calls" 2>/dev/null || { ok=0; why="$why; gh not run in the sibling"; }
+grep -qv "^$SIB " "$d/gh.calls" 2>/dev/null && { ok=0; why="$why; gh run outside the sibling"; }
+[ -f "$SIB/_bmad/handoff/cmux/archive/xroot/ledger.env" ] || { ok=0; why="$why; not archived in the sibling"; }
+if [ "$ok" = 1 ]; then pass=$((pass + 1)); echo "ok   collect from a sibling cwd targets the ledger's repo"
+else fail=$((fail + 1)); echo "FAIL collect from a sibling cwd targets the ledger's repo ($why): $(printf '%s' "$out" | tail -1)"; fi
 
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]

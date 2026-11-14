@@ -95,21 +95,14 @@ done
 echo "==> BMAD root $BMAD_ROOT${ADD_DIRS[@]+ (add-dir: ${ADD_DIRS[*]})}"
 LEDGER=$(bf_ledger_file "$SLUG")
 [ ! -f "$LEDGER" ] || bf_die "ledger already exists for '$SLUG' ($LEDGER). Run the trash collector first, or pick another slug."
+while IFS= read -r r; do
+  [ ! -f "$r/_bmad/handoff/cmux/$SLUG.env" ] || bf_die "ledger already exists for '$SLUG' in another repo ($r/_bmad/handoff/cmux/$SLUG.env); slugs must be unique across repos. Collect it first, or pick another slug."
+done < <(bf_known_roots "$ROOT")
 
-ROOTS_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/cmux-orchestrator/roots"
-host_roots() {
-  local p cwd r
-  { printf '%s\n' "$ROOT"
-    [ -f "$ROOTS_FILE" ] && cat "$ROOTS_FILE"
-    for p in $(pgrep -f -- "cmux-builder/builder-settings.json" 2>/dev/null); do
-      cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p') || continue
-      case "$cwd" in */.claude/worktrees/wt-*) printf '%s\n' "${cwd%/.claude/worktrees/*}";; esac
-    done
-  } | while IFS= read -r r; do [ -d "$r" ] || continue; (cd "$r" && pwd -P) || true; done | awk '!seen[$0]++'
-}
+ROOTS_FILE=$(bf_roots_file)
 live_builders() {
   local r f
-  host_roots | while IFS= read -r r; do
+  bf_known_roots "$ROOT" | while IFS= read -r r; do
     for f in "$r"/_bmad/handoff/cmux/*.env; do
       [ -f "$f" ] || continue
       ( unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_TAB BF_BUILDER_AGENT BF_BUILDER_WS BF_BUILDER_SURFACE
@@ -271,6 +264,12 @@ LEDGER
 { mkdir -p "$(dirname "$ROOTS_FILE")" && { grep -qxF "$ROOT" "$ROOTS_FILE" 2>/dev/null || printf '%s\n' "$ROOT" >> "$ROOTS_FILE"; }; } \
   || echo "WARNING: could not record $ROOT in $ROOTS_FILE; spawns from other repos will not count its builders" >&2
 bf_logline "$SLUG" spawning "worktree=$WT branch=$BRANCH base=$BASE orch=$ORCH_WS"
+SHARED_ROOTS=("$ROOT")
+for d in ${ADD_DIRS[@]+"${ADD_DIRS[@]}"}; do
+  r=$(cd "$d" && bf_cwd_root 2>/dev/null) && SHARED_ROOTS+=("$r")
+done
+bf_shared_snapshot "$SLUG" "$WT" "${SHARED_ROOTS[@]}" \
+  || echo "WARNING: shared-state snapshot failed; report.sh and collect.sh will not check this builder's drift" >&2
 
 # The builder skill reads BF_* from its environment; the ledger path lets report.sh find the rest.
 # MCP servers are the builder's biggest fixed context cost (this repo's babaflow MCP alone is
