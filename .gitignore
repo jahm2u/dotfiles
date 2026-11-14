@@ -153,3 +153,7 @@ config/claude/settings.json.bak*
 config/claude/hooks/.rtk-hook.sha256
 config/claude/skills-removed-*/
 config/karabiner/automatic_backups/
+
+# cmux builder ledgers (per checkout) and the generated no-MCP builder settings
+_bmad/handoff/
+config/claude/skills/cmux-builder/builder-settings.nomcp.json
