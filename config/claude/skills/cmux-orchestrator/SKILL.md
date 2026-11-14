@@ -165,7 +165,7 @@ browser checks, and say so in the spec. UX videos do not need it: every builder 
 `ux-evidence` agent through `--agents`, with its own headless, isolated Chrome.
 
 The worktree branch is created with `--no-track`, so the builder's `git status` stays quiet and
-its first `git push -u origin <branch>` sets the right upstream. The builder also inherits this
+its first `cd <literal worktree path> && git push -u origin <branch>` sets the right upstream. The builder also inherits this
 repo's curated memories: spawn links `~/.claude/projects/<worktree-slug>/memory` to the primary
 checkout's. If spawn prints `WARNING: no memory dir`, the builder is running without the repo's
 house rules, and you should expect it to rediscover things the memories already know.
