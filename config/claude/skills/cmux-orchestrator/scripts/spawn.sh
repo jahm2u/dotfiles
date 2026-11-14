@@ -152,6 +152,68 @@ if [ -n "$ISSUE" ]; then
 else BRANCH="feat/${SLUG}"; fi
 git -C "$ROOT" show-ref --verify --quiet "refs/heads/$BRANCH" && bf_die "branch already exists: $BRANCH"
 
+# Gateway routing, PER PANE. A builder routes the way the pane that spawned it routes:
+# the MP hives export their own ANTHROPIC_* (their gateway, their key, their model
+# names) into each seat's shell, so if this shell carries them they are passed through
+# verbatim. Only a shell with no routing of its own falls back to `cg env`, which prints
+# this machine's stored key + pool as exports (no settings.json write). Nothing is
+# written globally: an `env` block in ~/.claude/settings.json beats a shell export, so
+# a global `cg on` on a box that also hosts hive seats would silently redirect them --
+# which is why such a box runs `cg off` and relies on this instead. Values never reach
+# the ledger or the log; the key must not end up in a file.
+GW_VARS=(ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_MODEL
+         ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
+         ANTHROPIC_DEFAULT_FABLE_MODEL CLAUDE_CODE_SUBAGENT_MODEL CG_ACTIVE CG_KEY_FILE CG_URL)
+GW_SRC=""
+if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then GW_SRC="this pane's exports"
+  if [ -z "${CG_URL:-}" ] && [[ "$ANTHROPIC_BASE_URL" =~ ^https?://[^/]+/?$ ]]; then CG_URL=${ANTHROPIC_BASE_URL%/}; fi
+elif GW_CG=$(command -v tpcg || command -v cg) && GW_OUT=$($GW_CG env); then eval "$GW_OUT"; GW_SRC="$GW_CG env"
+  # Pin CG_URL to the URL cg just chose, so every cg the builder runs later (cg codex, and
+  # codex-review.sh's review tab) routes to the SAME place. Without it, a builder moved to
+  # another URL failed cg codex's ANTHROPIC_BASE_URL == CG_URL check and fell back to plain
+  # codex -> 401 (kev-client-keys, 2026-10-08). herdr tabs cannot reach the LAN address
+  # (macOS Local Network privacy, EHOSTUNREACH) but can reach tailscale, so the Mac's
+  # ~/.config/claude-gateway/base points at http://claude-gateway:3457.
+  CG_URL=${CG_URL:-$ANTHROPIC_BASE_URL}
+fi   # cg env says on stderr why it refused (tpcg on a Mac where IPMedia's cg owns the name)
+GH_OWNER=$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -nE 's#.*github\.com[:/]([^/]+)/.*#\1#p')
+# A builder asked for a Claude model must not inherit a Kimi route: /kimi answers every model as
+# Kimi, so on 2026-11-01 and again on 2026-11-14 builders spawned with opus[1m] ran as k3.1-pro and
+# their codex review called /kimi/backend-api/codex (404). The Kimi sticky belongs to the MP hives
+# (Jeff 2026-11-01), so a jahm2u repo refuses and any other repo is warned. To run a builder on
+# Kimi on purpose, pass the Kimi model with --model.
+is_claude_model() { [[ "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" =~ claude|opus|sonnet|haiku|fable ]]; }
+GW_KIMI=""
+if [ -n "$GW_SRC" ] && is_claude_model "$MODEL"; then
+  [[ "${ANTHROPIC_BASE_URL:-}" =~ /kimi/?$ ]] && GW_KIMI="ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"
+  for v in ANTHROPIC_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL \
+           ANTHROPIC_DEFAULT_FABLE_MODEL CLAUDE_CODE_SUBAGENT_MODEL; do
+    if [ -n "${!v:-}" ] && ! is_claude_model "${!v}"; then GW_KIMI="$GW_KIMI${GW_KIMI:+, }$v=${!v}"; fi
+  done
+fi
+if [ -n "$GW_KIMI" ]; then
+  GW_KIMI_MSG="'$SLUG' asked for $MODEL but the route from $GW_SRC is not Claude ($GW_KIMI), so it would run on Kimi. Export the Claude pool for this repo in this shell (ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY, CG_URL; unset the model variables) and spawn again, or pass the Kimi model with --model to mean it."
+  [ "$GH_OWNER" = jahm2u ] && bf_die "refusing to spawn $GW_KIMI_MSG"
+  echo "WARNING: $GW_KIMI_MSG" >&2
+fi
+GW_ENVS=()
+for v in "${GW_VARS[@]}"; do [ -n "${!v:-}" ] && GW_ENVS+=(--env "$v=${!v}"); done
+# IPMedia's cg.sh, sourced by every interactive zsh, re-activates its cached pool when its
+# sticky file exists and CG_ACTIVE is unset -- overwriting the ANTHROPIC_* the pane was created
+# with and pinning every model to the saved Kimi default. On 2026-11-01 two builders spawned
+# with opus[1m] from a TP-pool pane ran as k3.1-pro on /kimi. cg.sh keeps a preset
+# CG_STICKY_FILE, so a builder pane that inherits routing points it at a file that never exists.
+[ -n "$GW_SRC" ] && GW_ENVS+=(--env "CG_STICKY_FILE=$HOME/.config/claude-gateway/.sticky-off-for-builders")
+if [ -z "${GH_TOKEN:-}" ] && [ -n "$GH_OWNER" ] && GH_PIN=$(gh auth token --user "$GH_OWNER" 2>/dev/null); then
+  GH_TOKEN=$GH_PIN
+fi
+if [ -n "${GH_TOKEN:-}" ]; then
+  GW_ENVS+=(--env "GH_TOKEN=$GH_TOKEN")
+  echo "==> gh for the builder pinned to ${GH_OWNER:-the caller GH_TOKEN}"
+fi
+[ -n "$GW_SRC" ] && echo "==> gateway env for the builder from $GW_SRC (${ANTHROPIC_BASE_URL%%/teamclaude*})" \
+  || echo "==> no gateway env in this pane and no cg key: the builder uses its own login / global settings"
+
 echo "==> fetching $BASE"
 git -C "$ROOT" fetch -q origin
 echo "==> git worktree add $WT -b $BRANCH --no-track $BASE"
@@ -293,48 +355,6 @@ AGENTS_PY="$HOME/.claude/skills/ux-video-review/scripts/agents_json.py"
 AGENTSFLAG=""; [ -f "$AGENTS_PY" ] && AGENTSFLAG=" --agents \"\$(python3 '$AGENTS_PY')\""
 CLAUDE_CMD="claude --model '$MODEL'$EFFORTFLAG $MODEFLAG --settings $SETTINGS $MCPFLAG$AGENTSFLAG$ADDDIRSTR -- '/cmux-builder'"
 
-# Gateway routing, PER PANE. A builder routes the way the pane that spawned it routes:
-# the MP hives export their own ANTHROPIC_* (their gateway, their key, their model
-# names) into each seat's shell, so if this shell carries them they are passed through
-# verbatim. Only a shell with no routing of its own falls back to `cg env`, which prints
-# this machine's stored key + pool as exports (no settings.json write). Nothing is
-# written globally: an `env` block in ~/.claude/settings.json beats a shell export, so
-# a global `cg on` on a box that also hosts hive seats would silently redirect them --
-# which is why such a box runs `cg off` and relies on this instead. Values never reach
-# the ledger or the log; the key must not end up in a file.
-GW_VARS=(ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_MODEL
-         ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
-         ANTHROPIC_DEFAULT_FABLE_MODEL CLAUDE_CODE_SUBAGENT_MODEL CG_ACTIVE CG_KEY_FILE CG_URL)
-GW_SRC=""
-if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then GW_SRC="this pane's exports"
-  if [ -z "${CG_URL:-}" ] && [[ "$ANTHROPIC_BASE_URL" =~ ^https?://[^/]+/?$ ]]; then CG_URL=${ANTHROPIC_BASE_URL%/}; fi
-elif GW_CG=$(command -v tpcg || command -v cg) && GW_OUT=$($GW_CG env); then eval "$GW_OUT"; GW_SRC="$GW_CG env"
-  # Pin CG_URL to the URL cg just chose, so every cg the builder runs later (cg codex, and
-  # codex-review.sh's review tab) routes to the SAME place. Without it, a builder moved to
-  # another URL failed cg codex's ANTHROPIC_BASE_URL == CG_URL check and fell back to plain
-  # codex -> 401 (kev-client-keys, 2026-10-08). herdr tabs cannot reach the LAN address
-  # (macOS Local Network privacy, EHOSTUNREACH) but can reach tailscale, so the Mac's
-  # ~/.config/claude-gateway/base points at http://claude-gateway:3457.
-  CG_URL=${CG_URL:-$ANTHROPIC_BASE_URL}
-fi   # cg env says on stderr why it refused (tpcg on a Mac where IPMedia's cg owns the name)
-GW_ENVS=()
-for v in "${GW_VARS[@]}"; do [ -n "${!v:-}" ] && GW_ENVS+=(--env "$v=${!v}"); done
-# IPMedia's cg.sh, sourced by every interactive zsh, re-activates its cached pool when its
-# sticky file exists and CG_ACTIVE is unset -- overwriting the ANTHROPIC_* the pane was created
-# with and pinning every model to the saved Kimi default. On 2026-11-01 two builders spawned
-# with opus[1m] from a TP-pool pane ran as k3.1-pro on /kimi. cg.sh keeps a preset
-# CG_STICKY_FILE, so a builder pane that inherits routing points it at a file that never exists.
-[ -n "$GW_SRC" ] && GW_ENVS+=(--env "CG_STICKY_FILE=$HOME/.config/claude-gateway/.sticky-off-for-builders")
-GH_OWNER=$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -nE 's#.*github\.com[:/]([^/]+)/.*#\1#p')
-if [ -z "${GH_TOKEN:-}" ] && [ -n "$GH_OWNER" ] && GH_PIN=$(gh auth token --user "$GH_OWNER" 2>/dev/null); then
-  GH_TOKEN=$GH_PIN
-fi
-if [ -n "${GH_TOKEN:-}" ]; then
-  GW_ENVS+=(--env "GH_TOKEN=$GH_TOKEN")
-  echo "==> gh for the builder pinned to ${GH_OWNER:-the caller GH_TOKEN}"
-fi
-[ -n "$GW_SRC" ] && echo "==> gateway env for the builder from $GW_SRC (${ANTHROPIC_BASE_URL%%/teamclaude*})" \
-  || echo "==> no gateway env in this pane and no cg key: the builder uses its own login / global settings"
 
 BUILDER_WS="" BUILDER_SURFACE="" GROUP_REF=""
 if [ "$MUX" = orca ]; then

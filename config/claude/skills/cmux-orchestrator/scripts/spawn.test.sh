@@ -61,7 +61,8 @@ ledger() { # dir slug surface
 
 pass=0 fail=0 count=0
 run_case() {
-  local name=$1 load=$2 alive=$3 force=$4 want_rc=$5 slug d ok=1
+  local name=$1 load=$2 alive=$3 force=$4 want_rc=$5 slug d ok=1 owner="" model=""
+  local -a extra=()
   shift 5
   count=$((count + 1)); slug="case$count"; d="$TMP/$slug"; mkdir -p "$d"
   printf '%s\n' "$load" > "$d/load"; : > "$d/cmux.calls"; : > "$d/surfaces"
@@ -73,14 +74,19 @@ run_case() {
       other:*) ledger "$OTHER_DIR" "${1#other:}" "surface:${1##*-}";;
       third:*) ledger "$THIRD_DIR" "${1#third:}" "surface:${1##*-}";;
       pid) printf '4242 %s\n4243\n' "$TMP/third/.claude/worktrees/wt-x" > "$d/pids";;
+      env:*) extra+=("${1#env:}");;
+      owner:*) owner=${1#owner:};;
+      model:*) model=${1#model:};;
       *) break;;
     esac
     shift
   done
+  [ -z "$owner" ] || git -C "$TMP/repo" remote set-url origin "https://github.com/$owner/repo.git"
   set +e
-  out=$(cd "$TMP/repo" && env -i HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="$TMP" CASE_DIR="$d" \
-    bash "$SCRIPTS/spawn.sh" --slug "$slug" --spec "$TMP/spec.md" ${force:+--force} 2>&1); rc=$?
+  out=$(cd "$TMP/repo" && env -i HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="$TMP" CASE_DIR="$d" ${extra[@]+"${extra[@]}"} \
+    bash "$SCRIPTS/spawn.sh" --slug "$slug" --spec "$TMP/spec.md" ${force:+--force} ${model:+--model "$model"} 2>&1); rc=$?
   set -e
+  git -C "$TMP/repo" remote set-url origin "$TMP/origin.git"
   [ "$rc" -eq "$want_rc" ] || ok=0
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -128,6 +134,18 @@ run_case "a sibling root holding the same slug refuses and names it" 1.00 "" "" 
 run_case "a sibling root holding another slug still spawns into the cwd repo" 1.00 "" "" 0 \
   other:z-14 -- \
   spawned "ledger:BF_SLUG=case8"
+
+KIMI=env:ANTHROPIC_BASE_URL=https://gw.example/kimi
+run_case "a jahm2u repo refuses a Claude builder on a /kimi route before creating anything" 1.00 "" "" 1 \
+  owner:jahm2u "$KIMI" has:"refusing to spawn" has:"ANTHROPIC_BASE_URL=https://gw.example/kimi" untouched
+run_case "a jahm2u repo refuses a Claude builder whose inherited model is not Claude" 1.00 "" "" 1 \
+  owner:jahm2u env:ANTHROPIC_BASE_URL=https://gw.example env:ANTHROPIC_MODEL=k3.1-pro[1m] has:"ANTHROPIC_MODEL=k3.1-pro[1m]" untouched
+run_case "another owner's repo is warned, not refused, and spawns" 1.00 "" "" 0 \
+  "$KIMI" has:"WARNING: 'case" spawned
+run_case "a Claude route spawns" 1.00 "" "" 0 \
+  env:ANTHROPIC_BASE_URL=https://gw.example spawned
+run_case "a Kimi model asked for on purpose spawns on the /kimi route" 1.00 "" "" 0 \
+  "$KIMI" model:k3.1-pro[1m] spawned
 
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]
