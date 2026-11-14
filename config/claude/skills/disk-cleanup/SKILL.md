@@ -78,7 +78,26 @@ uv cache clean
 
 Leave `~/.cache/chrome-devtools-mcp` (browser profile with logins), `~/.cache/sketchybar` and
 `~/.cache/khal` (live state). Claude's `vm_bundles` re-downloads if Cowork is used again.
-Ask before emptying the Trash.
+Ask before emptying the Trash. `~/.gradle/caches` regenerates too.
+
+**The scan's BIG DEV DATA block is usually where the space is.** On 2026-11-12 the disk was
+at 91%: worktrees and caches held ~20 GB, this block ~110 GB. Put its rows in the same
+`AskUserQuestion`, each with the cost the scan prints:
+
+```bash
+xcrun simctl shutdown all; xcrun simctl erase all          # iOS simulators: keeps devices, wipes apps+data
+for a in ~/.android/avd/*.avd; do /bin/rm -rf "$a"/userdata-qemu.img* "$a"/snapshots "$a"/cache.img*; done
+/bin/rm -rf ~/Movies/<name>-review                          # review media: final is on pr-media + Telegram
+/bin/rm -rf ~/Library/Caches/duda-<N> ~/.local/share/duda-<N>   # a collected builder's cache
+```
+
+Check nothing is running first: no `Booted` simulator, no `qemu-system` process (an MCP
+server's PATH mentioning `emulator` is not one). Store/marketing imagery under `~/Movies` may be
+wanted: name it in the question rather than lumping it in with review captures.
+
+**An OS-update snapshot pins everything.** If the scan prints `OS-UPDATE SNAPSHOT present`, a
+staged macOS update holds a `com.apple.os.update-*` snapshot and `df` will not move however much
+you delete. Tell the user to install the update (Software Update, one restart); that releases it.
 
 ## 4. Report
 

@@ -143,7 +143,51 @@ for c in "$HOME/.npm" "$HOME/Library/Caches/CocoaPods" "$HOME/.cache/uv" "$HOME/
     [[ -e "$c" ]] && printf '%s\t%s\n' "$($DU -sh "$c" 2>/dev/null | cut -f1)" "$c"
 done
 
+for c in "$HOME/.gradle/caches"; do
+    [[ -e "$c" ]] && printf '%s\t%s\n' "$($DU -sh "$c" 2>/dev/null | cut -f1)" "$c"
+done
+
+# The big ones the worktree pass never saw: on 2026-11-12 the disk was at 91% with ~20 GB in
+# worktrees and caches, and ~110 GB here (simulators 60, review videos 28, emulators 11,
+# per-builder caches 11).
+echo
+echo "BIG DEV DATA (ask before clearing; each line says what clearing costs)"
+sim="$HOME/Library/Developer/CoreSimulator/Devices"
+[[ -d "$sim" ]] && printf '%s\t%s\t%s\n' "$($DU -sh "$sim" 2>/dev/null | cut -f1)" "$sim" \
+    "iOS simulators ($(xcrun simctl list devices 2>/dev/null | grep -c '(Shutdown)') shut down, $(xcrun simctl list devices booted 2>/dev/null | grep -c Booted) booted): xcrun simctl erase all (keeps devices, wipes apps+data; never while one is booted)"
+avd="$HOME/.android/avd"
+[[ -d "$avd" ]] && printf '%s\t%s\t%s\n' "$($DU -sh "$avd" 2>/dev/null | cut -f1)" "$avd" \
+    "Android emulators: rm <name>.avd/userdata-qemu.img* snapshots cache.img* (keeps the AVD; never while qemu-system runs)"
+# Review media and per-builder caches come in dozens of small dirs: one summary line each, plus
+# the five biggest, so the question stays readable (2026-11-12: 170 rows the first time).
+summarise() { # label cost dir...
+    local label="$1" cost="$2"; shift 2
+    local n=0 kb=0 old=0 now d k age
+    now=$(date +%s)
+    for d in "$@"; do
+        [[ -d "$d" ]] || continue
+        k=$($DU -sk "$d" 2>/dev/null | cut -f1); n=$((n + 1)); kb=$((kb + ${k:-0}))
+        age=$(( (now - $(stat -f %m "$d")) / 86400 )); [[ $age -gt $old ]] && old=$age
+    done
+    [[ $n -gt 0 ]] || return 0
+    printf '%sG\t%s\t%s dirs, oldest %sd: %s\n' "$(awk "BEGIN{printf \"%.1f\", $kb/1048576}")" "$label" "$n" "$old" "$cost"
+    for d in "$@"; do [[ -d "$d" ]] && $DU -sh "$d" 2>/dev/null; done | sort -rh | head -5 | sed 's/^/    /'
+}
+shopt -s nullglob
+summarise "~/Movies review/demo captures" "the final lives on the pr-media branch + Telegram; store/marketing imagery may be wanted" \
+    "$HOME"/Movies/*review* "$HOME"/Movies/verify-*
+summarise "~/Movies store/marketing imagery" "probably wanted: ask by name" "$HOME"/Movies/store-imagery*
+summarise "per-builder caches (duda-<N>)" "stale once that builder is collected" \
+    "$HOME"/Library/Caches/duda-* "$HOME"/.local/share/duda-*
+shopt -u nullglob
+echo "Biggest under ~ (find what this list misses):"
+$DU -xsh "$HOME"/Library/Developer "$HOME"/Library/Application\ Support "$HOME"/Library/Caches "$HOME"/Movies "$HOME"/.android "$HOME"/.local 2>/dev/null | sort -rh | head -6
+
 echo
 echo "DISK"
 df -h /System/Volumes/Data | awk 'NR==2 {print "free " $4 " of " $2 " (" $5 " used)"}'
 echo "local TM snapshots: $(tmutil listlocalsnapshots / 2>/dev/null | grep -c TimeMachine)"
+# df lags big deletions: on 2026-11-12, ~110 GB deleted showed as +0 GB right after and +113 GB
+# a few minutes later (APFS frees in the background). Re-measure before blaming a snapshot.
+os=$(tmutil listlocalsnapshots / 2>/dev/null | grep -c 'com.apple.os.update')
+[[ "$os" -gt 0 ]] && echo "os-update snapshots: $os (a staged macOS update; if df still has not moved minutes after a big cleanup, installing the update releases them)"
