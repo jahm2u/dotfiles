@@ -168,7 +168,7 @@ Metro with `--clear`. Never symlink an app's `node_modules` by hand to save an i
    $SIM boot ["iPhone 17"]       # remembers what was running, boots, waits; prints the UDID
    $SIM record ~/Movies/<slug>-review/raw.mp4   # ... drive the app ...
    $SIM stop                     # mp4 written whole
-   $SIM end                      # shuts down only what this session booted, quits the app if it wasn't open
+   $SIM end                      # shuts down AND erases only what this session booted, quits the app if it wasn't open
    $SIM run -- bash apps/duda-mobile/scripts/run-maestro.sh flow.yaml   # a repo's own runner, always cleaned up
    ```
    Repo runners (AjudaDuda's `run-maestro.sh`, `run-vrt.sh`) boot a Simulator and never shut it
@@ -220,6 +220,13 @@ prefixes it (v2 of O6b went out as `[revisão] [revisão]`). Then:
 - **No reply after the wait:** hold the merge if the change is user-facing in
   production; otherwise merge to staging only and ask again with the next video.
   Never promote a UX change to production on silence.
+
+**Delete the review folder when the loop closes.** Once Jeff has approved and the PR is merged
+(or the change is dropped), `rm -rf ~/Movies/<slug>-review/`. The final is already on the
+`pr-media/<slug>` branch and in the Telegram chat, so nothing is lost. On 2026-11-12, 15 days of
+review folders held 28 GB (`duda-review` alone 19 GB) and the disk sat at 91%. A builder that
+gets collected hands this to the orchestrator: the orchestrator deletes it at merge time, in
+the same step as the trash collector.
 
 Jeff's replies also reach the org seat (it reads the same DMs). If the seat answers
 him too, that is fine; your relay to the builder is what makes the change.

@@ -32,6 +32,10 @@ The full method is `~/.claude/skills/ux-video-review/SKILL.md` §1 (Read it firs
    directory; `mv` it to the output directory the moment you stop, so it is never committed), walk the flow with real `click`/`fill`,
    ~1 s on each screen, including the error states, then `screencast_stop`. Take a `take_snapshot`
    only when you need fresh element uids; never pass `includeSnapshot: true`.
+   **Hide dev-server chrome:** against a `next dev` server, before `screencast_start` (and
+   after every full navigation), `evaluate_script` a style `nextjs-portal{display:none!important}`
+   into `document.head`. Next's "N Issues" pill is not the app, and Jeff asked about it
+   (2026-11-08, 1174 v4). Your own helper errors also count there, so keep tap_ring calls valid.
    **Show every tap:** right before each `click`, run `evaluate_script` with the function in
    `~/.claude/skills/ux-video-review/scripts/tap_ring.js` (Read it once) and `args: [<uid>]` of
    the element you are about to click. It draws the tap ring, which holds until your click

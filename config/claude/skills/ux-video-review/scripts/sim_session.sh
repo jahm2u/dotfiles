@@ -7,8 +7,9 @@
 #                                     iPhone) and wait until it is up; prints its UDID
 #   sim_session.sh record out.mp4     start `simctl io recordVideo` on it in the background
 #   sim_session.sh stop               finish the recording (SIGINT, so the mp4 is written whole)
-#   sim_session.sh end                stop recordings, shut down only the devices booted since
-#                                     `boot`, quit Simulator.app if it was not open before
+#   sim_session.sh end                stop recordings, shut down AND ERASE only the devices booted
+#                                     since `boot` (UX_SIM_KEEP_DATA=1 skips the erase), quit
+#                                     Simulator.app if it was not open before
 #   sim_session.sh end --all          no `boot` was run: shut down every booted device, quit the app
 #                                     (only when no other session is using the Simulator)
 #   sim_session.sh run [--device name] -- cmd...
@@ -62,6 +63,9 @@ case "${1:-}" in
     xcrun simctl boot "$udid" 2>/dev/null || true   # already booted is fine
     xcrun simctl bootstatus "$udid" -b >/dev/null || { echo "device $udid did not boot" >&2; exit 1; }
     sed -i '' '/^use=/d' "$STATE"; echo "use=$udid" >> "$STATE"
+    # Every device this session boots, so `end` touches only these (2026-11-13: a plain `end`
+    # shut down and ERASED another builder's simulator mid-repro, twice in a week).
+    grep -qx "mine=$udid" "$STATE" || echo "mine=$udid" >> "$STATE"
     echo "$udid"
     ;;
   record)
@@ -83,9 +87,10 @@ case "${1:-}" in
     fi
     stop_recording
     [ $all = 1 ] && pkill -INT -f "simctl io .* recordVideo" 2>/dev/null && sleep 1
-    before=""; app_before=0
+    before=""; app_before=0; mine=""
     if [ $all = 0 ]; then
       before=$(state dev)
+      mine=$(state mine)
       [ "$(state app)" = 1 ] && app_before=1
     fi
     # An open Simulator.app boots its own current device alongside ours (2026-10-21), sometimes
@@ -94,7 +99,14 @@ case "${1:-}" in
     for _ in $(seq 1 8); do
       found=0
       for udid in $(booted); do
-        grep -qx "$udid" <<<"$before" || { found=1; xcrun simctl shutdown "$udid" && echo "shut down $udid"; }
+        # Without --all, only devices this session booted itself: another session's simulator
+        # (booted after our snapshot) is not ours to shut down or erase.
+        if [ $all = 0 ] && ! grep -qx "$udid" <<<"$mine"; then continue; fi
+        grep -qx "$udid" <<<"$before" || { found=1; xcrun simctl shutdown "$udid" && echo "shut down $udid"
+          # Erase what we booted: installed builds and app data otherwise pile up per device
+          # (2026-11-12: 27 simulators held 60 GB, the biggest 5.5 GB). The next session
+          # reinstalls the app anyway. UX_SIM_KEEP_DATA=1 keeps it.
+          [ "${UX_SIM_KEEP_DATA:-0}" = 1 ] || { xcrun simctl erase "$udid" && echo "erased $udid"; }; }
       done
       [ $found = 0 ] && quiet=$((quiet + 1)) || quiet=0
       [ $quiet -ge 2 ] && break
