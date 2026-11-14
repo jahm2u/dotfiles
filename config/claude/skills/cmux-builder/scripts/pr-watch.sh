@@ -101,7 +101,8 @@ for n in advisory: print(f"    advisory failing (does not block): {n}")
 
 def is_reviewer(login):
     l = (login or "").lower()
-    if want: return l == want
+    # GraphQL (`gh pr view`) says `name`, REST says `name[bot]`: either form of --reviewer matches both.
+    if want: return l.removesuffix("[bot]") == want.removesuffix("[bot]")
     return l != author.lower() and (l.endswith("-reviewer") or l.endswith("[bot]"))
 revs = [r for r in pr.get("reviews", []) if is_reviewer((r.get("author") or {}).get("login"))]
 latest = revs[-1] if revs else None
@@ -114,6 +115,9 @@ if latest:
           + (f" critical={counts['critical']} high={counts['high']} medium={counts['medium']} low={counts['low']}" if counts else " (no severity line; read the body)"))
 else:
     on = ""; print("  review: none yet from the reviewer")
+    seen = sorted({((r.get("author") or {}).get("login") or "?") for r in pr.get("reviews", [])})
+    # A --reviewer that matches nobody while others reviewed is a miss to see, not "none yet".
+    if want and seen: print(f"  reviews seen from: {', '.join(seen)} (none matches --reviewer {want})")
 
 if failing: print("NOT-CONVERGED failing checks: " + ", ".join(failing)); sys.exit(1)
 if pr.get("mergeable") == "CONFLICTING": print("NOT-CONVERGED merge conflict with the base: merge origin/main"); sys.exit(1)

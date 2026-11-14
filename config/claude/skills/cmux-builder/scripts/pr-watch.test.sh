@@ -122,5 +122,37 @@ else
   fail=$((fail + 1)); echo "FAIL gh pr view fails with an empty body -> want WAITING, got rc=$rc: $last"
 fi
 
+# The reviewer's login differs by API: `gh pr view --json reviews` (GraphQL) says
+# `coderady-reviewer`, REST says `coderady-reviewer[bot]`. A --reviewer given in either
+# form must match the other, or the watch reports "no review yet" over a posted review
+# (ajudaduda PR 1376, 2026-11-14: a CHANGES_REQUESTED review sat unseen for 50 minutes).
+rv=""; for ((i = 0; i < count; i++)); do [ -f "$TMP/case$i/expect" ] && [ "$(cat "$TMP/case$i/expect")" = CONVERGED ] && { rv="$TMP/case$i"; break; }; done
+if [ -z "$rv" ]; then echo "FAIL no CONVERGED fixture case to build the reviewer cases from"; exit 1; fi
+rd="$TMP/reviewer"; cp -R "$rv" "$rd"
+python3 - "$rd/pr.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["reviews"] = [{"author": {"login": "coderady-reviewer"}, "commit": {"oid": d["headRefOid"]},
+                 "state": "COMMENTED", "body": "`critical=0` `high=0` `medium=1` `low=2`"}]
+json.dump(d, open(p, "w"))
+PY
+for form in 'coderady-reviewer[bot]' 'coderady-reviewer'; do
+  set +e; out=$(CASE_DIR=$rd PATH="$TMP/bin:$PATH" bash "$WATCH" 1376 --reviewer "$form" 2>&1); rc=$?; set -e
+  last=$(printf '%s\n' "$out" | tail -1); count=$((count + 1))
+  if [ "$rc" -eq 0 ] && printf '%s' "$last" | grep -q '^CONVERGED'; then
+    pass=$((pass + 1)); echo "ok   --reviewer '$form' matches the GraphQL login -> CONVERGED"
+  else
+    fail=$((fail + 1)); echo "FAIL --reviewer '$form' vs login coderady-reviewer -> want CONVERGED, got rc=$rc: $last"
+  fi
+done
+# A --reviewer that matches nobody is a visible miss: the logins that did review are printed.
+set +e; out=$(CASE_DIR=$rd PATH="$TMP/bin:$PATH" bash "$WATCH" 1376 --reviewer 'someone-else' 2>&1); rc=$?; set -e
+last=$(printf '%s\n' "$out" | tail -1); count=$((count + 1))
+if [ "$rc" -eq 2 ] && printf '%s' "$last" | grep -q '^WAITING' && printf '%s' "$out" | grep -q 'reviews seen from: coderady-reviewer'; then
+  pass=$((pass + 1)); echo "ok   --reviewer matching nobody -> WAITING and names the logins seen"
+else
+  fail=$((fail + 1)); echo "FAIL --reviewer matching nobody -> want WAITING naming coderady-reviewer, got rc=$rc: $(printf '%s' "$out" | tail -3 | tr '\n' '|')"
+fi
+
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]
