@@ -66,6 +66,19 @@ if [ "$PHASE" = pr-open ]; then
     MSG="$MSG; $DRIFT"
   fi
 fi
+# Machine facts, read here and not written by the builder (Jeff, 2026-11-14: reports said
+# "held locally" for a patch never written and named a head that was not the head). The
+# orchestrator compares the prose against this suffix; a mismatch is the finding.
+if [ "$INTERRUPT" = 1 ] || [ "$PHASE" = pushing ]; then
+  if _wt=${BF_WORKTREE:-} && [ -n "$_wt" ] && _h=$(git -C "$_wt" rev-parse --short=9 HEAD 2>/dev/null); then
+    _d=$(git -C "$_wt" status --porcelain 2>/dev/null | grep -vc '^?? _bmad' || true)
+    _o=$(git -C "$_wt" rev-parse --short=9 "origin/${BF_BRANCH:-}" 2>/dev/null || echo none)
+    _a=$(git -C "$_wt" rev-list --count "origin/${BF_BRANCH:-}..HEAD" 2>/dev/null || echo n/a)
+    MSG="$MSG [facts: head=$_h origin=$_o unpushed-commits=$_a dirty-files=$_d]"
+  else
+    MSG="$MSG [facts: UNREADABLE worktree ${BF_WORKTREE:-unset}]"
+  fi
+fi
 bf_set "$BF_SLUG" BF_STATUS "$PHASE"
 bf_logline "$BF_SLUG" "$PHASE" "$MSG"
 

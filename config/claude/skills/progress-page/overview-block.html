@@ -1,0 +1,99 @@
+<!-- progress-page overview block. Self-contained: its own tokens, markup and renderer.
+     The page's facts live in the JSON below; an update rewrites the JSON and nothing else. -->
+<style id="ov-css">
+  .ov { --ov-bg:#f6f8f3; --ov-card:#ffffff; --ov-ink:#15261d; --ov-soft:#55645b; --ov-line:#d9dfd6;
+        --ov-done:#1f7a4d; --ov-doing:#e0a100; --ov-wait:#c2571a; --ov-todo:#c9d1c8; --ov-track:#e6ebe3;
+        --ov-warn-bg:#fff3e0; --ov-warn-line:#e0a100; --ov-link:#1f6b45;
+        color:var(--ov-ink); text-align:left; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ov {
+        --ov-bg:#111a15; --ov-card:#18231d; --ov-ink:#e9efe9; --ov-soft:#a3b0a7; --ov-line:#2c3a32;
+        --ov-done:#4fbf85; --ov-doing:#f0b93a; --ov-wait:#ee8a4f; --ov-todo:#3a4a41; --ov-track:#24312a;
+        --ov-warn-bg:#33270f; --ov-warn-line:#f0b93a; --ov-link:#7fd3a6; } }
+  :root[data-theme="dark"] .ov {
+        --ov-bg:#111a15; --ov-card:#18231d; --ov-ink:#e9efe9; --ov-soft:#a3b0a7; --ov-line:#2c3a32;
+        --ov-done:#4fbf85; --ov-doing:#f0b93a; --ov-wait:#ee8a4f; --ov-todo:#3a4a41; --ov-track:#24312a;
+        --ov-warn-bg:#33270f; --ov-warn-line:#f0b93a; --ov-link:#7fd3a6; }
+  .ov a { color:var(--ov-link); }
+  .ov h1 { font-size:clamp(1.5rem,3.4vw,2.1rem); line-height:1.15; margin:.3rem 0 .6rem; max-width:36ch; }
+  .ov h2 { font-size:1.15rem; margin:2rem 0 .7rem; }
+  .ov h3 { font-size:1rem; margin:0 0 .2rem; }
+  .ov p { margin:.35rem 0; max-width:70ch; }
+  .ov .eyebrow { font-size:.75rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ov-soft); }
+  .ov .soft { color:var(--ov-soft); font-size:.9rem; }
+  .ov .blocker { background:var(--ov-warn-bg); border:1px solid var(--ov-warn-line); border-radius:12px; padding:.8rem 1rem; margin:1rem 0; }
+  .ov .blocker strong { display:block; }
+  .ov .total { display:flex; align-items:baseline; gap:.8rem; flex-wrap:wrap; margin-top:1.2rem; }
+  .ov .total .pct { font-size:clamp(2.4rem,7vw,3.6rem); font-weight:800; line-height:1; }
+  .ov .bar { display:flex; gap:4px; margin:.6rem 0 .3rem; }
+  .ov .seg { height:18px; background:var(--ov-track); border-radius:6px; overflow:hidden; display:flex; min-width:14px; }
+  .ov .seg i { display:block; height:100%; }
+  .ov .seg .d { background:var(--ov-done); } .ov .seg .g { background:var(--ov-doing); } .ov .seg .w { background:var(--ov-wait); }
+  .ov .seglabels { display:flex; gap:4px; font-size:.78rem; color:var(--ov-soft); }
+  .ov .seglabels span { min-width:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ov .legend { display:flex; gap:1rem; flex-wrap:wrap; font-size:.8rem; color:var(--ov-soft); margin-top:.5rem; }
+  .ov .dot { display:inline-block; width:.7em; height:.7em; border-radius:50%; margin-right:.35em; vertical-align:-.02em; }
+  .ov .dot.done { background:var(--ov-done); } .ov .dot.doing { background:var(--ov-doing); } .ov .dot.waiting { background:var(--ov-wait); }
+  .ov .dot.todo { background:transparent; box-shadow:inset 0 0 0 2px var(--ov-todo); } .ov .dot.later { background:transparent; box-shadow:inset 0 0 0 1px var(--ov-todo); }
+  .ov .stages { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+  .ov .stage { background:var(--ov-card); border:1px solid var(--ov-line); border-radius:14px; padding:1rem; }
+  .ov .stage.current { border-color:var(--ov-doing); box-shadow:0 0 0 2px color-mix(in srgb,var(--ov-doing) 30%,transparent); }
+  .ov .stage .count { font-weight:700; }
+  .ov .stage ul, .ov .list { list-style:none; padding:0; margin:.6rem 0 0; }
+  .ov .stage li, .ov .list li { display:grid; grid-template-columns:1.1em 1fr; gap:.45rem; padding:.22rem 0; font-size:.93rem; }
+  .ov .stage li.later, .ov .stage li.done { color:var(--ov-soft); }
+  .ov .who { display:inline-block; font-size:.72rem; padding:.05rem .45rem; border-radius:999px; border:1px solid var(--ov-line); color:var(--ov-soft); margin-left:.35rem; white-space:nowrap; }
+  .ov ol.steps { margin:.2rem 0 0; padding-left:1.4rem; } .ov ol.steps li { padding:.25rem 0; max-width:75ch; }
+  .ov .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+  .ov .card { background:var(--ov-card); border:1px solid var(--ov-line); border-radius:14px; padding:1rem; }
+  .ov .card h2 { margin-top:0; }
+  .ov .cycle { margin:.5rem 0; } .ov .cycle .seg { height:10px; }
+</style>
+<div class="ov" id="overview"></div>
+<script type="application/json" id="progress-data">
+/*DATA*/
+</script>
+<script>
+(function () {
+  var d = JSON.parse(document.getElementById('progress-data').textContent);
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); };
+  var link = function (o) { return o.url ? '<a href="' + esc(o.url) + '">' + esc(o.text) + '</a>' : esc(o.text); };
+  var who = function (o) { return o.owner ? '<span class="who">' + esc(o.owner) + '</span>' : ''; };
+  var note = function (o) { return o.note ? ' <span class="soft">' + esc(o.note) + '</span>' : ''; };
+  var counted = function (st) { return st.items.filter(function (i) { return i.state !== 'later'; }); };
+  var n = function (st, state) { return counted(st).filter(function (i) { return i.state === state; }).length; };
+  var seg = function (st) { var t = counted(st).length || 1; var p = function (s) { return (100 * n(st, s) / t) + '%'; };
+    return '<i class="d" style="width:' + p('done') + '"></i><i class="g" style="width:' + p('doing') + '"></i><i class="w" style="width:' + p('waiting') + '"></i>'; };
+  var total = 0, done = 0;
+  d.stages.forEach(function (st) { total += counted(st).length; done += n(st, 'done'); });
+  var pct = total ? Math.round(100 * done / total) : 0;
+  var h = '';
+  h += '<span class="eyebrow">' + esc(d.title) + ' · ' + esc(d.as_of) + '</span>';
+  h += '<h1>' + esc(d.headline) + '</h1>';
+  if (d.summary) h += '<p>' + esc(d.summary) + '</p>';
+  if (d.blocker) h += '<div class="blocker"><strong>' + esc(d.blocker.title) + '</strong>' + esc(d.blocker.text) + who(d.blocker) + '</div>';
+  h += '<div class="total"><span class="pct">' + pct + '%</span><span><strong>' + done + ' of ' + total + ' steps done</strong> toward: ' + esc(d.goal) + '</span></div>';
+  h += '<div class="bar">' + d.stages.map(function (st) { return '<div class="seg" style="flex:' + (counted(st).length || 1) + '" title="' + esc(st.name) + '">' + seg(st) + '</div>'; }).join('') + '</div>';
+  h += '<div class="seglabels">' + d.stages.map(function (st) { return '<span style="flex:' + (counted(st).length || 1) + '">' + esc(st.name) + ' · ' + n(st, 'done') + '/' + counted(st).length + '</span>'; }).join('') + '</div>';
+  h += '<div class="legend"><span><span class="dot done"></span>done</span><span><span class="dot doing"></span>being worked on</span><span><span class="dot waiting"></span>waiting on someone outside</span><span><span class="dot todo"></span>not started</span></div>';
+  if (d.counts_note) h += '<p class="soft">' + esc(d.counts_note) + '</p>';
+  if (d.next_steps && d.next_steps.length) {
+    h += '<h2>What gets us to 100%, in order</h2><ol class="steps">' + d.next_steps.map(function (s) { return '<li>' + link(s) + who(s) + note(s) + '</li>'; }).join('') + '</ol>';
+  }
+  h += '<h2>The stages, step by step</h2><div class="stages">' + d.stages.map(function (st) {
+    var c = counted(st).length;
+    return '<div class="stage ' + esc(st.status || '') + '"><span class="eyebrow">' + esc(st.label || '') + '</span><h3>' + esc(st.name) + '</h3>' +
+      '<div class="count">' + n(st, 'done') + ' of ' + c + ' done</div><div class="bar"><div class="seg" style="flex:1">' + seg(st) + '</div></div>' +
+      (st.holds ? '<p class="soft">' + esc(st.holds) + '</p>' : '') +
+      '<ul>' + st.items.map(function (i) { return '<li class="' + esc(i.state) + '"><span><span class="dot ' + esc(i.state) + '"></span></span><span>' + link(i) + who(i) + note(i) + '</span></li>'; }).join('') + '</ul></div>';
+  }).join('') + '</div>';
+  if (d.cycles && d.cycles.items && d.cycles.items.length) {
+    h += '<h2>Cycles' + (d.cycles.source ? ' <span class="soft">from ' + esc(d.cycles.source) + '</span>' : '') + '</h2>' + d.cycles.items.map(function (c) {
+      var p = c.total ? (100 * c.done / c.total) : 0;
+      return '<div class="cycle"><strong>' + link({ text: c.name, url: c.url }) + '</strong> <span class="soft">' + esc(c.start || '') + (c.end ? ' to ' + esc(c.end) : '') + ' · ' + c.done + ' of ' + c.total + '</span><div class="bar"><div class="seg" style="flex:1"><i class="d" style="width:' + p + '%"></i></div></div></div>';
+    }).join('');
+  }
+  var box = function (title, arr) { return (arr && arr.length) ? '<div class="card"><h2>' + esc(title) + '</h2><ul class="list">' + arr.map(function (i) { return '<li><span><span class="dot ' + esc(i.state || 'todo') + '"></span></span><span>' + link(i) + who(i) + note(i) + '</span></li>'; }).join('') + '</ul></div>' : ''; };
+  h += '<h2>Right now</h2><div class="cols">' + box('Waiting on ' + (d.human_name || 'you'), d.waiting_on_human) + box('In motion', d.in_motion) + box('Landed since the last update', d.landed) + '</div>';
+  document.getElementById('overview').innerHTML = h;
+})();
+</script>

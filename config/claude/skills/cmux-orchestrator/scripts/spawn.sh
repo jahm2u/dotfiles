@@ -342,6 +342,16 @@ MCPFLAG=""; [ "$MCP" = "none" ] && MCPFLAG="--strict-mcp-config"
 # pre-approved through a settings file so routine work never stops on a permission prompt in
 # ANY mode; force-push, hard reset, ssh and rm -rf stay denied there.
 SETTINGS="$HOME/.claude/skills/cmux-builder/builder-settings.json"
+# An MCP-free builder also runs without the context-mode plugin: its PreToolUse hook redirects
+# gradle/maven/curl to ctx_execute whenever ANY session on the machine has the MCP server up, and a
+# --strict-mcp-config builder has no such tool, so the build is refused (Jeff 2026-11-13: allow
+# build tools for builders). The variant is regenerated from the base file on every launch.
+if [ "$MCP" = none ]; then
+  NOMCP_SETTINGS="${SETTINGS%.json}.nomcp.json"
+  jq '.enabledPlugins["context-mode@context-mode"]=false' "$SETTINGS" > "$NOMCP_SETTINGS.$$" \
+    && mv "$NOMCP_SETTINGS.$$" "$NOMCP_SETTINGS" && SETTINGS="$NOMCP_SETTINGS" \
+    || { rm -f "$NOMCP_SETTINGS.$$"; echo "WARNING: could not write $NOMCP_SETTINGS; builder keeps the context-mode hook and cannot run gradle" >&2; }
+fi
 case "$MODE" in
   yolo) MODEFLAG="--dangerously-skip-permissions";;   # trusted spec in its isolated worktree: no prompts at all
   *)    MODEFLAG="--permission-mode $MODE";;
