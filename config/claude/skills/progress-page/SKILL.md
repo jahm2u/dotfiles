@@ -84,7 +84,7 @@ Rules for every source:
 
 1. Run `build.py`. Read the line it prints (steps done, total, stages) and check it against what you counted.
 2. Open the page and **look at it** at desktop width and at phone width, light and dark, before telling anyone it is ready. Fix what is cramped or wrong in the data, not by hand in the HTML between the markers.
-3. Below the overview the page is free-form. Keep there what a curious reader may want: the count of all issues, charts over time, gates with their evidence, decisions, the merged list, and what was and was not verified. Left-aligned text, no emoji in headings, readable at phone width.
+3. Below the overview the page is free-form. Keep there what a curious reader may want: the count of all issues, charts over time, gates with their evidence, decisions, the merged list, and what was and was not verified. Left-aligned text, no emoji in headings, readable at phone width. **Every section there is expanded by default.** If the record is long enough to want `<details>`, write `<details open>` and do not describe the sections as folded: the human asked not to have to open each line. `build.py` adds `open` to any `<details>` that lacks it on every run and prints how many it changed.
 4. Deliver the way the project does: open it locally with `open <path>`; commit it where the project tracks it; publish it with the Artifact tool when the session has a claude.ai login and the human wants a link. Do not make the human wait on a pull request to see the page.
 5. Reply with the headline, the percentage with its counts, what changed since the last update, and the human asks.
 

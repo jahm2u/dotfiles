@@ -8,12 +8,13 @@ step by step, cycles, right-now boxes) is rendered from the JSON by overview-blo
 
 - New page: writes a whole document, with an empty "detail" area below the overview.
 - Existing page: replaces only what sits between <!-- ov:start --> and <!-- ov:end -->,
-  so hand-written detail below the overview survives every refresh.
+  so hand-written detail below the overview survives every refresh. The one thing a
+  refresh changes there: every <details> gets the `open` attribute.
 
 It refuses to write when the data has no stage or a stage has no counted step:
 a progress bar over nothing would read 0% or 100% without having looked at anything.
 """
-import argparse, json, pathlib, sys
+import argparse, json, pathlib, re, sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 START, END = "<!-- ov:start -->", "<!-- ov:end -->"
@@ -95,11 +96,14 @@ def main():
     else:
         page = SHELL.format(title=a.title or d["title"], start=START, block=block, end=END)
         mode = "created"
+    # Every folded section is expanded by default: a reader should not have to open
+    # each line to see the record. The reader can still fold one.
+    page, opened = re.subn(r"<details\b(?![^>]*\sopen\b)([^>]*)>", r"<details\1 open>", page)
     out.write_text(page)
 
     total = sum(len([i for i in s["items"] if i["state"] != "later"]) for s in d["stages"])
     done = sum(len([i for i in s["items"] if i["state"] == "done"]) for s in d["stages"])
-    print(f"{mode} {out}: {done} of {total} steps done ({round(100 * done / total)}%), {len(d['stages'])} stages")
+    print(f"{mode} {out}: {done} of {total} steps done ({round(100 * done / total)}%), {len(d['stages'])} stages, {opened} folded sections set open")
 
 
 if __name__ == "__main__":
