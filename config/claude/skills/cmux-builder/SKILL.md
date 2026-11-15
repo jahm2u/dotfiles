@@ -117,6 +117,25 @@ result), `inferred` (follows from something you read or measured, say what), or 
 checked). "Tests green" is measured only if you ran them at the head you are reporting. An
 unlabelled claim reads as a guess.
 
+**A report states only what exists, and report.sh checks you** (Jeff, 2026-11-14, after three
+false lines in one evening: "held locally" for a patch never written, a "missing test" that
+existed, a push with no message). Before you write a sha, a count or "committed/held/pushed",
+run the command that proves it in the same turn (`git rev-parse HEAD`, `git status --porcelain`,
+`grep` for the test) and quote its result. "Held locally" means a commit: name its sha. report.sh
+appends `[facts: head= origin= unpushed-commits= dirty-files=]` read from your worktree to every
+interrupting report and every `pushing`; copy that suffix into the SendMessage unchanged. If
+your prose disagrees with it, your prose is wrong: fix the message before sending. Every push
+is followed by a SendMessage, whatever the phase. A wrong line already sent gets a correction
+the moment you notice, led by the word "Correction".
+
+**CPU pressure only through `stress-run.sh`** (Jeff, 2026-11-14: one builder's burners took the
+host to load 55 and blocked another builder's spawn). A flake repro that needs load runs as
+`~/.claude/skills/cmux-builder/scripts/stress-run.sh --burners N --minutes M -- <command>`: at
+most cores/3 burners, 15 minutes, one stress run on the host at a time, refused when the host is
+already above 1.5 x cores (then the host is your load: run without burners). Never start `yes`,
+busy loops, `stress`/`stress-ng` or dozens of parallel suites yourself. Report the wrapper's
+`STRESS-DONE rc= burners-left=0` line with the failure counts.
+
 Send `planning` when bmad-build starts investigating, `implementing` when code changes start,
 `testing` when the suites run. Keep the messages short and factual ("3 files, 2 tests added,
 backend suite green in 41s").
