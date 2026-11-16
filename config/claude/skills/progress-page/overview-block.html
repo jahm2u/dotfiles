@@ -28,8 +28,6 @@
   .ov .seg { height:18px; background:var(--ov-track); border-radius:6px; overflow:hidden; display:flex; min-width:14px; }
   .ov .seg i { display:block; height:100%; }
   .ov .seg .d { background:var(--ov-done); } .ov .seg .g { background:var(--ov-doing); } .ov .seg .w { background:var(--ov-wait); }
-  .ov .seglabels { display:flex; gap:4px; font-size:.78rem; color:var(--ov-soft); }
-  .ov .seglabels span { min-width:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ov .legend { display:flex; gap:1rem; flex-wrap:wrap; font-size:.8rem; color:var(--ov-soft); margin-top:.5rem; }
   .ov .dot { display:inline-block; width:.7em; height:.7em; border-radius:50%; margin-right:.35em; vertical-align:-.02em; }
   .ov .dot.done { background:var(--ov-done); } .ov .dot.doing { background:var(--ov-doing); } .ov .dot.waiting { background:var(--ov-wait); }
@@ -46,6 +44,7 @@
   .ov .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
   .ov .card { background:var(--ov-card); border:1px solid var(--ov-line); border-radius:14px; padding:1rem; }
   .ov .card h2 { margin-top:0; }
+  .ov .bar.overall .seg { height:26px; border-radius:8px; }
   .ov .cycle { margin:.5rem 0; } .ov .cycle .seg { height:10px; }
 </style>
 <div class="ov" id="overview"></div>
@@ -72,8 +71,8 @@
   if (d.summary) h += '<p>' + esc(d.summary) + '</p>';
   if (d.blocker) h += '<div class="blocker"><strong>' + esc(d.blocker.title) + '</strong>' + esc(d.blocker.text) + who(d.blocker) + '</div>';
   h += '<div class="total"><span class="pct">' + pct + '%</span><span><strong>' + done + ' of ' + total + ' steps done</strong> toward: ' + esc(d.goal) + '</span></div>';
-  h += '<div class="bar">' + d.stages.map(function (st) { return '<div class="seg" style="flex:' + (counted(st).length || 1) + '" title="' + esc(st.name) + '">' + seg(st) + '</div>'; }).join('') + '</div>';
-  h += '<div class="seglabels">' + d.stages.map(function (st) { return '<span style="flex:' + (counted(st).length || 1) + '">' + esc(st.name) + ' · ' + n(st, 'done') + '/' + counted(st).length + '</span>'; }).join('') + '</div>';
+  var all = { items: [].concat.apply([], d.stages.map(function (st) { return st.items; })) };
+  h += '<div class="bar overall"><div class="seg" style="flex:1">' + seg(all) + '</div></div>';
   h += '<div class="legend"><span><span class="dot done"></span>done</span><span><span class="dot doing"></span>being worked on</span><span><span class="dot waiting"></span>waiting on someone outside</span><span><span class="dot todo"></span>not started</span></div>';
   if (d.counts_note) h += '<p class="soft">' + esc(d.counts_note) + '</p>';
   if (d.next_steps && d.next_steps.length) {
