@@ -110,6 +110,8 @@ run_case() {
       pr=*) got=$(sed -n 's/^BF_PR=//p' "$LEDGER_DIR/$slug.env" 2>/dev/null || true); [ "$got" = "${1#pr=}" ] || ok=0;;
       ledger-kept) [ -f "$LEDGER_DIR/$slug.env" ] || ok=0;;
       arch:*) grep -qF -- "${1#arch:}" "$LEDGER_DIR/archive/$slug/shared-state.txt" 2>/dev/null || ok=0;;
+      primary-spec) [ -f "$TMP/repo/_bmad-output/implementation-artifacts/spec-$slug.md" ] || ok=0;;
+      no-primary-spec) [ ! -e "$TMP/repo/_bmad-output/implementation-artifacts/spec-$slug.md" ] || ok=0;;
       snap-archived) [ -f "$LEDGER_DIR/archive/$slug/$slug.shared" ] && [ ! -e "$LEDGER_DIR/$slug.shared" ] || ok=0;;
       keys=*) got=$(tr '\n' ' ' < "$d/keys" | sed 's/ $//'); [ "$got" = "${1#keys=}" ] || { ok=0; out="$out
 keys sent: '$got', want '${1#keys=}'"; };;
@@ -257,6 +259,13 @@ for mux in cmux herdr orca; do
 done
 builder_case "cmux: feedback draft, then background work -> Esc, then Enter" cmux claude "$DRAFTS_TASKS" "exit esc enter close"
 builder_case "cmux: narrow 'Background work is running' -> Enter" cmux claude $'claude exit tasks-narrow\ntasks-narrow enter shell' "exit enter close"
+SPECWT='git -C "$TMP/repo" worktree add -q -b fix/mine "$TMP/repo/.claude/worktrees/wt-$slug" && mkdir -p "$TMP/repo/.claude/worktrees/wt-$slug/_bmad-output/implementation-artifacts" && echo spec > "$TMP/repo/.claude/worktrees/wt-$slug/_bmad-output/implementation-artifacts/spec-$slug.md"'
+PRE="$SPECWT && git -C \"\$TMP/repo/.claude/worktrees/wt-\$slug\" add _bmad-output && git -C \"\$TMP/repo/.claude/worktrees/wt-\$slug\" -c user.email=t@t -c user.name=t commit -q -m spec" \
+  run_case "spec committed on the branch -> not copied into the primary" 50 "[$MINE_MERGED]" 0 "" 0 \
+  "has:is committed on fix/mine" no-primary-spec "has:DONE:"
+PRE="$SPECWT" run_case "spec untracked in the worktree -> copied into the primary" 50 "[$MINE_MERGED]" 0 "" 0 \
+  primary-spec "not:is committed on" "has:DONE:"
+
 builder_case "cmux: dialog already up before collect -> no /exit, answers it" cmux tasks $'tasks enter shell' "enter close"
 builder_case "cmux: /exit typed but its Enter lost -> Enter again" cmux claude $'claude exit typed\ntyped enter shell' "exit enter close"
 builder_case "cmux: statusline ending in % is not a shell" cmux claude-pct $'claude-pct exit shell' "exit close" "not:skipping /exit"
