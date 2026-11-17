@@ -27,7 +27,7 @@ $C <slug> --keep-branch         # leave the remote branch (someone else still ne
 3. **If it refuses:** show the human the refusal verbatim (the dirty-file list or the PR state). Do not add `--force` on your own — Rule 9 is exactly this case. When the human says to abandon the work, re-run with `--force`; uncommitted changes are saved to `UNCOMMITTED-DISCARDED.patch` in the archive before the worktree goes, so nothing is lost silently.
 4. On success it prints `DONE: <slug> collected` and the archive path. Report to the user:
    - PR number and state, what was archived (`_bmad/handoff/cmux/archive/<slug>/`: spec, builder log, ledger, commits, diffstat, deferred-work),
-   - that the spec was also copied into the primary checkout's `_bmad-output/implementation-artifacts/` if it was not already there,
+   - that the spec was also copied into the primary checkout's `_bmad-output/implementation-artifacts/` if it was not already there and the PR did not commit it (a committed spec arrives with the merge; an untracked copy blocks the primary's fast-forward, as it did on the mbp 2026-11-17),
    - which branch/worktree/workspace were removed.
 5. If the builder left deferred work (`deferred-work.local.md` in its worktree), `collect.sh` archived it and appended it under a dated `## <date> -- <slug>` heading to the BMAD root's shared `_bmad-output/deferred-work.md`. Read the archived copy and tell the user what was deferred.
 
