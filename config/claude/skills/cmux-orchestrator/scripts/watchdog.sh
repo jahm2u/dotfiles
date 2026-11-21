@@ -30,6 +30,8 @@
 #   CONTEXT  transcript usage >= BF_CTX_ROTATE    -> emitted on crossing, every 5th poll
 #            (60%) or >= BF_CTX_HARD (80%)           after, every poll past the hard limit.
 #                                                    Independent of the states above.
+#   DRIFT    running claude != ledger model/mode, -> emitted when it changes, every 10th
+#            or on a Kimi route                      poll while it lasts. Independent too.
 #
 # Reads only. It never types into a builder -- deciding what to say is the orchestrator's
 # job, and a watchdog that "helpfully" pressed Enter would resubmit stale text blind.
@@ -110,7 +112,7 @@ while :; do
     # This loop body runs in ONE subshell for every slug, so a field absent from this
     # ledger would keep the previous slug's value -- a pre-herdr ledger would inherit
     # BF_MUX=herdr. Clear the per-builder fields first.
-    unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_WS BF_BUILDER_SURFACE BF_BUILDER_TAB BF_BUILDER_AGENT BF_WORKTREE BF_MODEL
+    unset BF_MUX BF_HERDR_SOCKET BF_BUILDER_WS BF_BUILDER_SURFACE BF_BUILDER_TAB BF_BUILDER_AGENT BF_WORKTREE BF_MODEL BF_MODE
     # shellcheck disable=SC1090
     . "$dir/$slug.env" 2>/dev/null || continue
     bf_herdr_env
@@ -150,6 +152,23 @@ while :; do
           fi
           echo "$ctx" >"$sf.ctx" ;;
       esac
+    fi
+
+    # DRIFT: the running claude must be the one the ledger asked for (lib.sh "launch drift").
+    # Emitted when the set of drifts changes, then every 10th poll while it lasts.
+    if [ -n "${BF_WORKTREE:-}" ] && bpid="$(bf_builder_pid "$BF_WORKTREE")"; then
+      drift="$(bf_proc_tokens "$bpid" | bf_launch_drift "${BF_MODEL:-opus[1m]}" "${BF_MODE:-yolo}" | paste -sd ';' -)"
+      dprev="$(cat "$sf.drift" 2>/dev/null || echo "")"
+      dn="$(cat "$sf.driftn" 2>/dev/null || echo 0)"
+      if [ -n "$drift" ]; then
+        if [ "$drift" != "$dprev" ] || [ $(( dn % 10 )) -eq 0 ]; then
+          emit "$slug DRIFT -- pid $bpid is not the builder its ledger launched: $drift. Relaunch it: resume.sh $slug"
+        fi
+        echo $(( dn + 1 )) >"$sf.driftn"
+      else
+        echo 0 >"$sf.driftn"
+      fi
+      printf '%s' "$drift" >"$sf.drift"
     fi
 
     res="$(classify "$screen")"
