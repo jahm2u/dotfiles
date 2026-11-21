@@ -134,7 +134,7 @@ elif [ "$(get BF_MUX)" = herdr ]; then
   [ -n "$SURF" ] && [ -n "$(bf_read "$SURF" 5)" ] || bf_die "herdr pane '$SURF' for $SLUG is not readable; open a tab in $WT and set BF_BUILDER_SURFACE"
   if OLD=$(bf_builder_pid "$WT"); then
     bf_send_line "$SURF" "/exit" || true
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 30); do
       kill -0 "$OLD" 2>/dev/null || break
       bf_read "$SURF" 12 | grep -q 'Exit and stop tasks' && bf_send_key "$SURF" enter
       sleep 1
@@ -143,7 +143,7 @@ elif [ "$(get BF_MUX)" = herdr ]; then
   fi
   bf_send_line "$SURF" "$CMD" || bf_die "could not type the resume command into $SURF"
   NEW=""
-  for i in $(seq 1 30); do NEW=$(bf_builder_pid "$WT") && break; sleep 1; done
+  for _ in $(seq 1 30); do NEW=$(bf_builder_pid "$WT") && break; sleep 1; done
   [ -n "$NEW" ] || bf_die "no claude came up in $WT within 30s; read $SURF"
   DRIFT=$(bf_proc_tokens "$NEW" | bf_launch_drift "$MODEL" "$MODE" | paste -sd ';' -)
   [ -z "$DRIFT" ] || bf_die "resumed $SLUG (pid $NEW) still drifts: $DRIFT"
