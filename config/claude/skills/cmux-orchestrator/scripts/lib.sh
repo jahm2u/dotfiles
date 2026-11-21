@@ -892,3 +892,52 @@ bf_group_drop_if_empty() { # group-ref orchestrator-ws
   [ "$n" -le 1 ] && cmux workspace-group delete "$1" --close-workspaces >/dev/null 2>&1 && echo "dropped empty group $1"
   return 0
 }
+
+# --- launch drift ------------------------------------------------------------------------
+# A builder can be RUNNING with flags and a route other than the ones it was spawned with.
+# herdr's session restore types a bare `claude --resume <id>` into a fresh shell, and that
+# shell has none of the pane env spawn.sh set, so cg.sh re-applies the Kimi sticky: on
+# 2026-11-20 both of baba's builders came back from a MacBook restart as k3.1-pro on /kimi,
+# without --model or bypass, and nothing noticed for ~40 minutes. spawn.sh checks the route
+# once at spawn; these let the watchdog check it on every poll.
+bf_is_claude_model() { [[ "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" =~ claude|opus|sonnet|haiku|fable ]]; }
+
+bf_builder_pid() { # worktree -> pid of the claude whose cwd is that worktree
+  local p
+  for p in $(pgrep -f -- '^claude( |$)' 2>/dev/null); do
+    [ "$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" = "$1" ] && { echo "$p"; return 0; }
+  done
+  return 1
+}
+
+bf_proc_tokens() { ps eww -o command= -p "$1" 2>/dev/null | tr ' ' '\n'; } # pid -> argv then env, one per line
+
+bf_launch_drift() { # model mode < bf_proc_tokens output -> one line per drift, nothing when it matches
+  local want=$1 mode=$2 tok prev="" model="" yolo=0 pmode="" k v
+  local envs=""
+  while IFS= read -r tok; do
+    case "$prev" in --model) model=$tok ;; --permission-mode) pmode=$tok ;; esac
+    case "$tok" in
+      --dangerously-skip-permissions) yolo=1 ;;
+      --model=*) model=${tok#--model=} ;;
+      --permission-mode=*) pmode=${tok#--permission-mode=} ;;
+      ANTHROPIC_BASE_URL=*|ANTHROPIC_MODEL=*|ANTHROPIC_SMALL_FAST_MODEL=*|ANTHROPIC_DEFAULT_*_MODEL=*|CLAUDE_CODE_SUBAGENT_MODEL=*|CG_KIMI_*=*)
+        envs="$envs$tok"$'\n' ;;
+    esac
+    prev=$tok
+  done
+  [ -n "$want" ] && [ "$model" != "$want" ] && echo "model expected $want, running ${model:-default}"
+  if [ "$mode" = yolo ]; then [ "$yolo" = 1 ] || echo "bypass expected on, missing"
+  elif [ -n "$mode" ] && [ "$pmode" != "$mode" ]; then echo "permission-mode expected $mode, running ${pmode:-default}"; fi
+  bf_is_claude_model "${want:-opus}" || return 0
+  while IFS= read -r tok; do
+    [ -n "$tok" ] || continue
+    k=${tok%%=*}; v=${tok#*=}
+    case "$k" in
+      ANTHROPIC_BASE_URL) [[ "$v" =~ /kimi/?$ ]] && echo "gateway expected a Claude pool, running $v" ;;
+      CG_KIMI_*) [ -n "$v" ] && echo "env $k=$v" ;;
+      *) [ -n "$v" ] && ! bf_is_claude_model "$v" && echo "env $k=$v" ;;
+    esac
+  done <<< "$envs"
+  return 0
+}
