@@ -145,7 +145,9 @@ elif [ "$(get BF_MUX)" = herdr ]; then
   NEW=""
   for _ in $(seq 1 30); do NEW=$(bf_builder_pid "$WT") && break; sleep 1; done
   [ -n "$NEW" ] || bf_die "no claude came up in $WT within 30s; read $SURF"
-  DRIFT=$(bf_proc_tokens "$NEW" | bf_launch_drift "$MODEL" "$MODE" | paste -sd ';' -)
+  TOKENS=$(bf_proc_tokens "$NEW" || true)
+  [ -n "$TOKENS" ] || bf_die "claude pid $NEW in $WT exited right after the resume; read $SURF"
+  DRIFT=$(printf '%s\n' "$TOKENS" | bf_launch_drift "$MODEL" "$MODE" | paste -sd ';' -)
   [ -z "$DRIFT" ] || bf_die "resumed $SLUG (pid $NEW) still drifts: $DRIFT"
   echo "==> $SLUG pid $NEW verified: --model $MODEL, mode $MODE, route ${ANTHROPIC_BASE_URL:-own login}"
 else

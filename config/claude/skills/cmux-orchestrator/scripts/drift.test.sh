@@ -14,7 +14,7 @@ drift() { local want=$1 mode=$2; shift 2; printf '%s\n' "$@" | bf_launch_drift "
 check "a builder launched as spawn.sh launches it does not drift" "" \
   "$(drift 'opus[1m]' yolo claude --model 'opus[1m]' --dangerously-skip-permissions --settings /x.json ANTHROPIC_BASE_URL=http://100.127.163.81:3456 ANTHROPIC_MODEL=)"
 check "the 2026-11-20 herdr restore drifts on every count" \
-  "model expected opus[1m], running default;bypass expected on, missing;gateway expected a Claude pool, running https://claude.ipmedia.com.br/kimi;env ANTHROPIC_MODEL=k3.1-pro[1m];env CG_KIMI_PINNED=k3.1-pro[1m]" \
+  "model expected opus[1m], running default;bypass expected on, missing;gateway expected a Claude pool, running https://claude.ipmedia.com.br/kimi;env ANTHROPIC_MODEL=k3.1-pro[1m]" \
   "$(drift 'opus[1m]' yolo claude --resume 4379477a ANTHROPIC_BASE_URL=https://claude.ipmedia.com.br/kimi 'ANTHROPIC_MODEL=k3.1-pro[1m]' 'CG_KIMI_PINNED=k3.1-pro[1m]')"
 check "--model=value is read like --model value" "" "$(drift sonnet yolo claude --model=sonnet --dangerously-skip-permissions)"
 check "another Claude model is drift" "model expected opus[1m], running sonnet" "$(drift 'opus[1m]' yolo claude --model sonnet --dangerously-skip-permissions)"
@@ -24,6 +24,10 @@ check "a pinned default of another vendor is drift" "env ANTHROPIC_DEFAULT_OPUS_
   "$(drift 'opus[1m]' yolo claude --model 'opus[1m]' --dangerously-skip-permissions 'ANTHROPIC_DEFAULT_OPUS_MODEL=k3.1-pro[1m]')"
 check "a builder asked to run on Kimi is not judged by the Claude route" "" \
   "$(drift 'k3.1-pro[1m]' yolo claude --model 'k3.1-pro[1m]' --dangerously-skip-permissions ANTHROPIC_BASE_URL=https://claude.ipmedia.com.br/kimi 'ANTHROPIC_MODEL=k3.1-pro[1m]')"
+
+check "no tokens (the process exited before ps read it) is not drift" "" "$(printf '' | bf_launch_drift 'opus[1m]' yolo | paste -sd ';' -)"
+check "a CG_KIMI pin on the Claude route is not drift by itself" "" \
+  "$(drift 'opus[1m]' yolo claude --model 'opus[1m]' --dangerously-skip-permissions ANTHROPIC_BASE_URL=https://claude.ipmedia.com.br 'CG_KIMI_PINNED=k3.1-pro[1m]')"
 
 # The watchdog itself: one poll against stubbed processes and a stubbed herdr pane.
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -44,12 +48,12 @@ cat > "$TMP/bin/ps" <<'P'
 cat "$PS_LINE"
 P
 chmod +x "$TMP/bin/"*
-poll() { # ps-line -> what one watchdog poll printed
-  printf '%s\n' "$1" > "$TMP/ps.line"; rm -rf "$CM/.watchdog"
+poll() { # ps-line [interval] [seconds] -> the DRIFT lines the watchdog printed in that time
+  printf '%s\n' "$1" > "$TMP/ps.line"; rm -rf "$CM/.watchdog"; : > "$TMP/out"
   ( cd "$TMP/repo" && PATH="$TMP/bin:$PATH" HOME="$TMP/home" PS_LINE="$TMP/ps.line" \
-      "$HERE/watchdog.sh" --interval 30 > "$TMP/out" 2>/dev/null & echo $! > "$TMP/pid" )
-  for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q . "$TMP/out" 2>/dev/null && break; sleep 0.3; done
-  sleep 1; kill "$(cat "$TMP/pid")" 2>/dev/null; wait 2>/dev/null
+      "$HERE/watchdog.sh" --interval "${2:-30}" > "$TMP/out" 2>/dev/null & echo $! > "$TMP/pid" )
+  for _ in $(seq 1 20); do [ -f "$CM/.watchdog/x.state" ] && break; sleep 0.3; done
+  sleep "${3:-1}"; kill "$(cat "$TMP/pid")" 2>/dev/null; wait 2>/dev/null
   grep DRIFT "$TMP/out" || true
 }
 got=$(poll "claude --resume 4379477a ANTHROPIC_BASE_URL=https://claude.ipmedia.com.br/kimi ANTHROPIC_MODEL=k3.1-pro[1m]")
@@ -60,6 +64,18 @@ case "$got" in
 esac
 got=$(poll "claude --model opus[1m] --dangerously-skip-permissions ANTHROPIC_BASE_URL=http://100.127.163.81:3456")
 check "watchdog stays silent for a builder on its ledger's launch" "" "$got"
+check "...and that silence is a poll that ran the drift check" "present|0" \
+  "$([ -f "$CM/.watchdog/x.drift" ] && [ ! -s "$CM/.watchdog/x.drift" ] && echo present)|$(cat "$CM/.watchdog/x.driftn" 2>/dev/null)"
+got=$(poll "claude --resume 4379477a ANTHROPIC_BASE_URL=https://claude.ipmedia.com.br/kimi" 1 3.5)
+check "an unchanged drift is announced once, not every poll" "1 polls>=3" \
+  "$(printf '%s\n' "$got" | grep -c DRIFT) polls>=$([ "$(cat "$CM/.watchdog/x.driftn" 2>/dev/null || echo 0)" -ge 3 ] && echo 3 || cat "$CM/.watchdog/x.driftn")"
+
+# bf_builder_pid against a real process (real pgrep and lsof): a process whose argv[0] is claude, in WT.
+( cd "$WT" && exec -a claude sleep 30 ) & REAL=$!
+sleep 0.5
+check "bf_builder_pid finds the claude running in the worktree" "$REAL" "$(bf_builder_pid "$WT" || echo none)"
+check "bf_builder_pid finds nothing for another directory" "none" "$(bf_builder_pid "$TMP" || echo none)"
+kill "$REAL" 2>/dev/null; wait "$REAL" 2>/dev/null
 
 echo "drift.test.sh: $pass passed, $fail failed"
-[ "$fail" -eq 0 ] && [ "$pass" -eq 10 ]
+[ "$fail" -eq 0 ] && [ "$pass" -eq 16 ]

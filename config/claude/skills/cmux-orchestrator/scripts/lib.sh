@@ -912,20 +912,25 @@ bf_builder_pid() { # worktree -> pid of the claude whose cwd is that worktree
 
 bf_proc_tokens() { ps eww -o command= -p "$1" 2>/dev/null | tr ' ' '\n'; } # pid -> argv then env, one per line
 
+# No tokens (the process exited between pgrep and ps) is not drift. CG_KIMI_* alone is not either:
+# hive claudes on the Claude route carry CG_KIMI_PINNED, and it only bites through the model
+# variables and the base URL, which are what this checks.
 bf_launch_drift() { # model mode < bf_proc_tokens output -> one line per drift, nothing when it matches
-  local want=$1 mode=$2 tok prev="" model="" yolo=0 pmode="" k v
+  local want=$1 mode=$2 tok prev="" model="" yolo=0 pmode="" k v n=0
   local envs=""
   while IFS= read -r tok; do
+    [ -n "$tok" ] && n=$((n + 1))
     case "$prev" in --model) model=$tok ;; --permission-mode) pmode=$tok ;; esac
     case "$tok" in
       --dangerously-skip-permissions) yolo=1 ;;
       --model=*) model=${tok#--model=} ;;
       --permission-mode=*) pmode=${tok#--permission-mode=} ;;
-      ANTHROPIC_BASE_URL=*|ANTHROPIC_MODEL=*|ANTHROPIC_SMALL_FAST_MODEL=*|ANTHROPIC_DEFAULT_*_MODEL=*|CLAUDE_CODE_SUBAGENT_MODEL=*|CG_KIMI_*=*)
+      ANTHROPIC_BASE_URL=*|ANTHROPIC_MODEL=*|ANTHROPIC_SMALL_FAST_MODEL=*|ANTHROPIC_DEFAULT_*_MODEL=*|CLAUDE_CODE_SUBAGENT_MODEL=*)
         envs="$envs$tok"$'\n' ;;
     esac
     prev=$tok
   done
+  [ "$n" -gt 0 ] || return 0
   [ -n "$want" ] && [ "$model" != "$want" ] && echo "model expected $want, running ${model:-default}"
   if [ "$mode" = yolo ]; then [ "$yolo" = 1 ] || echo "bypass expected on, missing"
   elif [ -n "$mode" ] && [ "$pmode" != "$mode" ]; then echo "permission-mode expected $mode, running ${pmode:-default}"; fi
@@ -935,7 +940,6 @@ bf_launch_drift() { # model mode < bf_proc_tokens output -> one line per drift, 
     k=${tok%%=*}; v=${tok#*=}
     case "$k" in
       ANTHROPIC_BASE_URL) [[ "$v" =~ /kimi/?$ ]] && echo "gateway expected a Claude pool, running $v" ;;
-      CG_KIMI_*) [ -n "$v" ] && echo "env $k=$v" ;;
       *) [ -n "$v" ] && ! bf_is_claude_model "$v" && echo "env $k=$v" ;;
     esac
   done <<< "$envs"
