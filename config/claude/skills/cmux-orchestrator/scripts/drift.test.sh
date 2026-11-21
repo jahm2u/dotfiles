@@ -70,6 +70,15 @@ got=$(poll "claude --resume 4379477a ANTHROPIC_BASE_URL=https://claude.ipmedia.c
 check "an unchanged drift is announced once, not every poll" "1 polls>=3" \
   "$(printf '%s\n' "$got" | grep -c DRIFT) polls>=$([ "$(cat "$CM/.watchdog/x.driftn" 2>/dev/null || echo 0)" -ge 3 ] && echo 3 || cat "$CM/.watchdog/x.driftn")"
 
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/bin/pgrep"
+got=$(poll "" 1 3.5)
+check "no drift line when nothing runs in the worktree" "" "$got"
+check "a pane with no claude in its worktree is announced once, after the first poll" "1" "$(grep -c NOCLAUDE "$TMP/out")"
+check "...naming the fix" "yes" "$(grep -q 'NOCLAUDE -- no claude is running in .*Resume it: resume.sh x' "$TMP/out" && echo yes)"
+printf '#!/usr/bin/env bash\necho 4242\n' > "$TMP/bin/pgrep"; chmod +x "$TMP/bin/pgrep"
+poll "claude --model opus[1m] --dangerously-skip-permissions" 30 1 >/dev/null
+check "a running claude never reads as NOCLAUDE" "0" "$(grep -c NOCLAUDE "$TMP/out")"
+
 # bf_builder_pid against a real process (real pgrep and lsof): a process whose argv[0] is claude, in WT.
 ( cd "$WT" && exec -a claude sleep 30 ) & REAL=$!
 sleep 0.5
@@ -78,4 +87,4 @@ check "bf_builder_pid finds nothing for another directory" "none" "$(bf_builder_
 kill "$REAL" 2>/dev/null; wait "$REAL" 2>/dev/null
 
 echo "drift.test.sh: $pass passed, $fail failed"
-[ "$fail" -eq 0 ] && [ "$pass" -eq 16 ]
+[ "$fail" -eq 0 ] && [ "$pass" -eq 20 ]

@@ -32,6 +32,8 @@
 #                                                    Independent of the states above.
 #   DRIFT    running claude != ledger model/mode, -> emitted when it changes, every 10th
 #            or on a Kimi route                      poll while it lasts. Independent too.
+#   NOCLAUDE pane readable, no claude in the      -> emitted on the 2nd poll, every 10th after.
+#            worktree (failed restore, exited)        Replaces IDLE for that builder.
 #
 # Reads only. It never types into a builder -- deciding what to say is the orchestrator's
 # job, and a watchdog that "helpfully" pressed Enter would resubmit stale text blind.
@@ -169,6 +171,17 @@ while :; do
         echo 0 >"$sf.driftn"
       fi
       printf '%s' "$drift" >"$sf.drift"
+      echo 0 >"$sf.noclaude"
+    elif [ -n "${BF_WORKTREE:-}" ] && [ -d "$BF_WORKTREE" ]; then
+      # NOCLAUDE: the pane is there but no claude runs in the worktree -- a restore that left a
+      # plain shell, or a builder that exited. Not on the first poll, which can fall inside
+      # resume.sh's own exit-and-relaunch window; then every 10th poll while it lasts.
+      nc=$(( $(cat "$sf.noclaude" 2>/dev/null || echo 0) + 1 ))
+      echo "$nc" >"$sf.noclaude"
+      if [ "$nc" -eq 2 ] || { [ "$nc" -gt 2 ] && [ $(( nc % 10 )) -eq 0 ]; }; then
+        emit "$slug NOCLAUDE -- no claude is running in $BF_WORKTREE (pane $BF_BUILDER_SURFACE is a bare shell or gone quiet). Resume it: resume.sh $slug"
+      fi
+      echo NOCLAUDE >"$sf.state"; continue
     fi
 
     res="$(classify "$screen")"
