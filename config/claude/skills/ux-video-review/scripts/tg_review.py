@@ -89,7 +89,8 @@ if [ "$F" = "-" ]; then
     --data-urlencode "chat_id=$CHAT" --data-urlencode "text=$CAP" -d disable_web_page_preview=true
 else
   trap 'rm -f "$F"' EXIT
-  curl -sS --max-time 300 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendVideo" \
+  # --http1.1: on 2026-11-20 every upload over HTTP/2 from CT 205 ended in curl (92) PROTOCOL_ERROR
+  curl -sS --http1.1 --max-time 300 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendVideo" \
     --form-string "chat_id=$CHAT" --form-string "caption=$CAP" -F supports_streaming=true \
     -F "width=$2" -F "height=$3" -F "video=@$F"
 fi
@@ -224,7 +225,7 @@ def fetch_since_duda(since):
     Read-only, over ssh to CT 206 (duda-pg). The SQL travels base64 so no quoting can break it."""
     sql = ("SELECT coalesce(json_agg(r ORDER BY r.created_at), '[]') FROM ("
            "SELECT id, to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS created_at, "
-           "text AS message_text, tag, replied_to_message_id, media_kind, sender_first_name FROM review_replies "
+           "text AS message_text, tag, replied_to_message_id, media_kind, sender_first_name, sender_telegram_id FROM review_replies "
            f"WHERE received_at > {json.dumps(since).replace(chr(34), chr(39))}::timestamptz) r")
     b64 = base64.b64encode(sql.encode()).decode()
     remote = (f"pct exec 206 -- su postgres -s /bin/sh -c "
@@ -272,6 +273,9 @@ def cmd_replies(a):
         if rows or time.time() >= deadline:
             break
         time.sleep(30)
+    if getattr(a, "json", False):
+        print(json.dumps(rows, ensure_ascii=False))
+        return
     tags = sent_tags() if a.via != "duda" and any(r.get("reply_to_message_id") for r in rows) else {}
     for r in rows:
         extra = f" (screenshot: {r['screenshot_url']})" if r.get("screenshot_url") else ""
@@ -326,6 +330,7 @@ def main():
         p.add_argument("--to", choices=["group", "dm"], default="group",
                        help="duda only: group = the ajudaduda dev Telegram group (default, Jeff 2026-10-18); dm = Jeff's bot DM")
     r = sub.add_parser("replies"); r.add_argument("--since", required=True); r.add_argument("--wait", type=int, default=0)
+    r.add_argument("--json", action="store_true", help="print the rows as one JSON array (duda rows carry sender_telegram_id)")
     r.add_argument("--via", choices=["duda", "baba"], default=None,
                    help="duda = Jeff's replies in the ajudaduda dev group (prod PG review_replies); baba = BabaFlow's "
                         "message_cache. Default: picked from the current repo, like send.")
