@@ -18,11 +18,19 @@ Usage:
     python3 log_learnings.py [<repo_root>]   # defaults to cwd
 Exit code is always 0 unless given an unreadable handoff (1), so a handoff write
 is never silently dropped without signal.
+
+Decisions guard: when `<repo_root>/scripts/handoff-decisions-guard.js` exists
+(BabaFlow 5522), it runs before the append. Its exit 1 means a Jeff decision in
+the handoff names an issue that carries no `Jeff, YYYY-MM-DD:` comment: the
+append is refused (exit 1) and its `missing:` lines are printed. Any other
+non-zero exit, a timeout, or no `node` is a warning, and the append goes ahead,
+so a network blip never loses the learnings. With no script, nothing changes.
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -40,6 +48,45 @@ LEARNING_FIELDS = ("created_at", "mission", "problems", "landmines", "decisions"
 # The subset whose presence makes a handoff worth logging at all. `created_at`
 # and `mission` are bookkeeping — a record carrying only those is noise.
 MINEABLE_FIELDS = ("problems", "landmines", "decisions")
+
+DECISIONS_GUARD = Path("scripts") / "handoff-decisions-guard.js"
+GUARD_TIMEOUT_S = 90
+
+
+def _decisions_guard_refuses(repo_root: str) -> bool:
+    """True only when the project's decisions guard exits 1 (decisions not recorded)."""
+    script = Path(repo_root) / DECISIONS_GUARD
+    if not script.is_file():
+        return False
+    try:
+        done = subprocess.run(
+            ["node", str(script), str(repo_root)],
+            capture_output=True,
+            text=True,
+            timeout=GUARD_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        sys.stderr.write(f"warning: {DECISIONS_GUARD} timed out after {GUARD_TIMEOUT_S}s; logging anyway\n")
+        return False
+    except OSError as exc:
+        sys.stderr.write(f"warning: could not run {DECISIONS_GUARD}: {exc}; logging anyway\n")
+        return False
+    if done.returncode == 0:
+        return False
+    if done.returncode == 1:
+        sys.stderr.write(done.stdout)
+        sys.stderr.write(
+            f"refused: {DECISIONS_GUARD} found Jeff decisions with no 'Jeff, YYYY-MM-DD:' comment on "
+            "their issue. Post the comments above, then re-run.\n"
+        )
+        return True
+    detail = (done.stderr or done.stdout).strip().splitlines()
+    sys.stderr.write(
+        f"warning: {DECISIONS_GUARD} exited {done.returncode}"
+        f"{': ' + detail[-1] if detail else ''}; logging anyway\n"
+    )
+    return False
 
 
 def _logged_created_ats(log_path: Path) -> set[str]:
@@ -96,6 +143,9 @@ def run(repo_root: str) -> int:
         # Nothing worth mining; do not pollute the signal log.
         sys.stderr.write("no learnings (problems/landmines/decisions) to log\n")
         return 0
+
+    if _decisions_guard_refuses(repo_root):
+        return 1
 
     log_path = directory / C.LEARNINGS_LOG_NAME
     created_at = record.get("created_at")
