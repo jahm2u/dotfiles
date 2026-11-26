@@ -4,8 +4,8 @@
 # (mini-mp also keeps a copy at ~/.local/bin/tell-mini for older callers.)
 # The body lands in ~/.local/state/from-mbp/ on the Mini; the prompt points at it (no quoting trouble).
 # Several Claudes on REPO: the one with the most recent output gets it (MINI_TERM pins a handle).
-# It prints where it went by name, and tells the receiver to answer with tell-mbp, which signs the
-# reply as mini:orca/REPO (Jeff 06/10).
+# It prints where it went by name, and tells the receiver to answer with fleet-tell, which stamps the
+# reply with the sender's address (tell-mbp was never installed on the Mini).
 set -euo pipefail
 REPO="${1:?usage: tell-mini REPO FROM < message}"
 ARG_REPO="$REPO"
@@ -68,8 +68,8 @@ if grep -qE "Enter to select|Esc to cancel|Enter to confirm|Do you want to proce
 fi
 case "$FROM" in
   mbp:builders/b-*) REPLY="~/.claude/skills/mbp-builder/scripts/send.sh ${FROM#mbp:builders/b-} --file reply.md" ;;
-  mini:orca/*) REPLY="~/.local/bin/tell-mini ${FROM#mini:orca/} mini:orca/$REPO < reply.md" ;;
-  *) REPLY="~/.local/bin/tell-mbp $FROM < reply.md (signs you as mini:orca/$REPO)" ;;
+  mini:orca/*) REPLY="~/.claude/skills/mbp-builder/scripts/tell-mini ${FROM#mini:orca/} mini:orca/$REPO < reply.md" ;;
+  *) REPLY="FLEET_TELL_FROM=mini:orca/$REPO ~/.local/bin/fleet-tell $FROM \"\$(cat reply.md)\"" ;;
 esac
 orca_cli terminal send --terminal "$T" --text "[mini-tell from $FROM] read $f and answer as it asks. Reply with: $REPLY" --enter >/tmp/tell-mini.$$ 2>&1 || {
   if grep -q agent_prompt_blocked /tmp/tell-mini.$$; then
