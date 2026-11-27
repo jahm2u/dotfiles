@@ -25,6 +25,12 @@ CARD_R = 14
 ZOOM_S = 0.8
 FOCUS_MIN = 0.4
 FOCUS_PAD = 1.3
+# Back-to-back focus steps on the same part of the page keep the zoom and pan between their boxes.
+# Same part = the padded boxes share SAME_AREA_SHARE of the smaller one, or the box around both is
+# no wider than SAME_AREA_MAX_W of the frame (still a 1.33x zoom). Every pair in 7 real steps files
+# (5431, 5415, 5386a, 5386c, 5524, 5136, 5121) shared 0.34 or more.
+SAME_AREA_SHARE = 0.25
+SAME_AREA_MAX_W = 0.75
 OPENING_S = 2.5
 NUM = r"(-?\d+(?:\.\d+)?)"
 FOCUS_RE = re.compile(r"\s*@\s*" + r"\s*,\s*".join([NUM] * 4) + r"\s*$")
@@ -86,21 +92,46 @@ def ease(x):
     return f"(pow(clip({x},0,1),2)*(3-2*clip({x},0,1)))"
 
 
+def same_area(a, b, fw, fh):
+    """Whether two focus boxes show the same part of the page (see SAME_AREA_SHARE)."""
+    ix = min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])
+    iy = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1])
+    shared = max(ix, 0) * max(iy, 0) / min(a[2] * a[3], b[2] * b[3])
+    uw = max(max(a[0] + a[2], b[0] + b[2]) - min(a[0], b[0]),
+             (max(a[1] + a[3], b[1] + b[3]) - min(a[1], b[1])) * fw / fh)
+    return shared >= SAME_AREA_SHARE or uw <= fw * SAME_AREA_MAX_W
+
+
 def zoom_filter(windows, fw, fh):
-    """perspective filter that eases the full view into each window's box over ZOOM_S, holds it
-    and eases back out over the window's last ZOOM_S. Sub-pixel, so the zoom never jitters."""
+    """perspective filter for the camera path. Back-to-back windows on the same part of the page
+    form one run: the full view eases into the run's first box over ZOOM_S, eases from box to box
+    over ZOOM_S at each later window's start, and eases back out over the run's last ZOOM_S. A
+    later window shorter than ZOOM_S keeps the camera where it is. Sub-pixel, so it never jitters."""
     if not windows:
         return ""
     t = f"(in/{FPS})"
-    terms = [(f"{ease(f'({t}-{a:.3f})/{ZOOM_S}')}*{ease(f'({b:.3f}-{t})/{ZOOM_S}')}", box) for a, b, box in windows]
+    runs = []
+    for a, b, box in windows:
+        prev = runs[-1][-1] if runs else None
+        if prev and abs(a - prev[1]) < 1 / FPS and same_area(prev[2], box, fw, fh):
+            runs[-1].append((a, b, box if b - a >= ZOOM_S else prev[2]))
+        else:
+            runs.append([(a, b, box)])
+    full = (0.0, 0.0, fw, fh)
+    terms = []
+    for run in runs:
+        held = f"{ease(f'({t}-{run[0][0]:.3f})/{ZOOM_S}')}*{ease(f'({run[-1][1]:.3f}-{t})/{ZOOM_S}')}"
+        terms.append((held, full, run[0][2]))
+        terms += [(f"{held}*{ease(f'({t}-{a:.3f})/{ZOOM_S}')}", frm, box)
+                  for (_, _, frm), (a, _, box) in zip(run, run[1:]) if box != frm]
 
-    def corner(base, delta):
-        return f"{base:.3f}" + "".join(f"+{p}*({delta(box):.3f})" for p, box in terms)
+    def corner(base, edge):
+        return f"{base:.3f}" + "".join(f"+{p}*({edge(box) - edge(frm):.3f})" for p, frm, box in terms)
 
     left = corner(0, lambda b: b[0])
-    right = corner(fw, lambda b: b[0] + b[2] - fw)
+    right = corner(fw, lambda b: b[0] + b[2])
     top = corner(0, lambda b: b[1])
-    bottom = corner(fh, lambda b: b[1] + b[3] - fh)
+    bottom = corner(fh, lambda b: b[1] + b[3])
     en = "+".join(f"between(n,{int(a * FPS) - 1},{int(b * FPS) + 1})" for a, b, _ in windows)
     return (f",perspective=x0='{left}':y0='{top}':x1='{right}':y1='{top}':x2='{left}':y2='{bottom}':"
             f"x3='{right}':y3='{bottom}':interpolation=cubic:sense=source:eval=frame:enable='{en}'")
@@ -353,6 +384,39 @@ def self_test(keep_dir=None):
     assert max(sc for sc, _ in track_o) >= 1.7, "opening: never zoomed"
     assert abs(got_o["duration"] - (4 + 0.9 + OPENING_S)) <= 0.3, f"opening: duration {got_o['duration']}"
     check_smooth("opening", track_o)
+    cases = {
+        "near": "0:02 -> Panel @ 300,200,500,300\n0:04.5 -> Wider, next to it @ 640,300,640,380\n",
+        "short": "0:02 -> Panel @ 300,200,500,300\n0:04.5 -> Blip @ 700,300,500,300\n"
+                 "0:04.7 -> Wider, next to it @ 640,300,640,380\n",
+        "far": "0:02 -> Top left @ 40,40,300,200\n0:04.5 -> Bottom right @ 1100,660,300,200\n"}
+    paths = {}
+    for name, focus_steps in cases.items():
+        f = work / f"{name}.txt"
+        f.write_text(f"title: {name}\n0 -> Whole page\n{focus_steps}7 -> Back\n", encoding="utf-8")
+        v = compose([grad], f, work / f"{name}.mp4")
+        tr = card_track(v, 1440, 900)
+        moving = [i for i, (sc, _) in enumerate(tr) if sc > 1.02]
+        assert moving, f"{name}: never zoomed"
+        assert abs(tr[-1][0] - 1) <= 0.02, f"{name}: does not end on the full view"
+        check_smooth(name, tr)
+        paths[name] = (v, tr[moving[0]:moving[-1] + 1])
+    for name in ("near", "short"):
+        path = paths[name][1]
+        held_at = [i for i, (sc, _) in enumerate(path) if sc >= 1.65]
+        low = min(sc for sc, _ in path[held_at[0]:held_at[-1] + 1])
+        assert low >= 1.65, f"{name}: zooms back out to {low:.2f}x between two nearby steps"
+        for want in (225 / 1440, 544 / 1440):
+            assert any(abs(x - want) <= 0.01 for _, x in path), f"{name}: never pans to the box at x={want:.3f}"
+        assert any(abs(sc - 1440 / 832) <= 0.03 for sc, _ in path), f"{name}: never rescales to the wider box"
+    assert max(x for _, x in paths["short"][1]) <= 544 / 1440 + 0.01, "short: a 0.2 s step moved the camera"
+    far_path = paths["far"][1]
+    assert min(sc for sc, _ in far_path) <= 1.02, "far: stays zoomed between two far-apart steps"
+    for want in (0.0, 864 / 1440):
+        assert any(abs(x - want) <= 0.01 for _, x in far_path), f"far: never zooms to the box at x={want:.3f}"
+    for a, b, want in (((0, 0, 300, 200), (320, 0, 300, 200), True), ((0, 0, 576, 360), (560, 350, 576, 360), False),
+                       (focus_box((300, 200, 500, 300), 1440, 900, 1), focus_box((640, 300, 500, 300), 1440, 900, 2), True),
+                       (focus_box((40, 40, 300, 200), 1440, 900, 1), focus_box((1100, 660, 300, 200), 1440, 900, 2), False)):
+        assert same_area(a, b, 1440, 900) == want, f"same_area({a}, {b}) is not {want}"
     phone_focus = work / "phone_focus.txt"
     phone_focus.write_text("0 -> Desk\n5.5 -> Lander @ 10,10,100,100\n", encoding="utf-8")
     zero = work / "zero.txt"
@@ -382,6 +446,9 @@ def self_test(keep_dir=None):
     print(f"SELF-TEST OK focus parse text+json, peak zoom {peak:.2f}x held {held:.2f}s, "
           f"{got_z['duration']:.2f}s smooth {zoomed}")
     print(f"SELF-TEST OK opening {OPENING_S:g}s full view before the first zoom, {got_o['duration']:.2f}s smooth {opened}")
+    print(f"SELF-TEST OK near steps stay zoomed and pan + rescale smoothly, a 0.2 s step between them holds "
+          f"the view {paths['near'][0]} {paths['short'][0]}")
+    print(f"SELF-TEST OK far steps zoom out to the full view between them, smooth {paths['far'][0]}")
     for f in frames:
         print(f"frame: {f}")
 

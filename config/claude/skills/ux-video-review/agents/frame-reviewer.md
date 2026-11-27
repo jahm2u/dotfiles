@@ -23,6 +23,8 @@ Check, against the steps file and what the change is meant to do:
    video that starts zoomed in or mid-action is confusing.
 8. Jumpy: a change of scale or position between consecutive frames with no visible zoom
    transition (no in-between frames), or a chain of tight crops one after another, is confusing.
+   Staying zoomed while the view eases from one nearby box to the next is intended, not jumpy;
+   zooming all the way out and back in between two steps on the same area is jumpy.
 
 Report only what you can point at. One line each, worst first:
 `<time> <broken|ugly|confusing|off-copy|missing|layout|context|jumpy> — <what, where on screen>`.
