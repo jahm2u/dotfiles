@@ -107,7 +107,7 @@ if [ -n "$GW_SRC" ] && bf_is_claude_model "$MODEL"; then
 fi
 ENVF=$(mktemp "${TMPDIR:-/tmp}/bf-env-$SLUG.XXXXXX"); chmod 600 "$ENVF"
 {
-  printf 'unset %s\n' "${GW_VARS[*]}" ANTHROPIC_SMALL_FAST_MODEL
+  printf 'unset %s\n' "${GW_VARS[*]}" ANTHROPIC_SMALL_FAST_MODEL CLAUDE_CODE_PLUGIN_DIRS
   printf '%s\n' 'for v in $(env | sed -n "s/^\(CG_KIMI_[A-Z0-9_]*\)=.*/\1/p"); do unset "$v"; done'
   for v in "${GW_VARS[@]}"; do [ -n "${!v:-}" ] && printf 'export %s=%q\n' "$v" "${!v}"; done
   [ -n "$GW_SRC" ] && printf 'export CG_STICKY_FILE=%q\n' "$HOME/.config/claude-gateway/.sticky-off-for-builders"
