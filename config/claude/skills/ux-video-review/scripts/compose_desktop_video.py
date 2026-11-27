@@ -105,25 +105,25 @@ def same_area(a, b, fw, fh):
 def zoom_filter(windows, fw, fh):
     """perspective filter for the camera path. Back-to-back windows on the same part of the page
     form one run: the full view eases into the run's first box over ZOOM_S, eases from box to box
-    over ZOOM_S at each later window's start, and eases back out over the run's last ZOOM_S.
-    Sub-pixel, so the zoom never jitters."""
+    over ZOOM_S at each later window's start, and eases back out over the run's last ZOOM_S. A
+    later window shorter than ZOOM_S keeps the camera where it is. Sub-pixel, so it never jitters."""
     if not windows:
         return ""
     t = f"(in/{FPS})"
     runs = []
-    for w in windows:
+    for a, b, box in windows:
         prev = runs[-1][-1] if runs else None
-        if prev and abs(w[0] - prev[1]) < 1 / FPS and same_area(prev[2], w[2], fw, fh):
-            runs[-1].append(w)
+        if prev and abs(a - prev[1]) < 1 / FPS and same_area(prev[2], box, fw, fh):
+            runs[-1].append((a, b, box if b - a >= ZOOM_S else prev[2]))
         else:
-            runs.append([w])
+            runs.append([(a, b, box)])
     full = (0.0, 0.0, fw, fh)
     terms = []
     for run in runs:
         held = f"{ease(f'({t}-{run[0][0]:.3f})/{ZOOM_S}')}*{ease(f'({run[-1][1]:.3f}-{t})/{ZOOM_S}')}"
         terms.append((held, full, run[0][2]))
-        for (_, _, frm), (a, b, box) in zip(run, run[1:]):
-            terms.append((f"{held}*{ease(f'({t}-{a:.3f})/{max(min(ZOOM_S, b - a), 1 / FPS):.3f}')}", frm, box))
+        terms += [(f"{held}*{ease(f'({t}-{a:.3f})/{ZOOM_S}')}", frm, box)
+                  for (_, _, frm), (a, _, box) in zip(run, run[1:]) if box != frm]
 
     def corner(base, edge):
         return f"{base:.3f}" + "".join(f"+{p}*({edge(box) - edge(frm):.3f})" for p, frm, box in terms)
@@ -384,13 +384,15 @@ def self_test(keep_dir=None):
     assert max(sc for sc, _ in track_o) >= 1.7, "opening: never zoomed"
     assert abs(got_o["duration"] - (4 + 0.9 + OPENING_S)) <= 0.3, f"opening: duration {got_o['duration']}"
     check_smooth("opening", track_o)
-    near, far = work / "near.txt", work / "far.txt"
-    near.write_text("title: Near\n0 -> Whole page\n0:02 -> Panel @ 300,200,500,300\n"
-                    "0:04.5 -> Next to it @ 640,300,500,300\n7 -> Back\n", encoding="utf-8")
-    far.write_text("title: Far\n0 -> Whole page\n0:02 -> Top left @ 40,40,300,200\n"
-                   "0:04.5 -> Bottom right @ 1100,660,300,200\n7 -> Back\n", encoding="utf-8")
+    cases = {
+        "near": "0:02 -> Panel @ 300,200,500,300\n0:04.5 -> Wider, next to it @ 640,300,640,380\n",
+        "short": "0:02 -> Panel @ 300,200,500,300\n0:04.5 -> Blip @ 700,300,500,300\n"
+                 "0:04.7 -> Wider, next to it @ 640,300,640,380\n",
+        "far": "0:02 -> Top left @ 40,40,300,200\n0:04.5 -> Bottom right @ 1100,660,300,200\n"}
     paths = {}
-    for name, f in (("near", near), ("far", far)):
+    for name, focus_steps in cases.items():
+        f = work / f"{name}.txt"
+        f.write_text(f"title: {name}\n0 -> Whole page\n{focus_steps}7 -> Back\n", encoding="utf-8")
         v = compose([grad], f, work / f"{name}.mp4")
         tr = card_track(v, 1440, 900)
         moving = [i for i, (sc, _) in enumerate(tr) if sc > 1.02]
@@ -398,13 +400,15 @@ def self_test(keep_dir=None):
         assert abs(tr[-1][0] - 1) <= 0.02, f"{name}: does not end on the full view"
         check_smooth(name, tr)
         paths[name] = (v, tr[moving[0]:moving[-1] + 1])
-    near_path = paths["near"][1]
-    top = max(sc for sc, _ in near_path)
-    held_at = [i for i, (sc, _) in enumerate(near_path) if sc >= top - 0.05]
-    low = min(sc for sc, _ in near_path[held_at[0]:held_at[-1] + 1])
-    assert low >= 1.5, f"near: zooms back out to {low:.2f}x between two nearby steps"
-    for want in (225 / 1440, 565 / 1440):
-        assert any(abs(x - want) <= 0.01 for _, x in near_path), f"near: never pans to the box at x={want:.3f}"
+    for name in ("near", "short"):
+        path = paths[name][1]
+        held_at = [i for i, (sc, _) in enumerate(path) if sc >= 1.65]
+        low = min(sc for sc, _ in path[held_at[0]:held_at[-1] + 1])
+        assert low >= 1.65, f"{name}: zooms back out to {low:.2f}x between two nearby steps"
+        for want in (225 / 1440, 544 / 1440):
+            assert any(abs(x - want) <= 0.01 for _, x in path), f"{name}: never pans to the box at x={want:.3f}"
+        assert any(abs(sc - 1440 / 832) <= 0.03 for sc, _ in path), f"{name}: never rescales to the wider box"
+    assert max(x for _, x in paths["short"][1]) <= 544 / 1440 + 0.01, "short: a 0.2 s step moved the camera"
     far_path = paths["far"][1]
     assert min(sc for sc, _ in far_path) <= 1.02, "far: stays zoomed between two far-apart steps"
     for want in (0.0, 864 / 1440):
@@ -442,7 +446,8 @@ def self_test(keep_dir=None):
     print(f"SELF-TEST OK focus parse text+json, peak zoom {peak:.2f}x held {held:.2f}s, "
           f"{got_z['duration']:.2f}s smooth {zoomed}")
     print(f"SELF-TEST OK opening {OPENING_S:g}s full view before the first zoom, {got_o['duration']:.2f}s smooth {opened}")
-    print(f"SELF-TEST OK near steps stay zoomed (lowest {low:.2f}x) and pan smoothly {paths['near'][0]}")
+    print(f"SELF-TEST OK near steps stay zoomed and pan + rescale smoothly, a 0.2 s step between them holds "
+          f"the view {paths['near'][0]} {paths['short'][0]}")
     print(f"SELF-TEST OK far steps zoom out to the full view between them, smooth {paths['far'][0]}")
     for f in frames:
         print(f"frame: {f}")

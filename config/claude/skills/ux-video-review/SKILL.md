@@ -83,8 +83,8 @@ Metro with `--clear`. Never symlink an app's `node_modules` by hand to save an i
    in, you know? only zoom out if it is going to show a different part of the page, I am
    getting sick watching these demo videos"): back-to-back focus steps on the same part of
    the page pan from box to box without leaving the zoom; the camera returns to the full
-   view only before a different part of the page, before a step with no focus, and at the
-   end. **Context first, then focus** (Jeff,
+   view only before a different part of the page, before a step with no focus, at the end
+   of each `--video` clip, and at the end. **Context first, then focus** (Jeff,
    2026-10-25: "pan and zoom to highlight things changing ... too focused and jumpy today with
    no real context"): the first step is the full page, labelled with what it is and what comes,
    held 2.5 s or more; each change the PR makes then gets a focus step, its rectangle read from
@@ -93,7 +93,7 @@ Metro with `--clear`. Never symlink an app's `node_modules` by hand to save an i
    0.8 s, holds, eases to the next box over 0.8 s when it is the same part of the page (the
    padded boxes share 25% of the smaller one, or one box around both is at most 75% of the
    frame wide: `SAME_AREA_SHARE`, `SAME_AREA_MAX_W`), otherwise eases out over the step's last
-   0.8 s. It pads each box to at least 40% of the frame, keeps those spans through the
+   0.8 s. A step shorter than 0.8 s inside a zoomed run keeps the camera still. It pads each box to at least 40% of the frame, keeps those spans through the
    still-cut, and adds 2.5 s of full view if step 1 is a focus.
    About 2-3 s a step; labels say what happens and why it matters, not the click.
 4. `screencast_stop`. Keep it under ~90 s and 50 MB (re-encode with ffmpeg if not).

@@ -23,7 +23,8 @@ The full method is `~/.claude/skills/ux-video-review/SKILL.md` §1 (Read it firs
    - **Every change the PR makes gets a focus step.** Right before showing it, read the changed
      element's box (`evaluate_script` with `el => { const r = el.getBoundingClientRect(); return
      [r.x, r.y, r.width, r.height] }` and its uid from `take_snapshot`) and put it on the step:
-     `0:12 -> caption @ x,y,w,h`. The composer eases in to it, holds, and eases back out. At
+     `0:12 -> caption @ x,y,w,h`. The composer eases in to it and holds; it pans to the next
+     focus step's box when that is on the same part of the page, and eases back out otherwise. At
      `1440x900x1` CSS pixels are recording pixels; at another DPR multiply by it.
    - **Pace:** about 2-3 s per step. Labels say what is happening and why it matters ("Suggested
      panel now lists the offer's three best campaigns"), not just the click ("Click Suggested").
