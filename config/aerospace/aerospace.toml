@@ -195,3 +195,12 @@ run = 'layout floating'
 [[on-window-detected]]
 if.app-id = 'com.google.chrome.for.testing'
 run = 'layout floating'
+
+# Multilogin and its Mimic browser profiles stay floating
+[[on-window-detected]]
+if.app-id = 'yt.desktop-mlx.desktop'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'org.chromium.Chromium'
+run = 'layout floating'
