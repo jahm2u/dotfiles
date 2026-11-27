@@ -377,6 +377,7 @@ if [ "$MUX" = orca ]; then
   [ "$PLACE" = tab ] || echo "NOTE: --place $PLACE is ignored under Orca; the builder is a tab" >&2
   ENVF=$(mktemp "${TMPDIR:-/tmp}/bf-env-$SLUG.XXXXXX"); chmod 600 "$ENVF"
   {
+    echo "unset CLAUDE_CODE_PLUGIN_DIRS"
     for kv in "BF_SLUG=$SLUG" "BF_LEDGER=$LEDGER" "BF_ORCH_WS=$ORCH_WS" "BF_ORCH_SURFACE=$ORCH_SURFACE" \
               "BF_WORKTREE=$WT" "BF_SPEC=$SPEC_IN_WT" "BF_BRANCH=$BRANCH" "BF_ISSUE=$ISSUE" \
               "BF_MUX=orca" "BF_BMAD_ROOT=$BMAD_ROOT"; do

@@ -147,5 +147,44 @@ run_case "a Claude route spawns" 1.00 "" "" 0 \
 run_case "a Kimi model asked for on purpose spawns on the /kimi route" 1.00 "" "" 0 \
   "$KIMI" model:k3.1-pro[1m] spawned
 
+orca_case() {
+  local name="an Orca tab keeps --agents: CLAUDE_CODE_PLUGIN_DIRS from Orca never reaches claude" slug d ok=1 app agents argv
+  count=$((count + 1)); slug="case$count"; d="$TMP/$slug"; mkdir -p "$d"
+  printf '1.00\n' > "$d/load"; : > "$d/cmux.calls"; : > "$d/surfaces"
+  rm -f "$LEDGER_DIR"/*.env "$OTHER_DIR"/*.env "$THIRD_DIR"/*.env
+  app="$TMP/Orca.app"; mkdir -p "$app/Contents/MacOS" "$TMP/home/.claude/skills/ux-video-review/scripts"
+  cat > "$app/Contents/MacOS/Orca" <<'ORCA'
+#!/usr/bin/env bash
+shift
+while [ $# -gt 0 ]; do [ "$1" = --command ] && printf '%s' "$2" > "$CASE_DIR/orca.command"; shift; done
+echo '{"ok":true,"result":{"terminal":{"handle":"term_t1","paneKey":"tab1:leaf1"}}}'
+ORCA
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "$CASE_DIR/claude.argv"\nenv > "$CASE_DIR/claude.env"\n' > "$TMP/bin/claude"
+  chmod +x "$app/Contents/MacOS/Orca" "$TMP/bin/claude"
+  agents='{"ux-evidence": {"description": "d", "prompt": "p"}}'
+  printf 'print(%s)\n' "'$agents'" > "$TMP/home/.claude/skills/ux-video-review/scripts/agents_json.py"
+  set +e
+  out=$(cd "$TMP/repo" && env -i HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="$TMP" CASE_DIR="$d" \
+    ORCA_APP="$app" TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_orch ORCA_WORKTREE_ID='repo1::/orch' \
+    bash "$SCRIPTS/spawn.sh" --slug "$slug" --spec "$TMP/spec.md" 2>&1); rc=$?
+  ( cd "$TMP" && env -i HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin:/usr/sbin:/sbin" CASE_DIR="$d" \
+      CLAUDE_CODE_PLUGIN_DIRS="/orca/claude-agent-view/h/orca-agent-view" \
+      bash -c "$(cat "$d/orca.command" 2>/dev/null)" ) >/dev/null 2>&1
+  set -e
+  argv=$(grep -A1 -xF -- --agents "$d/claude.argv" 2>/dev/null | sed -n 2p)
+  [ "$rc" -eq 0 ] || ok=0
+  [ -s "$d/orca.command" ] || ok=0
+  [ -s "$d/claude.argv" ] || ok=0
+  [ "$argv" = "$agents" ] || ok=0
+  grep -qx "BF_SLUG=$slug" "$d/claude.env" 2>/dev/null || ok=0
+  ! grep -q '^CLAUDE_CODE_PLUGIN_DIRS=' "$d/claude.env" 2>/dev/null || ok=0
+  if [ "$ok" = 1 ]; then
+    pass=$((pass + 1)); echo "ok   $name"
+  else
+    fail=$((fail + 1)); echo "FAIL $name (rc=$rc, agents=${argv:-none}, $(grep '^CLAUDE_CODE_PLUGIN_DIRS=' "$d/claude.env" 2>/dev/null || echo 'no PLUGIN_DIRS')): $(printf '%s' "$out" | grep -v '^==>' | tail -1)"
+  fi
+}
+orca_case
+
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]
