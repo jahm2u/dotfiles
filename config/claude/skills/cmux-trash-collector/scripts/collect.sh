@@ -107,8 +107,13 @@ if [ -d "$WT" ]; then
     # without this the cp fails under set -e, after the archive copy but before the
     # worktree is removed, and the collector looks like it did nothing (2026-10-04).
     mkdir -p "$ROOT/_bmad-output/implementation-artifacts"
-    dest="$ROOT/_bmad-output/implementation-artifacts/$(basename "$f")"
-    [ -e "$dest" ] || cp "$f" "$dest"
+    rel="_bmad-output/implementation-artifacts/$(basename "$f")"
+    dest="$ROOT/$rel"
+    if git -C "$WT" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then
+      echo "==> $rel is committed on $BRANCH: the merge brings it, not copying (an untracked copy blocks the primary's ff)"
+    elif [ ! -e "$dest" ]; then
+      cp "$f" "$dest"
+    fi
   done
   [ -f "$WT/_bmad-output/implementation-artifacts/deferred-work.md" ] && cp "$WT/_bmad-output/implementation-artifacts/deferred-work.md" "$ARCH/deferred-work.md"
   LOCAL_DEFERRED="$WT/_bmad-output/deferred-work.local.md"

@@ -28,12 +28,16 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 echo $$ > "$LOCK/pid"
 PIDS=()
-cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null; done; [ -n "${CMD:-}" ] && kill -9 "$CMD" 2>/dev/null; rm -rf "$LOCK"; }
+cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null; done; [ -n "${CMD:-}" ] && kill -9 "$CMD" 2>/dev/null; [ -n "${TIMER:-}" ] && kill "$TIMER" 2>/dev/null; rm -rf "$LOCK"; }
 trap 'cleanup; echo "STRESS-ABORTED by signal; burners killed, lock removed"; exit 143' INT TERM HUP
 i=0; while [ "$i" -lt "$N" ]; do nice -n 19 sh -c 'while :; do :; done' & PIDS+=($!); i=$((i+1)); done
 echo "STRESS-START burners=$N minutes<=$M slug=${BF_SLUG:-none} pids=${PIDS[*]:-}"
 "$@" & CMD=$!
-( sleep $(( M * 60 )); kill -TERM "$CMD" 2>/dev/null ) & TIMER=$!
+# The timer owns its sleep and kills it when it is told to stop, and its fds point at /dev/null,
+# so a command that finishes early never leaves an orphaned sleep holding our stdout (a
+# `stress-run.sh ... | tail` reader got EOF only at the 15-minute deadline, hive 2026-11-27).
+( trap - INT TERM HUP; sleep $(( M * 60 )) & SP=$!; trap 'kill "$SP" 2>/dev/null; exit 0' TERM
+  wait "$SP" && kill -TERM "$CMD" 2>/dev/null ) </dev/null >/dev/null 2>&1 & TIMER=$!
 wait "$CMD"; RC=$?
 kill "$TIMER" 2>/dev/null
 LEFT=0; for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null; done; sleep 0.3
