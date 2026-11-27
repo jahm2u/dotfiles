@@ -346,11 +346,25 @@ SETTINGS="$HOME/.claude/skills/cmux-builder/builder-settings.json"
 # gradle/maven/curl to ctx_execute whenever ANY session on the machine has the MCP server up, and a
 # --strict-mcp-config builder has no such tool, so the build is refused (Jeff 2026-11-13: allow
 # build tools for builders). The variant is regenerated from the base file on every launch.
+# It turns off EVERY plugin this machine or the worktree knows, not only context-mode: an
+# interactive claude (2.1.326) drops the --agents definitions as soon as any plugin loads
+# (marketplace, project or --plugin-dir), so one enabled plugin costs the builder ux-evidence,
+# frame-reviewer and ux-lift. Print mode keeps them, which is why a `claude -p` probe looks fine.
 if [ "$MCP" = none ]; then
   NOMCP_SETTINGS="${SETTINGS%.json}.nomcp.json"
-  jq '.enabledPlugins["context-mode@context-mode"]=false' "$SETTINGS" > "$NOMCP_SETTINGS.$$" \
+  PLUGIN_SRCS=()
+  for f in "$HOME/.claude/settings.json" "$HOME/.claude/plugins/installed_plugins.json" \
+           "$WT/.claude/settings.json" "$WT/.claude/settings.local.json"; do
+    [ -f "$f" ] && jq -e . "$f" >/dev/null 2>&1 && PLUGIN_SRCS+=("$f")
+  done
+  jq -s '(map((.enabledPlugins // {}) + (.plugins // {}) | keys) | add) as $known
+         | .[0] | .enabledPlugins = (reduce $known[] as $k ({}; .[$k] = false))
+         | .enabledPlugins["context-mode@context-mode"] = false' \
+    "$SETTINGS" ${PLUGIN_SRCS[@]+"${PLUGIN_SRCS[@]}"} > "$NOMCP_SETTINGS.$$" \
     && mv "$NOMCP_SETTINGS.$$" "$NOMCP_SETTINGS" && SETTINGS="$NOMCP_SETTINGS" \
-    || { rm -f "$NOMCP_SETTINGS.$$"; echo "WARNING: could not write $NOMCP_SETTINGS; builder keeps the context-mode hook and cannot run gradle" >&2; }
+    || { rm -f "$NOMCP_SETTINGS.$$"; echo "WARNING: could not write $NOMCP_SETTINGS; builder keeps its plugins, so it cannot run gradle and loses the --agents helpers (ux-evidence, frame-reviewer, ux-lift)" >&2; }
+else
+  echo "NOTE: --mcp $MCP keeps the plugins on, and an interactive claude with any plugin loaded drops --agents: this builder will NOT have ux-evidence, frame-reviewer or ux-lift" >&2
 fi
 case "$MODE" in
   yolo) MODEFLAG="--dangerously-skip-permissions";;   # trusted spec in its isolated worktree: no prompts at all
@@ -386,6 +400,8 @@ if [ "$MUX" = orca ]; then
       [ "$e" = --env ] && continue
       printf 'export %s=%q\n' "${e%%=*}" "${e#*=}"
     done
+    # Orca exports its agent-view plugin into every terminal; loaded, it drops --agents.
+    echo 'unset CLAUDE_CODE_PLUGIN_DIRS'
   } > "$ENVF"
   CMD="cd '$WT' && . '$ENVF' && rm -f '$ENVF' && $CLAUDE_CMD"
   FOCUSFLAG=(); [ "$FOCUS" = true ] && FOCUSFLAG=(--focus)

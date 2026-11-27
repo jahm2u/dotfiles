@@ -225,6 +225,13 @@ re-run `codex-review.sh` on the fix (it is cheap and catches what the fix broke;
 Claude review is NOT repeated per round), then push and loop. A major that requires leaving the spec's boundaries is a `question` to the orchestrator.
 If `mergeable` is CONFLICTING, merge `origin/main` into the branch.
 
+**A red CI job is diagnosed before it is re-run.** Read the failing job's log and say what failed
+before touching it; never push an empty commit or re-push to retrigger CI, because every push to an
+open PR starts the heavy jobs again. Two failures are GitHub's side and not the code, and each gets
+ONE re-run (`gh run rerun <run> --failed`): a job cancelled with zero steps, and "runner lost
+communication". A second one on the same PR is a pattern: stop and report `blocked` to the
+orchestrator with both run URLs instead of re-running again. Push once, when the work is ready.
+
 **Prod proof for an external write.** If the change exists to write somewhere outside the app (S3,
 Telegram, a box over SSH, a provider callback or webhook URL), green tests are not proof: release
 media merged green and 502'd/413'd on prod (IAM prefix, nginx 1 MB body cap), and SMS webhook URLs

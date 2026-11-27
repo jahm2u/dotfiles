@@ -147,5 +147,81 @@ run_case "a Claude route spawns" 1.00 "" "" 0 \
 run_case "a Kimi model asked for on purpose spawns on the /kimi route" 1.00 "" "" 0 \
   "$KIMI" model:k3.1-pro[1m] spawned
 
+UXV=$(cd "$HERE/../../ux-video-review" && pwd)
+mkdir -p "$TMP/home/.claude/skills/cmux-builder" "$TMP/home/.claude/skills/ux-video-review" "$TMP/home/.claude/plugins" "$TMP/fresh" "$TMP/Orca.app/Contents/MacOS"
+cp -R "$UXV/scripts" "$UXV/agents" "$TMP/home/.claude/skills/ux-video-review/"
+printf '{"permissions":{"allow":["Read"]},"enabledPlugins":{"base@m":true}}\n' > "$TMP/home/.claude/skills/cmux-builder/builder-settings.json"
+printf '{"enabledPlugins":{"context-mode@context-mode":true,"warp@claude-code-warp":true,"off@m":false}}\n' > "$TMP/home/.claude/settings.json"
+printf '{"version":2,"plugins":{"installed-only@m":[{}]}}\n' > "$TMP/home/.claude/plugins/installed_plugins.json"
+mkdir -p "$TMP/repo/.claude"
+printf '{"enabledPlugins":{"project@m":true}}\n' > "$TMP/repo/.claude/settings.json"
+git -C "$TMP/repo" add .claude/settings.json
+git -C "$TMP/repo" -c user.email=t@t -c user.name=t commit -q -m settings
+git -C "$TMP/repo" push -q origin main
+cat > "$TMP/fresh/claude" <<'CLAUDE'
+#!/usr/bin/env bash
+env > "$CASE_DIR/claude.env"
+printf '%s\0' "$@" > "$CASE_DIR/claude.argv"
+CLAUDE
+cat > "$TMP/Orca.app/Contents/MacOS/Orca" <<'ORCA'
+#!/usr/bin/env bash
+shift
+echo "$*" >> "$CASE_DIR/orca.calls"
+if [ "$1 $2" = "terminal create" ]; then
+  cmd=; while [ $# -gt 0 ]; do [ "$1" = --command ] && cmd=$2; shift; done
+  CLAUDE_CODE_PLUGIN_DIRS=/orca/agent-view PATH="$FRESH_BIN:$PATH" bash -c "$cmd" > "$CASE_DIR/tab.out" 2>&1
+  echo '{"ok":true,"result":{"terminal":{"handle":"term_builder","paneKey":"tab:pane"}}}'
+else
+  echo '{"ok":true,"result":{}}'
+fi
+ORCA
+chmod +x "$TMP/fresh/claude" "$TMP/Orca.app/Contents/MacOS/Orca"
+
+orca_case() {
+  local name=$1 slug d ok=1 why=""
+  count=$((count + 1)); slug="case$count"; d="$TMP/$slug"; mkdir -p "$d"
+  printf '1.00\n' > "$d/load"
+  rm -f "$LEDGER_DIR"/*.env "$OTHER_DIR"/*.env "$THIRD_DIR"/*.env
+  set +e
+  out=$(cd "$TMP/repo" && env -i HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="$TMP" CASE_DIR="$d" FRESH_BIN="$TMP/fresh" \
+    TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_orch ORCA_WORKTREE_ID="id::$TMP/repo" ORCA_APP="$TMP/Orca.app" \
+    bash "$SCRIPTS/spawn.sh" --slug "$slug" --spec "$TMP/spec.md" 2>&1); rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || { ok=0; why="$why rc=$rc"; }
+  grep -qx 'BF_MUX=orca' "$LEDGER_DIR/$slug.env" 2>/dev/null || { ok=0; why="$why no-orca-ledger"; }
+  [ -s "$d/claude.argv" ] || { ok=0; why="$why claude-never-ran"; }
+  why="$why $(python3 - "$d" <<'CHECK' 2>&1
+import json, sys
+d = sys.argv[1]
+argv = open(d + "/claude.argv").read().split("\0")
+env = dict(l.split("=", 1) for l in open(d + "/claude.env").read().splitlines() if "=" in l)
+bad = []
+agents = json.loads(argv[argv.index("--agents") + 1])
+if sorted(agents) != ["frame-reviewer", "ux-evidence", "ux-lift"]:
+    bad.append("agents=%s" % sorted(agents))
+if "CLAUDE_CODE_PLUGIN_DIRS" in env:
+    bad.append("CLAUDE_CODE_PLUGIN_DIRS=%s" % env["CLAUDE_CODE_PLUGIN_DIRS"])
+if env.get("BF_MUX") != "orca":
+    bad.append("BF_MUX=%s" % env.get("BF_MUX"))
+plugins = json.load(open(argv[argv.index("--settings") + 1])).get("enabledPlugins", {})
+want = ["base@m", "context-mode@context-mode", "installed-only@m", "off@m", "project@m", "warp@claude-code-warp"]
+missing = [k for k in want if k not in plugins]
+on = sorted(k for k, v in plugins.items() if v is not False)
+if missing:
+    bad.append("plugins-not-listed=%s" % missing)
+if on:
+    bad.append("plugins-still-on=%s" % on)
+print(" ".join(bad))
+sys.exit(1 if bad else 0)
+CHECK
+)" || ok=0
+  if [ "$ok" = 1 ]; then
+    pass=$((pass + 1)); echo "ok   $name"
+  else
+    fail=$((fail + 1)); echo "FAIL $name:$why"
+  fi
+}
+orca_case "an Orca builder's claude gets the three helper agents, no plugin dir and every plugin off"
+
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]
