@@ -104,6 +104,11 @@ trap 'rm -f "$tmp"' EXIT
   echo "\`$ghpr\`; if gh answers 401 here, push and tell the orchestrator,"
   echo "which opens the PR from the Mini. Never merge: the orchestrator decides."
   echo
+  echo "Never put a script in a Bash call: no heredoc into a file or an interpreter (\`cat > x.js <<'EOF'\`,"
+  echo "\`python3 - <<'PY'\`) and no \`bash -c\` loop. Claude Code stops on a \"can't rule out a dangerous removal\""
+  echo "prompt for those even in bypass mode, and nobody is at your pane to answer it. Write the script with the"
+  echo "Write tool, then run \`node <file>\` or \`python3 <file>\`."
+  echo
   [ -n "$rules" ] && echo "Read \`~/$dir/_rules.md\` first, then the brief: \`~/$dir/brief.md\`." \
                   || echo "Read the brief: \`~/$dir/brief.md\`."
 } > "$tmp"
