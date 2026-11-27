@@ -170,14 +170,14 @@ ORCA
   ( cd "$TMP" && env -i HOME="$TMP/home" PATH="$TMP/bin:/usr/bin:/bin:/usr/sbin:/sbin" CASE_DIR="$d" \
       CLAUDE_CODE_PLUGIN_DIRS="/orca/claude-agent-view/h/orca-agent-view" \
       bash -c "$(cat "$d/orca.command" 2>/dev/null)" ) >/dev/null 2>&1
-  set -e
   argv=$(grep -A1 -xF -- --agents "$d/claude.argv" 2>/dev/null | sed -n 2p)
+  set -e
   [ "$rc" -eq 0 ] || ok=0
   [ -s "$d/orca.command" ] || ok=0
   [ -s "$d/claude.argv" ] || ok=0
   [ "$argv" = "$agents" ] || ok=0
   grep -qx "BF_SLUG=$slug" "$d/claude.env" 2>/dev/null || ok=0
-  ! grep -q '^CLAUDE_CODE_PLUGIN_DIRS=' "$d/claude.env" 2>/dev/null || ok=0
+  [ -s "$d/claude.env" ] && ! grep -q '^CLAUDE_CODE_PLUGIN_DIRS=' "$d/claude.env" || ok=0
   if [ "$ok" = 1 ]; then
     pass=$((pass + 1)); echo "ok   $name"
   else

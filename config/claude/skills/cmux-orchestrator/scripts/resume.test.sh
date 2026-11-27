@@ -39,7 +39,7 @@ SID=4379477a-0000-4000-8000-000000000001
 PD="$HOME_T/.claude/projects/$(printf '%s' "$WT" | sed 's#[/._]#-#g')"; mkdir -p "$PD"; : > "$PD/$SID.jsonl"
 
 pass=0 fail=0 count=0
-check() { # name want got
+check() {
   count=$((count + 1))
   if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "ok   $1"; else fail=$((fail + 1)); printf 'FAIL %s\n  want: %s\n  got:  %s\n' "$1" "$2" "$3"; fi
 }
@@ -61,8 +61,8 @@ check "the Orca tab's command started claude" "yes" "$([ -s "$D/claude.argv" ] &
 check "claude resumed the builder's own session" "$SID" "$(after --resume "$D/claude.argv")"
 check "claude got the helper agents through --agents" "$AGENTS" "$(after --agents "$D/claude.argv")"
 check "the env file was sourced (BF_SLUG reached claude)" "BF_SLUG=x" "$(grep -x 'BF_SLUG=x' "$D/claude.env" 2>/dev/null)"
-check "Orca's CLAUDE_CODE_PLUGIN_DIRS did not reach claude (it drops every --agents definition)" "" \
-  "$(grep '^CLAUDE_CODE_PLUGIN_DIRS=' "$D/claude.env" 2>/dev/null)"
+check "Orca's CLAUDE_CODE_PLUGIN_DIRS did not reach claude (it drops every --agents definition)" "absent" \
+  "$(if [ ! -s "$D/claude.env" ]; then echo "no claude env recorded"; else grep '^CLAUDE_CODE_PLUGIN_DIRS=' "$D/claude.env" || echo absent; fi)"
 
 echo "$pass passed, $fail failed, $count cases"
 [ "$fail" -eq 0 ] && [ "$pass" -eq "$count" ]
