@@ -1,5 +1,5 @@
 {
-  "source": "jahm2u/BabaFlow#4746: head 6452ec19f of https://github.com/jahm2u/BabaFlow/pull/4743, runs and rollup read with gh api on 2026-10-28. Identical copies live in jahm2u/BabaFlow scripts/ and jahm2u/dotfiles config/claude/skills/cmux-builder/scripts/; both tests pin its sha256.",
+  "source": "jahm2u/BabaFlow#4746: head 6452ec19f of https://github.com/jahm2u/BabaFlow/pull/4743, runs and rollup read with gh api on 2026-10-28; the no-op Guard files case added for #5621. Identical copies live in jahm2u/BabaFlow scripts/ and jahm2u/dotfiles config/claude/skills/cmux-builder/scripts/; both tests pin its sha256.",
   "head": "6452ec19f784111acc63b7ece2064bff2e1b6be1",
   "base": {
     "rollup": [
@@ -109,6 +109,16 @@
       "ciRuns": [
         { "id": 40602278265, "status": "in_progress", "conclusion": null, "run_attempt": 1 },
         { "id": 40602278999, "status": "completed", "conclusion": "cancelled", "run_attempt": 1 }
+      ],
+      "expect": "WAITING"
+    },
+    {
+      "name": "a no-op Guard files run for an unrelated label completed above the real one still queued with no jobs (#5621)",
+      "jobs": "green",
+      "ciRuns": [
+        { "id": 40602278265, "status": "completed", "conclusion": "success", "run_attempt": 1 },
+        { "id": 40602280000, "workflow_id": 101, "event": "pull_request_target", "name": "Guard files", "status": "queued", "conclusion": null, "run_attempt": 1 },
+        { "id": 40602280100, "workflow_id": 101, "event": "pull_request_target", "name": "Guard files", "status": "completed", "conclusion": "skipped", "run_attempt": 1 }
       ],
       "expect": "WAITING"
     }

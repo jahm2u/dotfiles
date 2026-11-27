@@ -6,7 +6,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 FIXTURE="$HERE/pr-watch-runs.fixture.json"
 WATCH="${PR_WATCH_SH:-$HERE/pr-watch.sh}"
-FIXTURE_SHA256=4c69318cb7e2ea4eb2806cfe0bdc0be6b9c6b5b8ad56fa0f8bb41f2fbc02c07a
+FIXTURE_SHA256=daf2a0f91d80aecc0dcf70197149a017b4259a2c748b1fc46e54f3b0f26d3261
 
 got_sha=$(shasum -a 256 "$FIXTURE" | cut -d' ' -f1)
 if [ "$got_sha" != "$FIXTURE_SHA256" ]; then
