@@ -23,6 +23,52 @@ cmd_mem() {
   echo "free=${p:-unknown}"
 }
 
+# health: what launch-time admission (scripts/health.sh) judges. The 2026-11-27 panic came at 100% of
+# the compressor's segment limit with 38 swapfiles, so swap and load count, not only free memory.
+cmd_health() {
+  local p swap l5 ncpu claude ws
+  p=$(memory_pressure -Q 2>/dev/null | sed -n 's/.*free percentage: \([0-9]*\)%.*/\1/p')
+  swap=$(sysctl -n vm.swapusage 2>/dev/null | sed -n 's/.*used = \([0-9]*\)[.0-9]*M.*/\1/p')
+  l5=$(sysctl -n vm.loadavg 2>/dev/null | awk '{printf "%d", $3}')
+  ncpu=$(sysctl -n hw.ncpu 2>/dev/null)
+  claude=$(ps -axo comm= | awk -F/ '$NF=="claude"' | wc -l | tr -d ' ')
+  ws=$(cmd_workspaces 2>/dev/null | wc -l | tr -d ' ')
+  echo "free=${p:-unknown}"; echo "swap_mb=${swap:-unknown}"; echo "load5=${l5:-unknown}"
+  echo "ncpu=${ncpu:-unknown}"; echo "claude=$claude"; echo "builders=$ws"
+}
+
+# workspaces: one line per builder workspace in this session: ws_id, slug, agent_status.
+cmd_workspaces() {
+  hd workspace list | json '
+for w in d["result"]["workspaces"]:
+    l = w.get("label") or ""
+    if l.startswith("🔨 "):
+        print("\t".join([w["workspace_id"], l[2:].strip(), str(w.get("agent_status"))]))'
+}
+
+cmd_ws_close() { guard_session; hd workspace close "$1" >/dev/null && echo "closed-ws=$1"; }
+
+# ledgers: one line per OPEN ledger: slug, ledger ws, repo, ledger branch, current branch, dirty paths
+# other than the handoff hook's cache, whether HEAD is on any remote branch (after a fetch), orchestrator.
+cmd_ledgers() {
+  local f slug wt cur dirty onr
+  for f in "$LEDGER"/*.env; do
+    case "$f" in *.closed-*) continue ;; esac
+    [ -f "$f" ] || continue
+    slug=$(basename "$f" .env); wt=$(ledger_get "$slug" WT); cur=- dirty=- onr=-
+    if [ -d "$wt" ]; then
+      cur=$(git -C "$wt" branch --show-current 2>/dev/null || echo -)
+      # grep -v exits 1 when every line is filtered out; under pipefail that would kill the script.
+      dirty=$(git -C "$wt" status --porcelain 2>/dev/null | { grep -vE '^\?\? _bmad/handoff/\.[a-z-]+\.json$' || true; } | wc -l | tr -d ' ')
+      if command -v timeout >/dev/null 2>&1; then timeout 60 git -C "$wt" fetch -q origin 2>/dev/null || true
+      else git -C "$wt" fetch -q origin 2>/dev/null || true; fi
+      if git -C "$wt" branch -r --contains HEAD 2>/dev/null | grep -q .; then onr=yes; else onr=no; fi
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$slug" "$(ledger_get "$slug" PANE | cut -d: -f1)" \
+      "$(ledger_get "$slug" REPO)" "$(ledger_get "$slug" BRANCH)" "$cur" "$dirty" "$onr" "$(ledger_get "$slug" ORCH)"
+  done
+}
+
 cmd_server() {
   guard_session
   if herdr session list 2>/dev/null | awk -v s="$S" '$1==s && $2=="running"{f=1} END{exit !f}'; then
@@ -175,6 +221,10 @@ cmd_close() {
 sub=${1:?usage: mbb <sub> ...}; shift
 case "$sub" in
   mem) cmd_mem ;;
+  health) cmd_health ;;
+  workspaces) cmd_workspaces ;;
+  ws-close) cmd_ws_close "$@" ;;
+  ledgers) cmd_ledgers ;;
   server) cmd_server ;;
   clone) cmd_clone "$@" ;;
   worktree) cmd_worktree "$@" ;;

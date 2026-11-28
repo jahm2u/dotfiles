@@ -59,10 +59,7 @@ seen=$(with_timeout 20 ssh -o ConnectTimeout=10 -o BatchMode=yes "$MBP_HOST" \
   "ssh -o ConnectTimeout=8 -o BatchMode=yes $report_host 'test -x $tell && hostname'" 2>/dev/null || true)
 [ "$seen" = "$(hostname)" ] || die "$MBP_HOST cannot run $tell on '$report_host' (got '${seen:-nothing}', expected $(hostname)); pass --report-host"
 echo "report path: $MBP_HOST -> ssh $report_host ($seen)"
-free=$(mbb 20 mem | sed -n 's/^free=//p')
-[[ "$free" =~ ^[0-9]+$ ]] || die "could not read MBP memory ($free)"
-[ "$free" -ge "$min_free" ] || die "MBP has only ${free}% memory free (minimum ${min_free}%): not launching"
-echo "mbp memory free: ${free}%"
+MBP_MIN_FREE=$min_free "$SKILL_DIR/scripts/health.sh" || die "the MBP is too loaded for another builder (see REFUSE above)"
 mbb 30 server
 mbb 300 clone "$repo"
 mbb 60 worktree "$repo" "$slug" "$branch"

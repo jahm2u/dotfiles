@@ -56,7 +56,13 @@ since reports are typed into its tab.
      `orchestrator/fixes/_rules.md` when it exists), `--min-free 20`, `--no-venv`.
    - What it does:
      - installs `~/builders/bin/{mbb,claude-builder.sh}` on the MBP;
-     - refuses below 20% free memory (`memory_pressure -Q`);
+     - runs `scripts/health.sh` and refuses when any limit is hit: free memory under 20% (`--min-free`), swap
+       over 4096 MB, 5-minute load over 2 per core, 10 or more `🔨` builder workspaces, or 30 or more `claude`
+       processes. A number it cannot read is a refusal. `MBP_MAX_BUILDERS`, `MBP_MAX_CLAUDE`,
+       `MBP_MAX_SWAP_MB` and `MBP_MAX_LOAD_PER_CORE` override the limits. It exists because the MBP kernel-panicked
+       on 2026-11-27 (watchdogd starved at 100% of the compressor's segment limit, 38 swapfiles, ~29 Claude
+       sessions on 36 GB), and the old free-memory-only gate had let it fill up. When it refuses, run the sweep or
+       launch on the Mini;
      - starts the `builders` herdr server if it isn't running;
      - clones or fetches the repo, adds the worktree, and builds `.venv` with uv;
      - copies the brief, `_rules.md` and a generated `kickoff.md` to `~/builders/briefs/<slug>/`;
@@ -91,6 +97,17 @@ since reports are typed into its tab.
    `origin/<branch>`, or when the branch has no MERGED PR (checked with gh on the Mini). Otherwise it sends `/exit`,
    closes the workspace, and removes the worktree and the local branch. The ledger is kept as
    `~/builders/ledger/<slug>.closed-*.env`. `--force` skips the checks, and it is a person's call.
+7. **Sweep after a reboot, and whenever `health.sh` refuses.** `scripts/sweep.sh` (dry run) lists what should not
+   be running; `scripts/sweep.sh --apply` closes only the two provably safe classes, and only when the agent is not
+   working:
+   - `DUP`: a `🔨` workspace for a slug whose open ledger names another workspace. herdr resumes every old pane
+     after a reboot, so a relaunched builder ends up with a second Claude in the same worktree (9 of them on
+     2026-11-27). Closes the workspace only.
+   - `MERGED`: the current branch's PR is merged, HEAD is on a remote branch, and the only uncommitted files are
+     the handoff hook's cache. Closes through `close.sh --force`.
+   Everything else is printed for a person (`ORPHAN`, `NOPANE`, `MERGED?`, `WORKING`): cleanup stays scan, then
+   options, then Jeff's pick. The Janitor runs the sweep in its rounds and after any MBP reboot, and tells the
+   orchestrator named on each line it closed. Tests: `bash scripts/gates.test.sh` (no MBP needed).
 
 ## The reporting channel
 
