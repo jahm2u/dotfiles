@@ -62,6 +62,36 @@ summarize a video (YouTube URL or local file) use the `gemini-video` skill
 (`~/.claude/skills/gemini-video/scripts/gemini.py`); it is a good fit for a subagent when the
 notes are long. Keep outputs outside project repos unless asked.
 
+# Cloudflare API (machine-wide)
+
+Jeff's Cloudflare account ("Jeff@thesearchpro.com's Account", id `1a075ec3c5d2074572c9799fbb26d05c`) holds
+ajudaduda.com, ilovejeff.co, babaflow.ai, coderady.com, hamercraft.com and other zones. API tokens
+live in OpenBao, never in a file in a repo. Use them through the homelab vault helper, **use, never
+look**: the value goes into the command's environment, never into a terminal or the chat.
+
+```bash
+H=/Users/v/repos/02_personal/homelab/hosts/ct236-openbao/hl-secret
+$H fields homelab/cloudflare/ajudaduda-zone          # token, token_id, zone_id, account_id
+$H run homelab/cloudflare/ajudaduda-zone -- bash -c 'curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/managed_headers"'
+```
+
+| Vault path | Scope (made 2026-11-21) |
+|---|---|
+| `homelab/cloudflare/ajudaduda-zone` | zone **ajudaduda.com** only: Dynamic URL Redirects **write**, Managed headers read, Transform Rules read, Zone read; plus account-wide **Access: Apps and Policies write**. No DNS, no tunnel, no Workers |
+| (on CT 205) `/root/.cloudflared/api-token` | `duda-tunnel`'s ingress only; it cannot see zones. See `homelab/network/tunnels.md` |
+
+**When a task needs more than these:** don't widen the existing token. Make a new, narrow one. If
+the chrome-devtools MCP is connected, open `https://dash.cloudflare.com/profile/api-tokens` in
+Jeff's Chrome and let him log in (2FA); never type his password. From the logged-in page,
+`evaluate_script` can call the dashboard's own API. List permission groups with
+`GET /api/v4/user/tokens/permission_groups`, then create the token with `POST /api/v4/user/tokens`.
+Have the page write the new value to the clipboard (`navigator.clipboard.writeText`) and return
+only the token id, the length and a sha256 prefix. Then run
+`pbpaste | $H set homelab/cloudflare/<name> token` and `printf '' | pbcopy`, and verify with
+`/client/v4/user/tokens/verify` through `$H run`. Record the new path in this table and in
+`homelab/ops/secrets-inventory.md`.
+
 # OpenAI API key (machine-wide)
 
 An OpenAI API key lives at `~/.config/openai/api-key` (mode 600, one line; copied from mini-mp on

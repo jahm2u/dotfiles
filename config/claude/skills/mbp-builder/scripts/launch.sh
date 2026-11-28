@@ -59,10 +59,7 @@ seen=$(with_timeout 20 ssh -o ConnectTimeout=10 -o BatchMode=yes "$MBP_HOST" \
   "ssh -o ConnectTimeout=8 -o BatchMode=yes $report_host 'test -x $tell && hostname'" 2>/dev/null || true)
 [ "$seen" = "$(hostname)" ] || die "$MBP_HOST cannot run $tell on '$report_host' (got '${seen:-nothing}', expected $(hostname)); pass --report-host"
 echo "report path: $MBP_HOST -> ssh $report_host ($seen)"
-free=$(mbb 20 mem | sed -n 's/^free=//p')
-[[ "$free" =~ ^[0-9]+$ ]] || die "could not read MBP memory ($free)"
-[ "$free" -ge "$min_free" ] || die "MBP has only ${free}% memory free (minimum ${min_free}%): not launching"
-echo "mbp memory free: ${free}%"
+MBP_MIN_FREE=$min_free "$SKILL_DIR/scripts/health.sh" || die "the MBP is too loaded for another builder (see REFUSE above)"
 mbb 30 server
 mbb 300 clone "$repo"
 mbb 60 worktree "$repo" "$slug" "$branch"
@@ -103,6 +100,25 @@ trap 'rm -f "$tmp"' EXIT
   echo "Push only with the explicit refspec \`git push origin HEAD:$branch\`. Open PRs with"
   echo "\`$ghpr\`; if gh answers 401 here, push and tell the orchestrator,"
   echo "which opens the PR from the Mini. Never merge: the orchestrator decides."
+  echo
+  echo "## CI is shared and scarce: push as little as you can"
+  echo "Every push to an open PR re-runs the heavy CI jobs on the shared runners. On 2026-11-27, 65 ajudaduda PRs pushed"
+  echo "120 heads and 25 of those runs were cancelled by the next push. So:"
+  echo "- Before opening the PR, get it right locally: the targeted tests for what you changed, the repo's lint and"
+  echo "  type check, and one review pass (a \`/code-review\` subagent on your diff against origin/main). Fix what"
+  echo "  it finds, THEN push and open the PR. The PR is for the merge decision, not for finding bugs."
+  echo "- One push per round: batch every fix from a review or a red CI job into a single push. Never push"
+  echo "  fix-by-fix, never an empty commit, never a re-push just to retrigger CI."
+  echo "- A red CI job is diagnosed before anything else: read its log, reproduce that one job locally, then push the"
+  echo "  fix. A job with zero steps, or \"runner lost communication\", is the runner's fault: one \`gh run rerun <id>"
+  echo "  --failed\`. A second one on the same PR, report to the orchestrator instead."
+  echo "- Merge origin/main into your branch only when GitHub says CONFLICTING, or when the orchestrator asks at"
+  echo "  merge time. Catching up with main otherwise is a full CI run for nothing."
+  echo
+  echo "Never put a script in a Bash call: no heredoc into a file or an interpreter (\`cat > x.js <<'EOF'\`,"
+  echo "\`python3 - <<'PY'\`) and no \`bash -c\` loop. Claude Code stops on a \"can't rule out a dangerous removal\""
+  echo "prompt for those even in bypass mode, and nobody is at your pane to answer it. Write the script with the"
+  echo "Write tool, then run \`node <file>\` or \`python3 <file>\`."
   echo
   [ -n "$rules" ] && echo "Read \`~/$dir/_rules.md\` first, then the brief: \`~/$dir/brief.md\`." \
                   || echo "Read the brief: \`~/$dir/brief.md\`."

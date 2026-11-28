@@ -18,6 +18,8 @@ Then show it in the browser through the Chrome DevTools MCP, not with `open`: `m
 
 The top of the overview has ONE overall bar (every counted step across all stages: done, being worked on, waiting); each stage card below carries its own bar. Do not bring back a bar split per stage at the top.
 
+`build.py` also prints a plain-text (ASCII) version of the overview, from the same data, and saves it next to the page as `<slug>-progress.txt`. Bars are `[####......] 94% (46 of 49)`, steps are marked `[x]` done, `[~]` doing, `[w]` waiting, `[ ]` to do, `[-]` later, and long lists (in motion, landed) are cut with a "+N more on the page" line. `--no-ascii` turns it off.
+
 `build.py` creates the page when it is missing, and on an existing page replaces only what sits between `<!-- ov:start -->` and `<!-- ov:end -->`, so anything written below the overview (tables, charts, decisions, caveats) survives. It refuses data with no stage, a stage with no counted step, or an unknown step state, and writes nothing: a bar over nothing would read 0% or 100% without having looked at anything.
 
 This repo is public: never copy a project's page, names or numbers into the skill folder.
@@ -89,7 +91,7 @@ Rules for every source:
 2. Open the page and **look at it** at desktop width and at phone width, light and dark, before telling anyone it is ready. Fix what is cramped or wrong in the data, not by hand in the HTML between the markers.
 3. Below the overview the page is free-form. Keep there what a curious reader may want: the count of all issues, charts over time, gates with their evidence, decisions, the merged list, and what was and was not verified. Left-aligned text, no emoji in headings, readable at phone width. **Every section there is expanded by default.** If the record is long enough to want `<details>`, write `<details open>` and do not describe the sections as folded: the human asked not to have to open each line. `build.py` adds `open` to any `<details>` that lacks it on every run and prints how many it changed.
 4. Deliver the way the project does: show it in the browser through the Chrome DevTools MCP (reload the tab that already has it, else open a new one; `open <path>` only without the MCP); commit it where the project tracks it; publish it with the Artifact tool when the session has a claude.ai login and the human wants a link. Do not make the human wait on a pull request to see the page.
-5. Reply with the headline, the percentage with its counts, what changed since the last update, and the human asks.
+5. Reply with the ASCII version in a code block (copy it from `<slug>-progress.txt`, or the part from the top through the stages when it is long), then the headline, the percentage with its counts, what changed since the last update, and the human asks. The reader may be in a terminal or on a phone, where the HTML is one more tap away.
 
 ## Existing pages
 

@@ -225,6 +225,13 @@ re-run `codex-review.sh` on the fix (it is cheap and catches what the fix broke;
 Claude review is NOT repeated per round), then push and loop. A major that requires leaving the spec's boundaries is a `question` to the orchestrator.
 If `mergeable` is CONFLICTING, merge `origin/main` into the branch.
 
+**A red CI job is diagnosed before it is re-run.** Read the failing job's log and say what failed
+before touching it; never push an empty commit or re-push to retrigger CI, because every push to an
+open PR starts the heavy jobs again. Two failures are GitHub's side and not the code, and each gets
+ONE re-run (`gh run rerun <run> --failed`): a job cancelled with zero steps, and "runner lost
+communication". A second one on the same PR is a pattern: stop and report `blocked` to the
+orchestrator with both run URLs instead of re-running again. Push once, when the work is ready.
+
 **Prod proof for an external write.** If the change exists to write somewhere outside the app (S3,
 Telegram, a box over SSH, a provider callback or webhook URL), green tests are not proof: release
 media merged green and 502'd/413'd on prod (IAM prefix, nginx 1 MB body cap), and SMS webhook URLs
@@ -247,6 +254,7 @@ When pr-watch (`.js` or `.sh`) prints `CONVERGED` for the CURRENT head: `report.
 - Never touch `main`. `cd <literal worktree path> && git push --force-with-lease origin <your branch>` after an amend of YOUR unmerged commits is fine and needs no question; `--force`, or any push to a branch that is not yours, is Never. Never write `.release-message`, never run `scripts/prod.sh` write commands or SSH anywhere. Those are Ask-First at best and usually Never.
 - Never expand scope to "while I'm here" work. Note it in `$BF_WORKTREE/_bmad-output/deferred-work.local.md` via bmad-build's classification and move on.
 - Never spawn your own builders, run the orchestrator skill, or run `/cmux-trash-collector` — **on yourself least of all**. The collector types `/exit` into the session it is collecting and closes its workspace; run on yourself it kills you halfway through and leaves the worktree half-removed. Report `done` and let the orchestrator collect you. (`collect.sh` now refuses this, but do not rely on the guard.)
+- **Never put a script in a Bash call.** No `cat > x.js <<'EOF' ... EOF; node x.js`, no `python3 - <<'PY'`, no `bash -c` loop. Claude Code answers those with a "can't rule out a dangerous removal" prompt even under `--dangerously-skip-permissions`, and with nobody at your pane it auto-blocks and you stall (two builders on 2026-11-27, issues 5455 and 5586). Write the script with the Write tool, then run it as `node <file>` or `python3 <file>`. The commit message heredoc in section 2 is the one exception.
 - **A rate limit kills your turn and you cannot report it** — `report.sh` never runs, so your orchestrator keeps seeing your last phase and reads it as progress. If you come back from a `(429) … Retry in Ns`, your FIRST action is `report.sh blocked "rate limited, back after <N>s, tree is <clean|dirty>"`. Check the tree before assuming work was lost: a 429 after a push loses nothing.
 - **Context: 60% is the ceiling, and the orchestrator enforces it.** It measures your transcript (`ctx.sh`) and, at 60%, sends `[orchestrator] Context rotation: ...`. When it does, do exactly that: finish only the step in hand, commit WIP locally (push only if the orchestrator says so), run the `handoff` skill **without its interview** (open decisions become next steps with your recommendation) to `_bmad/handoff/HANDOFF-latest.md` (never `git add` it), reply with the single word `CHECKPOINTED`, and stop. You will be `/clear`ed and reseeded from that file, and you stay `/cmux-builder` with the same `BF_*` environment. If you notice you are past 60% before it asks, do the same unprompted and `report.sh blocked "context at N%, handoff written, CHECKPOINTED"`. Never start a new round of work above 60%.
 - If something contradicts the spec (the bug is not where Intent says, the approach cannot work), that is a `question` with your evidence in one line. Do not silently do something else.
