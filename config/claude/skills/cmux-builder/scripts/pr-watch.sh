@@ -6,7 +6,7 @@
 #
 # A PR is CONVERGED for its CURRENT head when all three hold:
 #   1. every check on the head is green (pass or skipping; none pending, none failing), and
-#      the latest run of each workflow (per workflow and event) for the head sha has finished (a cancelled run never outranks a non-cancelled one; BabaFlow#4764):
+#      every run for the head sha has finished, and the latest run of each workflow (per workflow and event) is judged (a cancelled run never outranks a non-cancelled one; BabaFlow#4764, #5621):
 #      a run queued with no jobs yet is pending, a finished one with no jobs that did not
 #      succeed is failing, a finished one with jobs is decided by its jobs (jahm2u/BabaFlow#4746).
 #      "Performance budget" is advisory, as in BabaFlow's pr-watch.js; both share one fixture.
@@ -88,12 +88,14 @@ with_jobs = set()
 for r in pr.get("statusCheckRollup") or []:
     m = re.search(r"/actions/runs/(\d+)(?:/|$)", r.get("detailsUrl") or "")
     if m: with_jobs.add(m.group(1))
-for r in latest.values():
+# Every unfinished run is pending, not only the latest: a no-op run for a label the check does not
+# read completes in seconds and outranks the real run still queued behind it (BabaFlow#5621).
+for r in all_runs:
     name = f"{r.get('name')} (run)"
-    if (r.get("status") or "").lower() != "completed":
-        if name not in pending: pending.append(name)
-    elif str(r.get("id")) not in with_jobs and (r.get("conclusion") or "").lower() not in ("success", "neutral", "skipped"):
-        failing.append(name)
+    if (r.get("status") or "").lower() != "completed" and name not in pending: pending.append(name)
+for r in latest.values():
+    if (r.get("status") or "").lower() == "completed" and str(r.get("id")) not in with_jobs and (r.get("conclusion") or "").lower() not in ("success", "neutral", "skipped"):
+        failing.append(f"{r.get('name')} (run)")
 
 print(f"  checks: {len(checks)} total, {len(pending)} pending, {len(failing)} failing; runs: {len(latest)} latest")
 for n in failing: print(f"    failing: {n}")
